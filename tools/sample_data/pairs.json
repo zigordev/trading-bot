@@ -1,0 +1,74 @@
+[
+  {
+    "id": "ba35f41e-553c-4b42-869f-cca383e1c000",
+    "code": "BTCUSDT",
+    "operable": true,
+    "originAssetNeededFunds": 0.001,
+    "destinationAssetNeededFunds": 10.0,
+    "createdAt": "2026-03-13T16:34:36.477086+00:00",
+    "updatedAt": "2026-03-13T16:34:36.477086+00:00"
+  },
+  {
+    "id": "93a1269b-1e6c-453e-892c-0110a05fe1da",
+    "code": "ETHUSDT",
+    "operable": true,
+    "originAssetNeededFunds": 0.001,
+    "destinationAssetNeededFunds": 10.0,
+    "createdAt": "2026-03-13T16:34:36.477086+00:00",
+    "updatedAt": "2026-03-13T16:34:36.477086+00:00"
+  },
+  {
+    "id": "f2cc4dd4-4496-4103-b031-e22e2fd2a7d0",
+    "code": "BNBUSDT",
+    "operable": true,
+    "originAssetNeededFunds": 0.001,
+    "destinationAssetNeededFunds": 10.0,
+    "createdAt": "2026-03-13T16:34:36.477086+00:00",
+    "updatedAt": "2026-03-13T16:34:36.477086+00:00"
+  },
+  {
+    "id": "8bc420bc-9d80-4192-bce2-6f5f879743d1",
+    "code": "ADAUSDT",
+    "operable": true,
+    "originAssetNeededFunds": 0.001,
+    "destinationAssetNeededFunds": 10.0,
+    "createdAt": "2026-03-13T16:34:36.477086+00:00",
+    "updatedAt": "2026-03-13T16:34:36.477086+00:00"
+  },
+  {
+    "id": "4d730087-e5e2-49ec-9737-ae38905d2f02",
+    "code": "SOLUSDT",
+    "operable": true,
+    "originAssetNeededFunds": 0.001,
+    "destinationAssetNeededFunds": 10.0,
+    "createdAt": "2026-03-13T16:34:36.477086+00:00",
+    "updatedAt": "2026-03-13T16:34:36.477086+00:00"
+  },
+  {
+    "id": "c7e80f3e-fe5c-49fa-80e8-9c266da833a5",
+    "code": "DOTUSDT",
+    "operable": true,
+    "originAssetNeededFunds": 0.001,
+    "destinationAssetNeededFunds": 10.0,
+    "createdAt": "2026-03-13T16:34:36.477086+00:00",
+    "updatedAt": "2026-03-13T16:34:36.477086+00:00"
+  },
+  {
+    "id": "b8163a30-9cd9-4d09-8729-3718198344be",
+    "code": "DOGEUSDT",
+    "operable": true,
+    "originAssetNeededFunds": 0.001,
+    "destinationAssetNeededFunds": 10.0,
+    "createdAt": "2026-03-13T16:34:36.477086+00:00",
+    "updatedAt": "2026-03-13T16:34:36.477086+00:00"
+  },
+  {
+    "id": "a0c7a0b8-993b-4b94-bd32-e047733a4e03",
+    "code": "AVAXUSDT",
+    "operable": true,
+    "originAssetNeededFunds": 0.001,
+    "destinationAssetNeededFunds": 10.0,
+    "createdAt": "2026-03-13T16:34:36.477086+00:00",
+    "updatedAt": "2026-03-13T16:34:36.477086+00:00"
+  }
+]

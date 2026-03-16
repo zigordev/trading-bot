@@ -1,0 +1,51 @@
+local.file_match "docker_json_logs" {
+  path_targets = [
+    {
+      __path__ = "/var/lib/docker/containers/*/*-json.log",
+      job      = "docker-json-logs",
+    },
+  ]
+}
+
+loki.process "docker_json_logs" {
+  forward_to = [loki.write.default.receiver]
+
+  stage.json {
+    expressions = {
+      output  = "log",
+      stream  = "stream",
+      ts      = "time",
+      project = "attrs.\"com.docker.compose.project\"",
+      service = "attrs.\"com.docker.compose.service\"",
+    }
+  }
+
+  stage.timestamp {
+    source = "ts"
+    format = "RFC3339Nano"
+  }
+
+  stage.labels {
+    values = {
+      project = "project",
+      stream  = "stream",
+      service = "service",
+    }
+  }
+
+  stage.output {
+    source = "output"
+  }
+}
+
+loki.source.file "docker_json_logs" {
+  targets               = local.file_match.docker_json_logs.targets
+  forward_to            = [loki.process.docker_json_logs.receiver]
+  legacy_positions_file = "/var/lib/alloy/data/positions.yaml"
+}
+
+loki.write "default" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}
