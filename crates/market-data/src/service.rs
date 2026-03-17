@@ -1002,9 +1002,16 @@ impl MarketDataService {
         let mut remaining_loops = remaining_needed
             .saturating_div(batch_limit)
             .saturating_add(1);
+        let mut buffered_events: Vec<NormalizedKlineEvent> = Vec::new();
+        let insert_batch_rows = self
+            .inner
+            .config
+            .historical_kline_backfill_insert_batch_rows
+            .max(batch_limit);
 
         while next_start_ms <= required_end_ms && remaining_loops > 0 {
             tracing::info!(
+                table = "market_data_klines",
                 pair_code = %subscription.pair_code,
                 timeframe_code = %subscription.timeframe_code,
                 binance_interval = %subscription.binance_interval,
@@ -1036,16 +1043,25 @@ impl MarketDataService {
             for row in rows.iter() {
                 let event =
                     normalize_rest_kline(&subscription, row, &self.inner.config.service_name)?;
-                self.process_kline_event(event).await?;
+                // Buffer backfill klines and flush to ClickHouse in larger
+                // batches to reduce part counts and improve insert efficiency.
+                buffered_events.push(event);
+                if buffered_events.len() >= insert_batch_rows {
+                    self.inner
+                        .database
+                        .upsert_klines_batch(&buffered_events)
+                        .await?;
+                    tracing::info!(
+                        table = "market_data_klines",
+                        pair_code = %subscription.pair_code,
+                        timeframe_code = %subscription.timeframe_code,
+                        binance_interval = %subscription.binance_interval,
+                        buffered_rows = buffered_events.len(),
+                        "flushed buffered kline backfill batch into ClickHouse"
+                    );
+                    buffered_events.clear();
+                }
             }
-
-            tracing::info!(
-                pair_code = %subscription.pair_code,
-                timeframe_code = %subscription.timeframe_code,
-                binance_interval = %subscription.binance_interval,
-                inserted_rows = rows.len(),
-                "inserted kline backfill batch into ClickHouse"
-            );
 
             let Some(last_row) = rows.last() else {
                 break;
@@ -1063,6 +1079,22 @@ impl MarketDataService {
             }
         }
 
+        // Flush any remaining buffered klines for this subscription.
+        if !buffered_events.is_empty() {
+            self.inner
+                .database
+                .upsert_klines_batch(&buffered_events)
+                .await?;
+            tracing::info!(
+                table = "market_data_klines",
+                pair_code = %subscription.pair_code,
+                timeframe_code = %subscription.timeframe_code,
+                binance_interval = %subscription.binance_interval,
+                buffered_rows = buffered_events.len(),
+                "flushed final buffered kline backfill batch into ClickHouse"
+            );
+        }
+
         // Log final coverage for the required window so operators can see what
         // ClickHouse contains for this subscription after backfill.
         match self
@@ -1078,6 +1110,7 @@ impl MarketDataService {
         {
             Ok(coverage) => {
                 tracing::info!(
+                    table = "market_data_klines",
                     pair_code = %subscription.pair_code,
                     timeframe_code = %subscription.timeframe_code,
                     required_start_ms,
@@ -1091,6 +1124,7 @@ impl MarketDataService {
             Err(error) => {
                 tracing::warn!(
                     ?error,
+                    table = "market_data_klines",
                     pair_code = %subscription.pair_code,
                     timeframe_code = %subscription.timeframe_code,
                     required_start_ms,
@@ -1111,7 +1145,10 @@ impl MarketDataService {
         let required_period_ms = required_period_ms.max(1);
         let max_batch_rows = self.inner.config.historical_trade_backfill_limit.min(1000);
         let max_batches = self.inner.config.historical_trade_backfill_max_batches;
-        let Some(start_time) = self
+
+        // Anchor trade backfill to the earliest kline we have for this pair,
+        // clamped by the required lookback window.
+        let Some(earliest_kline_time) = self
             .inner
             .database
             .earliest_pair_kline_open_time(&subscription.pair_code)
@@ -1120,84 +1157,158 @@ impl MarketDataService {
             return Ok(());
         };
 
-        let latest_trade_checkpoint = self
-            .inner
-            .database
-            .latest_trade_checkpoint(&subscription.pair_code)
-            .await?;
-
-        let required_window_start = Utc::now().timestamp_millis().saturating_sub(
+        let now_ms = Utc::now().timestamp_millis();
+        let required_window_start = now_ms.saturating_sub(
             self.inner
                 .config
                 .historical_backfill_limit
-                .saturating_mul(required_period_ms.max(1) as usize) as i64,
+                .saturating_mul(required_period_ms as usize) as i64,
         );
-        let retro_start = start_time.max(required_window_start);
+        let window_start = earliest_kline_time.max(required_window_start);
+        let window_end = now_ms;
 
-        // Always run at least one time-based backfill batch from the required
-        // window start (or earliest kline), even if we already have a
-        // checkpoint inside the window. This allows trade history to grow
-        // backwards when kline history is extended, at the cost of some
-        // duplicate rows (which ClickHouse's ReplacingMergeTree can handle).
-        let mut use_start_time_backfill = true;
-        let mut next_start_time = Some(retro_start);
-        let mut next_from_id = None;
+        tracing::info!(
+            table = "market_data_trades",
+            pair_code = %subscription.pair_code,
+            window_start_ms = window_start,
+            window_end_ms = window_end,
+            "planning trade backfill chunks for pair"
+        );
 
-        if let Some(checkpoint) = latest_trade_checkpoint.as_ref() {
-            if checkpoint.trade_time < required_window_start {
-                // Checkpoint is older than our required window; ignore it and
-                // rebuild trades for the current window from time-based
-                // backfill.
-                tracing::info!(
-                    pair_code = %subscription.pair_code,
-                    required_window_start_ms = required_window_start,
-                    checkpoint_trade_time_ms = checkpoint.trade_time,
-                    earliest_kline_open_time = start_time,
-                    "trade checkpoint is before required lookback window; rebuilding historical trades from required window start"
-                );
-            } else {
-                // Checkpoint is within the required window. We'll first run a
-                // time-based batch from retro_start, then continue forward from
-                // the checkpoint using fromId pagination.
-                next_from_id = Some(checkpoint.aggregate_trade_id + 1);
-                tracing::info!(
-                    pair_code = %subscription.pair_code,
-                    required_window_start_ms = required_window_start,
-                    checkpoint_trade_time_ms = checkpoint.trade_time,
-                    earliest_kline_open_time = start_time,
-                    "trade checkpoint is within required lookback window; running time-based repair then continuing from checkpoint"
-                );
-            }
-        } else {
-            tracing::info!(
-                pair_code = %subscription.pair_code,
-                earliest_kline_open_time = start_time,
-                required_window_start_ms = required_window_start,
-                "trade checkpoint not found; repairing trade history from earliest kline/required window start"
-            );
+        if window_end <= window_start {
+            return Ok(());
         }
 
-        let mut hit_batch_cap = false;
-        let required_window_end = Utc::now().timestamp_millis();
-
-        for batch_idx in 0..max_batches {
-            let mut query = vec![
-                ("symbol", subscription.symbol.clone()),
-                ("limit", max_batch_rows.to_string()),
-            ];
-
-            if use_start_time_backfill {
-                if let Some(start_time) = next_start_time {
-                    query.push(("startTime", start_time.to_string()));
-                }
-            } else if let Some(from_id) = next_from_id {
-                query.push(("fromId", from_id.to_string()));
-            } else if let Some(start_time) = next_start_time {
-                query.push(("startTime", start_time.to_string()));
+        // Chunk the window into contiguous time ranges to allow per-pair
+        // parallelism while keeping each chunk self-contained and
+        // idempotent. Use 1d chunks to minimize part count while still
+        // allowing some per-pair parallelism over long windows.
+        let chunk_ms: i64 = 24 * 60 * 60 * 1000;
+        let mut chunks = Vec::new();
+        let mut chunk_start = window_start;
+        while chunk_start < window_end {
+            let mut chunk_end = chunk_start.saturating_add(chunk_ms);
+            if chunk_end > window_end {
+                chunk_end = window_end;
             }
+            chunks.push((chunk_start, chunk_end));
+            chunk_start = chunk_end;
+        }
 
+        let pair_semaphore =
+            std::sync::Arc::new(tokio::sync::Semaphore::new(self.inner.config.historical_backfill_max_concurrency));
+        let mut tasks = Vec::with_capacity(chunks.len());
+        for (start_ms, end_ms) in chunks {
+            let permit = pair_semaphore.clone().acquire_owned().await?;
+            let service = self.clone();
+            let sub = subscription.clone();
+            tasks.push(tokio::spawn(async move {
+                let _permit = permit;
+                service
+                    .backfill_pair_trades_for_chunk(sub, start_ms, end_ms, max_batch_rows, max_batches)
+                    .await
+            }));
+        }
+
+        let mut had_error = None;
+        for task in tasks {
+            match task.await {
+                Ok(Ok(())) => {}
+                Ok(Err(error)) => had_error = Some(error.to_string()),
+                Err(error) => had_error = Some(error.to_string()),
+            }
+        }
+
+        if let Some(error) = had_error {
+            return Err(anyhow::anyhow!(error));
+        }
+        // After backfilling all chunks for this pair, log what ClickHouse
+        // actually contains for the requested window so operators can see
+        // whether coverage is complete or there are still gaps.
+        match self
+            .inner
+            .database
+            .trade_window_coverage_in_range(
+                &subscription.pair_code,
+                window_start,
+                window_end,
+            )
+            .await
+        {
+            Ok(coverage) => {
+                let has_full_coverage = match (coverage.min_time, coverage.max_time) {
+                    (Some(min_t), Some(max_t)) => {
+                        min_t <= window_start && max_t >= window_end.saturating_sub(1)
+                    }
+                    _ => false,
+                };
+
+                if has_full_coverage {
+                    tracing::info!(
+                        table = "market_data_trades",
+                        pair_code = %subscription.pair_code,
+                        window_start_ms = window_start,
+                        window_end_ms = window_end,
+                        row_count = coverage.row_count,
+                        min_time = ?coverage.min_time,
+                        max_time = ?coverage.max_time,
+                        "trade backfill completed for pair; window coverage in ClickHouse"
+                    );
+                } else {
+                    tracing::warn!(
+                        table = "market_data_trades",
+                        pair_code = %subscription.pair_code,
+                        window_start_ms = window_start,
+                        window_end_ms = window_end,
+                        row_count = coverage.row_count,
+                        min_time = ?coverage.min_time,
+                        max_time = ?coverage.max_time,
+                        "trade backfill for pair finished but window coverage is incomplete; consider increasing HISTORICAL_TRADE_BACKFILL_LIMIT or HISTORICAL_TRADE_BACKFILL_MAX_BATCHES"
+                    );
+                }
+            }
+            Err(error) => {
+                tracing::warn!(
+                    ?error,
+                    table = "market_data_trades",
+                    pair_code = %subscription.pair_code,
+                    window_start_ms = window_start,
+                    window_end_ms = window_end,
+                    "failed to compute trade window coverage after backfill"
+                );
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn backfill_pair_trades_for_chunk(
+        &self,
+        subscription: PairStreamSubscription,
+        chunk_start_ms: i64,
+        chunk_end_ms: i64,
+        max_batch_rows: usize,
+        max_batches: usize,
+    ) -> Result<()> {
+        let mut next_start = chunk_start_ms.max(0);
+        let mut batches_used = 0usize;
+        let mut buffered_events = Vec::new();
+        let insert_batch_rows = self
+            .inner
+            .config
+            .historical_trade_backfill_insert_batch_rows
+            .max(max_batch_rows);
+
+        while next_start < chunk_end_ms && batches_used < max_batches {
             let rows = self
-                .fetch_binance_json::<Vec<Value>>("/api/v3/aggTrades", &query)
+                .fetch_binance_json::<Vec<Value>>(
+                    "/api/v3/aggTrades",
+                    &[
+                        ("symbol", subscription.symbol.clone()),
+                        ("limit", max_batch_rows.to_string()),
+                        ("startTime", next_start.to_string()),
+                    ],
+                )
                 .await?;
             if rows.is_empty() {
                 break;
@@ -1206,93 +1317,92 @@ impl MarketDataService {
 
             let mut first_trade_time_ms: Option<i64> = None;
             let mut last_trade_time_ms: Option<i64> = None;
-            let mut last_trade_id = None;
             for row in rows {
                 let event =
                     normalize_rest_trade(&subscription, row, &self.inner.config.service_name)?;
+                if event.trade_time < chunk_start_ms || event.trade_time >= chunk_end_ms {
+                    // Skip trades outside this chunk; they will be handled by
+                    // neighboring chunks if needed.
+                    continue;
+                }
                 if first_trade_time_ms.is_none() {
                     first_trade_time_ms = Some(event.trade_time);
                 }
                 last_trade_time_ms = Some(event.trade_time);
-                last_trade_id = Some(event.aggregate_trade_id);
-                self.process_trade_event(event).await?;
+                // Buffer backfill trades and flush to ClickHouse in larger
+                // batches to reduce part counts and improve insert efficiency.
+                buffered_events.push(event);
+                if buffered_events.len() >= insert_batch_rows {
+                    self.inner
+                        .database
+                        .upsert_trades_batch(&buffered_events)
+                        .await?;
+                    tracing::info!(
+                        table = "market_data_trades",
+                        pair_code = %subscription.pair_code,
+                        buffered_rows = buffered_events.len(),
+                        chunk_start_ms,
+                        chunk_end_ms,
+                        "flushed buffered trade backfill batch into ClickHouse"
+                    );
+                    buffered_events.clear();
+                }
             }
 
             tracing::info!(
+                table = "market_data_trades",
                 pair_code = %subscription.pair_code,
+                chunk_start_ms,
+                chunk_end_ms,
                 inserted_rows = row_count,
                 first_trade_time_ms = first_trade_time_ms,
                 last_trade_time_ms = last_trade_time_ms,
-                "inserted trade backfill batch into ClickHouse"
+                "inserted trade backfill batch into ClickHouse for chunk"
             );
 
-            let Some(last_trade_id) = last_trade_id else {
-                break;
-            };
-
-            if use_start_time_backfill {
-                use_start_time_backfill = false;
-            }
-            next_from_id = Some(last_trade_id + 1);
-            next_start_time = None;
-
-            if batch_idx == max_batches - 1 && row_count >= max_batch_rows {
-                hit_batch_cap = true;
-            }
-
-            // Stop when we've paged through the required window; otherwise
-            // continue advancing, even if the current batch is smaller than
-            // max_batch_rows, so we don't prematurely stop in sparse periods.
+            batches_used = batches_used.saturating_add(1);
             if let Some(last_time) = last_trade_time_ms {
-                if last_time >= required_window_end {
-                    break;
+                // Advance to just after the last trade we saw, but never past
+                // the chunk end.
+                let advanced = last_time.saturating_add(1);
+                if advanced <= next_start {
+                    // No progress; nudge forward slightly to avoid a tight loop.
+                    next_start = next_start.saturating_add(1000);
+                } else {
+                    next_start = advanced;
                 }
+            } else {
+                // No trades within chunk in this batch; move forward by a small step.
+                next_start = next_start.saturating_add(60_000);
             }
         }
 
-        if hit_batch_cap {
-            tracing::warn!(
+        // Flush any remaining buffered events for this chunk.
+        if !buffered_events.is_empty() {
+            self.inner
+                .database
+                .upsert_trades_batch(&buffered_events)
+                .await?;
+            tracing::info!(
+                table = "market_data_trades",
                 pair_code = %subscription.pair_code,
+                buffered_rows = buffered_events.len(),
+                chunk_start_ms,
+                chunk_end_ms,
+                "flushed final buffered trade backfill batch into ClickHouse"
+            );
+        }
+
+        if batches_used >= max_batches {
+            tracing::warn!(
+                table = "market_data_trades",
+                pair_code = %subscription.pair_code,
+                chunk_start_ms,
+                chunk_end_ms,
                 batch_limit = max_batches,
                 batch_size = max_batch_rows,
-                required_window_start_ms = required_window_start,
-                "trade backfill stopped after reaching max batches; consider increasing HISTORICAL_TRADE_BACKFILL_MAX_BATCHES"
+                "trade backfill for chunk stopped after reaching max batches; consider increasing HISTORICAL_TRADE_BACKFILL_MAX_BATCHES"
             );
-        }
-
-        // Log final trade coverage for the required window so operators can see
-        // what ClickHouse contains for this pair after trade backfill.
-        let coverage_end_ms = Utc::now().timestamp_millis();
-        match self
-            .inner
-            .database
-            .trade_window_coverage_in_range(
-                &subscription.pair_code,
-                required_window_start,
-                coverage_end_ms,
-            )
-            .await
-        {
-            Ok(coverage) => {
-                tracing::info!(
-                    pair_code = %subscription.pair_code,
-                    coverage_start_ms = required_window_start,
-                    coverage_end_ms,
-                    row_count = coverage.row_count,
-                    min_time = ?coverage.min_time,
-                    max_time = ?coverage.max_time,
-                    "trade backfill completed for pair; window coverage in ClickHouse"
-                );
-            }
-            Err(error) => {
-                tracing::warn!(
-                    ?error,
-                    pair_code = %subscription.pair_code,
-                    coverage_start_ms = required_window_start,
-                    coverage_end_ms,
-                    "failed to compute trade window coverage after backfill"
-                );
-            }
         }
 
         Ok(())
@@ -1370,6 +1480,7 @@ impl MarketDataService {
             normalize_rest_book_ticker(&subscription, row, &self.inner.config.service_name)?;
         self.process_book_ticker_event(event).await?;
         tracing::info!(
+            table = "market_data_book_tickers",
             pair_code = %subscription.pair_code,
             inserted_rows = 1,
             "inserted book-ticker backfill snapshot into ClickHouse"
