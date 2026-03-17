@@ -38,6 +38,9 @@ services:
       - "19000:9000"
     volumes:
       - app-local-clickhouse-data:/var/lib/clickhouse
+      # Custom logging config to mirror ClickHouse logs to stdout/stderr,
+      # so they appear directly in `docker logs historical-store`.
+      - ./clickhouse-log-to-console.xml:/etc/clickhouse-server/config.d/clickhouse-log-to-console.xml:ro
     healthcheck:
       test: ["CMD-SHELL", "clickhouse-client --user \"$$CLICKHOUSE_USER\" --password \"$$CLICKHOUSE_PASSWORD\" --query 'SELECT 1' >/dev/null 2>&1"]
       interval: 10s

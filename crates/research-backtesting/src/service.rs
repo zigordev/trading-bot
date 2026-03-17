@@ -401,11 +401,8 @@ impl ResearchBacktestingService {
                 self.inner.config.max_backtest_klines
             );
         }
-        let expected_trades = self
-            .inner
-            .config
-            .max_backtest_trades
-            .min((expected_candles.saturating_mul(1_000)).max(10_000));
+        // Use all available trades up to the configured hard cap.
+        let expected_trades = self.inner.config.max_backtest_trades;
         let expected_book_tickers = self
             .inner
             .config
