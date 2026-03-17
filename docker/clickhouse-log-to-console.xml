@@ -1,0 +1,10 @@
+<yandex>
+    <logger>
+        <!-- Keep existing file logs, but also mirror to console so Docker logs capture everything -->
+        <log>/var/log/clickhouse-server/clickhouse-server.log</log>
+        <errorlog>/var/log/clickhouse-server/clickhouse-server.err.log</errorlog>
+        <console>true</console>
+        <level>information</level>
+    </logger>
+</yandex>
+

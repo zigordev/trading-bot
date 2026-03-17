@@ -1208,7 +1208,10 @@ impl Database {
         end_time: Option<i64>,
         limit: i64,
     ) -> Result<Vec<PersistedTradeRecord>> {
-        let safe_limit = limit.clamp(1, 5_000_000);
+        // Safety upper bound to avoid accidentally requesting an unbounded
+        // number of rows. This value is intentionally set higher than any
+        // expected BACKTEST_MAX_TRADES configuration.
+        let safe_limit = limit.clamp(1, 50_000_000);
         let time_range = sql_numeric_time_range("trade_time", start_time, end_time);
         let sql = format!(
             r#"
