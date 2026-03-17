@@ -21,6 +21,12 @@ pub struct AppConfig {
     pub backtest_result_retention_days: u64,
     pub default_fee_bps: f64,
     pub default_slippage_bps: f64,
+    /// Allowed trade timestamp slack at the edges of the requested backtest
+    /// window, in milliseconds. This tolerance accounts for the fact that
+    /// there may be no trades exactly at the requested start/end times, while
+    /// still requiring that all trades which actually occurred inside the
+    /// window are present.
+    pub trade_coverage_tolerance_ms: u64,
     pub auto_backtest_enabled: bool,
     pub auto_backtest_interval_seconds: u64,
     pub auto_backtest_research_settings_name: String,
@@ -133,6 +139,7 @@ pub fn load_config() -> Result<AppConfig> {
         backtest_result_retention_days: parse_u64("BACKTEST_RESULT_RETENTION_DAYS", 365)?,
         default_fee_bps: parse_f64("BACKTEST_FEE_BPS", 0.0)?,
         default_slippage_bps: parse_f64("BACKTEST_SLIPPAGE_BPS", 0.0)?,
+        trade_coverage_tolerance_ms: parse_u64("BACKTEST_TRADE_COVERAGE_TOLERANCE_MS", 5_000)?,
         auto_backtest_enabled: parse_bool("AUTO_BACKTEST_ENABLED", false)?,
         auto_backtest_interval_seconds: parse_u64("AUTO_BACKTEST_INTERVAL_SECONDS", 3600)?,
         auto_backtest_research_settings_name: env_or_default(

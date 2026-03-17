@@ -29,6 +29,18 @@ pub struct AppConfig {
     pub historical_trade_backfill_limit: usize,
     pub historical_trade_backfill_max_batches: usize,
     pub historical_backfill_max_concurrency: usize,
+    /// Maximum number of trades to buffer per ClickHouse INSERT during
+    /// historical trade backfill. This allows combining multiple 1000-row
+    /// Binance batches into a larger insert for better ClickHouse efficiency.
+    pub historical_trade_backfill_insert_batch_rows: usize,
+    /// Target chunk size for historical trade backfill, in milliseconds.
+    /// Backfill windows are split into contiguous [start,end) chunks of this
+    /// size per pair to allow some per-pair parallelism while keeping each
+    /// chunk self-contained. Defaults to 1 day.
+    pub historical_trade_backfill_chunk_ms: u64,
+    /// Maximum number of klines to buffer per ClickHouse INSERT during
+    /// historical kline backfill.
+    pub historical_kline_backfill_insert_batch_rows: usize,
     pub historical_book_ticker_backfill_interval_ms: u64,
     pub historical_kline_retention_days: u64,
     pub historical_trade_retention_days: u64,
@@ -151,6 +163,18 @@ pub fn load_config() -> Result<AppConfig> {
             100,
         )?,
         historical_backfill_max_concurrency: parse_usize("HISTORICAL_BACKFILL_MAX_CONCURRENCY", 4)?,
+        historical_trade_backfill_insert_batch_rows: parse_usize(
+            "HISTORICAL_TRADE_BACKFILL_INSERT_BATCH_ROWS",
+            50_000,
+        )?,
+        historical_trade_backfill_chunk_ms: parse_u64(
+            "HISTORICAL_TRADE_BACKFILL_CHUNK_MS",
+            24 * 60 * 60 * 1000,
+        )?,
+        historical_kline_backfill_insert_batch_rows: parse_usize(
+            "HISTORICAL_KLINE_BACKFILL_INSERT_BATCH_ROWS",
+            50_000,
+        )?,
         historical_book_ticker_backfill_interval_ms: parse_u64(
             "HISTORICAL_BOOK_TICKER_BACKFILL_INTERVAL_MS",
             60_000,

@@ -844,6 +844,46 @@ impl Database {
         .await
     }
 
+    /// Insert a batch of normalized kline events into ClickHouse using a
+    /// single JSONEachRow INSERT. This is used by historical backfill to
+    /// combine multiple Binance REST batches into fewer, larger inserts.
+    pub async fn upsert_klines_batch(&self, events: &[NormalizedKlineEvent]) -> Result<()> {
+        if events.is_empty() {
+            return Ok(());
+        }
+
+        let mut payload = String::new();
+        let updated_at_ms = Utc::now().timestamp_millis();
+
+        for event in events {
+            let occurred_at_ms = parse_rfc3339_to_millis(&event.occurred_at)?;
+            let row = HistoricalKlineWriteRow {
+                pair_code: &event.pair_code,
+                timeframe_code: &event.timeframe_code,
+                open_time: event.open_time,
+                symbol: &event.symbol,
+                period_ms: event.period_ms,
+                close_time: event.close_time,
+                event_time: event.event_time,
+                occurred_at_ms,
+                ingestion_mode: &event.ingestion_mode,
+                closed: event.closed,
+                open_price: &event.open,
+                high_price: &event.high,
+                low_price: &event.low,
+                close_price: &event.close,
+                volume: &event.volume,
+                quote_volume: &event.quote_volume,
+                trade_count: event.trade_count,
+                updated_at_ms,
+            };
+            payload.push_str(&serde_json::to_string(&row)?);
+            payload.push('\n');
+        }
+
+        self.insert_json_each_row("market_data_klines", &payload).await
+    }
+
     pub async fn upsert_trade(&self, event: &NormalizedTradeEvent) -> Result<()> {
         let occurred_at_ms = parse_rfc3339_to_millis(&event.occurred_at)?;
         let updated_at_ms = Utc::now().timestamp_millis();
@@ -865,6 +905,41 @@ impl Database {
             &format!("{}\n", serde_json::to_string(&row)?),
         )
         .await
+    }
+
+    /// Insert a batch of normalized trade events into ClickHouse using a
+    /// single JSONEachRow INSERT. This is used by historical backfill to
+    /// combine multiple Binance REST batches into fewer, larger inserts,
+    /// which is more efficient for ClickHouse and reduces part counts.
+    pub async fn upsert_trades_batch(&self, events: &[NormalizedTradeEvent]) -> Result<()> {
+        if events.is_empty() {
+            return Ok(());
+        }
+
+        let mut payload = String::new();
+        // Use a single updated_at_ms for the batch; for historical backfill
+        // we do not need per-row precision here.
+        let updated_at_ms = Utc::now().timestamp_millis();
+
+        for event in events {
+            let occurred_at_ms = parse_rfc3339_to_millis(&event.occurred_at)?;
+            let row = HistoricalTradeWriteRow {
+                pair_code: &event.pair_code,
+                symbol: &event.symbol,
+                aggregate_trade_id: event.aggregate_trade_id,
+                ingestion_mode: &event.ingestion_mode,
+                price: &event.price,
+                quantity: &event.quantity,
+                trade_time: event.trade_time,
+                market_maker: event.market_maker,
+                occurred_at_ms,
+                updated_at_ms,
+            };
+            payload.push_str(&serde_json::to_string(&row)?);
+            payload.push('\n');
+        }
+
+        self.insert_json_each_row("market_data_trades", &payload).await
     }
 
     pub async fn upsert_book_ticker(&self, event: &NormalizedBookTickerEvent) -> Result<()> {
@@ -1153,7 +1228,6 @@ impl Database {
               SELECT
                 pair_code,
                 argMax(symbol, updated_at_ms) AS symbol,
-                argMax(event_time, updated_at_ms) AS event_time,
                 aggregate_trade_id,
                 argMax(ingestion_mode, updated_at_ms) AS ingestion_mode,
                 argMax(price, updated_at_ms) AS price,

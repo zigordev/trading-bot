@@ -476,46 +476,66 @@ impl ResearchBacktestingService {
             );
         }
 
-        if replay_trades.is_empty() {
-            // Enrich the error with a quick coverage snapshot so operators can
-            // see what trade data exists for the requested window.
-            let trade_coverage = self
-                .inner
-                .historical_store
-                .trade_window_coverage_in_range(
-                    &analysis.pair_code,
-                    time_window.requested_start_time,
-                    time_window.requested_end_time,
-                )
-                .await
-                .unwrap_or_else(|error| {
-                    warn!(
-                        error = %error,
-                        pair_code = %analysis.pair_code,
-                        requested_start_time = time_window.requested_start_time,
-                        requested_end_time = time_window.requested_end_time,
-                        "failed to compute trade window coverage for empty backtest window"
-                    );
-                    trading_bot_market_data::db::WindowCoverage {
-                        row_count: 0,
-                        min_time: None,
-                        max_time: None,
-                    }
-                });
+        // Enforce sufficient trade coverage for the entire requested window,
+        // not just the presence of at least one trade somewhere inside it.
+        let trade_coverage = self
+            .inner
+            .historical_store
+            .trade_window_coverage_in_range(
+                &analysis.pair_code,
+                time_window.requested_start_time,
+                time_window.requested_end_time,
+            )
+            .await
+            .unwrap_or_else(|error| {
+                warn!(
+                    error = %error,
+                    pair_code = %analysis.pair_code,
+                    requested_start_time = time_window.requested_start_time,
+                    requested_end_time = time_window.requested_end_time,
+                    "failed to compute trade window coverage for backtest window"
+                );
+                trading_bot_market_data::db::WindowCoverage {
+                    row_count: 0,
+                    min_time: None,
+                    max_time: None,
+                }
+            });
 
+        let has_full_trade_coverage = match (trade_coverage.min_time, trade_coverage.max_time) {
+            (Some(min_t), Some(max_t)) => {
+                let tolerance = self.inner.config.trade_coverage_tolerance_ms as i64;
+                // Allow small slack at the edges: the first trade can occur
+                // slightly after the requested start, and the last trade can
+                // occur slightly before the requested end, as long as the gap
+                // is within the configured tolerance.
+                let latest_acceptable_min =
+                    time_window.requested_start_time.saturating_add(tolerance);
+                let earliest_acceptable_max = time_window
+                    .requested_end_time
+                    .saturating_sub(1)
+                    .saturating_sub(tolerance);
+
+                min_t <= latest_acceptable_min && max_t >= earliest_acceptable_max
+            }
+            _ => false,
+        };
+
+        if !has_full_trade_coverage {
             warn!(
                 pair_code = %analysis.pair_code,
                 timeframe_code = %analysis.timeframe_code,
                 requested_start_time = time_window.requested_start_time,
                 requested_end_time = time_window.requested_end_time,
+                trade_coverage_tolerance_ms = self.inner.config.trade_coverage_tolerance_ms,
                 trade_row_count = trade_coverage.row_count,
                 trade_min_time = ?trade_coverage.min_time,
                 trade_max_time = ?trade_coverage.max_time,
-                "backtest window has no historical aggregate trades; coverage snapshot for requested window"
+                "backtest window does not have full historical aggregate trade coverage; rejecting fill-aware backtest"
             );
 
             bail!(
-                "no historical aggregate trades were found in ClickHouse for {} within {}..{}; fill-aware backtesting needs market_data_trades coverage (trade_row_count={}, trade_min_time={:?}, trade_max_time={:?})",
+                "insufficient historical aggregate trades in ClickHouse for {} within {}..{}; fill-aware backtesting requires full market_data_trades coverage (trade_row_count={}, trade_min_time={:?}, trade_max_time={:?})",
                 analysis.pair_code,
                 time_window.requested_start_time,
                 time_window.requested_end_time,
