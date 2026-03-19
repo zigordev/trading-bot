@@ -967,7 +967,7 @@ async fn fetch_trade_window_cache(
 ) -> Result<Vec<HistoricalTradeRecord>> {
     let mut rows = Vec::new();
     let mut after: Option<(i64, i64)> = None;
-    let page_rows = page_rows.clamp(1, 1_000_000) as i64;
+    let page_rows = page_rows.clamp(1, 50_000_000) as i64;
     let mut page = 0usize;
     let started_at = Instant::now();
 
@@ -1091,7 +1091,7 @@ async fn execute_backtest(
         }
     }
 
-    let page_rows = trade_page_rows.clamp(1, 1_000_000) as i64;
+    let page_rows = trade_page_rows.clamp(1, 50_000_000) as i64;
     let pair_code = input.analysis.pair_code.clone();
     let timeframe_code = input.analysis.timeframe_code.clone();
     let start_time = input.replay_trade_start_time;
