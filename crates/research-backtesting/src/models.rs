@@ -1,53 +1,14 @@
-use std::collections::BTreeMap;
-
 use serde::{Deserialize, Serialize};
-use trading_bot_market_data::models::{PersistedBookTickerRecord, PersistedTradeRecord};
+use trading_bot_market_data::models::PersistedBookTickerRecord;
 use trading_bot_strategy_engine::models::{PersistedKlineRecord, ResolvedAnalysisSettingsRecord};
-
-pub type ResearchTimeframeWindow = BTreeMap<String, i64>;
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ResearchSettingsRecord {
-    pub id: String,
-    pub name: String,
-    pub description: String,
-    pub backtesting_timerange: ResearchTimeframeWindow,
-    pub favorable_timeslots_backtesting_timerange: ResearchTimeframeWindow,
-    pub optimization_validity_period: ResearchTimeframeWindow,
-    pub enabled: bool,
-    pub created_at: String,
-    pub updated_at: String,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub enum BacktestWindowKind {
-    Backtesting,
-    FavorableTimeslots,
-    OptimizationValidity,
-}
-
-impl BacktestWindowKind {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Backtesting => "backtesting",
-            Self::FavorableTimeslots => "favorableTimeslots",
-            Self::OptimizationValidity => "optimizationValidity",
-        }
-    }
-}
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BacktestRequest {
     pub analysis_setting_id: String,
-    pub research_settings_name: String,
-    pub window_kind: BacktestWindowKind,
     pub start_time: Option<i64>,
     pub end_time: Option<i64>,
     pub warmup_candles: Option<usize>,
-    pub close_open_position_at_end: Option<bool>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -144,7 +105,6 @@ pub struct BacktestSummary {
     pub win_rate: f64,
     pub total_fees_usd: f64,
     pub total_pnl_percent: f64,
-    pub closed_open_position_at_end: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -156,12 +116,8 @@ pub struct BacktestResponse {
     pub duration_ms: i64,
     pub service: String,
     pub analysis_setting_id: String,
-    pub research_settings_name: String,
-    pub research_settings_id: String,
-    pub window_kind: BacktestWindowKind,
     pub time_window: BacktestTimeWindow,
     pub analysis: ResolvedAnalysisSettingsRecord,
-    pub research_settings: ResearchSettingsRecord,
     pub dataset: BacktestDatasetSummary,
     pub execution_assumptions: BacktestExecutionAssumptions,
     pub summary: BacktestSummary,
@@ -188,8 +144,6 @@ pub struct LastBacktestStatus {
     pub analysis_setting_id: String,
     pub pair_code: String,
     pub timeframe_code: String,
-    pub research_settings_name: String,
-    pub window_kind: BacktestWindowKind,
     pub replay_kline_count: usize,
     pub signal_count: usize,
     pub trade_count: usize,
@@ -205,8 +159,6 @@ pub struct PersistedBacktestRunSummary {
     pub pair_code: String,
     pub timeframe_code: String,
     pub strategy_name: String,
-    pub research_settings_name: String,
-    pub window_kind: BacktestWindowKind,
     pub requested_start_time: i64,
     pub requested_end_time: i64,
     pub replay_kline_count: usize,
@@ -219,12 +171,11 @@ pub struct PersistedBacktestRunSummary {
 #[derive(Clone, Debug)]
 pub struct ResolvedBacktestInput {
     pub analysis: ResolvedAnalysisSettingsRecord,
-    pub research_settings: ResearchSettingsRecord,
-    pub window_kind: BacktestWindowKind,
     pub time_window: BacktestTimeWindow,
     pub warmup_rows: Vec<PersistedKlineRecord>,
     pub replay_rows: Vec<PersistedKlineRecord>,
-    pub replay_trades: Vec<PersistedTradeRecord>,
+    pub replay_trade_start_time: i64,
+    pub replay_trade_end_time: i64,
+    pub replay_trade_max_rows: usize,
     pub replay_book_tickers: Vec<PersistedBookTickerRecord>,
-    pub close_open_position_at_end: bool,
 }

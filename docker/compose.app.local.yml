@@ -41,6 +41,8 @@ services:
       # Custom logging config to mirror ClickHouse logs to stdout/stderr,
       # so they appear directly in `docker logs historical-store`.
       - ./clickhouse-log-to-console.xml:/etc/clickhouse-server/config.d/clickhouse-log-to-console.xml:ro
+      # Relax query/HTTP limits for large backtest queries.
+      - ./clickhouse-large-query-settings.xml:/etc/clickhouse-server/config.d/clickhouse-large-query-settings.xml:ro
     healthcheck:
       test: ["CMD-SHELL", "clickhouse-client --user \"$$CLICKHOUSE_USER\" --password \"$$CLICKHOUSE_PASSWORD\" --query 'SELECT 1' >/dev/null 2>&1"]
       interval: 10s
@@ -109,12 +111,14 @@ services:
       dockerfile: crates/market-data/Dockerfile
       target: local
     restart: unless-stopped
+    mem_limit: 8g
     environment:
       PORT: 8090
       SERVICE_NAME: trading-bot-market-data
       APP_ENV: local
       HISTORICAL_STORE_HOST: ${HISTORICAL_STORE_HOST:-trading-bot-historical-store}
       HISTORICAL_STORE_PORT: ${HISTORICAL_STORE_PORT:-8123}
+      HISTORICAL_STORE_NATIVE_PORT: ${HISTORICAL_STORE_NATIVE_PORT:-9000}
       HISTORICAL_STORE_DATABASE: ${HISTORICAL_STORE_DATABASE:-trading_bot_market_data}
       HISTORICAL_STORE_USER: ${HISTORICAL_STORE_USER:-trading_bot_market_data}
       HISTORICAL_STORE_PASSWORD: ${HISTORICAL_STORE_PASSWORD:-trading_bot_market_data}
@@ -227,6 +231,7 @@ services:
       CONTROL_PLANE_REQUEST_TIMEOUT_MS: ${CONTROL_PLANE_REQUEST_TIMEOUT_MS:-5000}
       HISTORICAL_STORE_HOST: ${HISTORICAL_STORE_HOST:-trading-bot-historical-store}
       HISTORICAL_STORE_PORT: ${HISTORICAL_STORE_PORT:-8123}
+      HISTORICAL_STORE_NATIVE_PORT: ${HISTORICAL_STORE_NATIVE_PORT:-9000}
       HISTORICAL_STORE_DATABASE: ${HISTORICAL_STORE_DATABASE:-trading_bot_market_data}
       HISTORICAL_STORE_USER: ${HISTORICAL_STORE_USER:-trading_bot_market_data}
       HISTORICAL_STORE_PASSWORD: ${HISTORICAL_STORE_PASSWORD:-trading_bot_market_data}
@@ -236,14 +241,15 @@ services:
       BACKTEST_MAX_KLINES: ${BACKTEST_MAX_KLINES:-100000}
       BACKTEST_MAX_TRADES: ${BACKTEST_MAX_TRADES:-1000000}
       BACKTEST_MAX_BOOK_TICKERS: ${BACKTEST_MAX_BOOK_TICKERS:-1000000}
+      BACKTEST_TRADE_REPLAY_PAGE_MS: ${BACKTEST_TRADE_REPLAY_PAGE_MS:-3600000}
+      BACKTEST_TRADE_REPLAY_PAGE_ROWS: ${BACKTEST_TRADE_REPLAY_PAGE_ROWS:-200000}
       BACKTEST_RESULT_RETENTION_DAYS: ${BACKTEST_RESULT_RETENTION_DAYS:-365}
       BACKTEST_FEE_BPS: ${BACKTEST_FEE_BPS:-0}
       BACKTEST_SLIPPAGE_BPS: ${BACKTEST_SLIPPAGE_BPS:-0}
       BACKTEST_TRADE_COVERAGE_TOLERANCE_MS: ${BACKTEST_TRADE_COVERAGE_TOLERANCE_MS:-5000}
       AUTO_BACKTEST_ENABLED: ${AUTO_BACKTEST_ENABLED:-false}
       AUTO_BACKTEST_INTERVAL_SECONDS: ${AUTO_BACKTEST_INTERVAL_SECONDS:-3600}
-      AUTO_BACKTEST_RESEARCH_SETTINGS_NAME: ${AUTO_BACKTEST_RESEARCH_SETTINGS_NAME:-default}
-      AUTO_BACKTEST_WINDOW_KIND: ${AUTO_BACKTEST_WINDOW_KIND:-backtesting}
+      BACKTEST_TIMERANGE_MS_BY_TIMEFRAME: ${BACKTEST_TIMERANGE_MS_BY_TIMEFRAME:-1m=600000000,3m=1800000000,5m=3000000000}
     depends_on:
       historical-store:
         condition: service_healthy

@@ -66,11 +66,6 @@ await app.register(fastifySwagger, {
         description: "Operator-managed default trading profiles and position sizing",
       },
       {
-        name: "research-settings",
-        description:
-          "Backtesting and optimization configuration profiles authored in the control-plane",
-      },
-      {
         name: "analysis-settings",
         description:
           "Relational bindings between pair, timeframe, strategy, risk profile, and trading defaults",

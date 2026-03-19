@@ -76,27 +76,6 @@ export type TradingDefaultsRecord = TradingDefaultsInput & {
   updatedAt: string;
 };
 
-export type ResearchTimeframeWindow = {
-  "1m": number;
-  "3m": number;
-  "5m": number;
-};
-
-export type ResearchSettingsInput = {
-  name: string;
-  description: string;
-  backtestingTimerange: ResearchTimeframeWindow;
-  favorableTimeslotsBacktestingTimerange: ResearchTimeframeWindow;
-  optimizationValidityPeriod: ResearchTimeframeWindow;
-  enabled: boolean;
-};
-
-export type ResearchSettingsRecord = ResearchSettingsInput & {
-  id: string;
-  createdAt: string;
-  updatedAt: string;
-};
-
 export type AnalysisSettingsInput = {
   pairCode: string;
   timeframeCode: string;
@@ -187,16 +166,6 @@ const toPositiveInteger = (value: unknown): number => {
   return Number.isInteger(parsed) && parsed > 0 ? parsed : 0;
 };
 
-const parseResearchTimeframeWindow = (value: unknown): ResearchTimeframeWindow => {
-  const parsed = parseJsonObject(value);
-
-  return {
-    "1m": toPositiveInteger(parsed["1m"]),
-    "3m": toPositiveInteger(parsed["3m"]),
-    "5m": toPositiveInteger(parsed["5m"]),
-  };
-};
-
 const deriveTimeframePeriodMs = (code: string): number | null => {
   const match = code.trim().match(/^(\d+)([smhdw])$/i);
 
@@ -276,22 +245,6 @@ const mapTradingDefaultsRow = (row: QueryResultRow): TradingDefaultsRecord => ({
   name: String(row.name),
   description: String(row.description),
   defaultPositionNotionalUsd: Number(row.default_position_notional_usd),
-  enabled: Boolean(row.enabled),
-  createdAt: toIsoString(row.created_at),
-  updatedAt: toIsoString(row.updated_at),
-});
-
-const mapResearchSettingsRow = (row: QueryResultRow): ResearchSettingsRecord => ({
-  id: String(row.id),
-  name: String(row.name),
-  description: String(row.description),
-  backtestingTimerange: parseResearchTimeframeWindow(row.backtesting_timerange),
-  favorableTimeslotsBacktestingTimerange: parseResearchTimeframeWindow(
-    row.favorable_timeslots_backtesting_timerange,
-  ),
-  optimizationValidityPeriod: parseResearchTimeframeWindow(
-    row.optimization_validity_period,
-  ),
   enabled: Boolean(row.enabled),
   createdAt: toIsoString(row.created_at),
   updatedAt: toIsoString(row.updated_at),
@@ -807,58 +760,6 @@ const tradingDefaultsDefinition: ResourceDefinition<
   toRecord: mapTradingDefaultsRow,
 };
 
-const researchSettingsDefinition: ResourceDefinition<
-  ResearchSettingsInput,
-  ResearchSettingsRecord
-> = {
-  tableName: "research_settings",
-  resourceType: "research_settings",
-  createTableSql: `
-    CREATE TABLE IF NOT EXISTS research_settings (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL UNIQUE,
-      description TEXT NOT NULL,
-      backtesting_timerange JSONB NOT NULL,
-      favorable_timeslots_backtesting_timerange JSONB NOT NULL,
-      optimization_validity_period JSONB NOT NULL,
-      enabled BOOLEAN NOT NULL DEFAULT TRUE,
-      created_at TIMESTAMPTZ NOT NULL,
-      updated_at TIMESTAMPTZ NOT NULL
-    );
-  `,
-  listOrderBy: "name ASC",
-  selectColumns: [
-    "id",
-    "name",
-    "description",
-    "backtesting_timerange",
-    "favorable_timeslots_backtesting_timerange",
-    "optimization_validity_period",
-    "enabled",
-    "created_at",
-    "updated_at",
-  ],
-  insertColumns: [
-    "name",
-    "description",
-    "backtesting_timerange",
-    "favorable_timeslots_backtesting_timerange",
-    "optimization_validity_period",
-    "enabled",
-  ],
-  uniqueFieldName: "name",
-  uniqueFieldValue: (input) => input.name,
-  toInsertValues: (input) => [
-    input.name,
-    input.description,
-    JSON.stringify(input.backtestingTimerange),
-    JSON.stringify(input.favorableTimeslotsBacktestingTimerange),
-    JSON.stringify(input.optimizationValidityPeriod),
-    input.enabled,
-  ],
-  toRecord: mapResearchSettingsRow,
-};
-
 const analysisSettingsDefinition: ResourceDefinition<
   AnalysisSettingsInput,
   AnalysisSettingsRecord
@@ -947,7 +848,6 @@ const resourceDefinitions = [
   strategyDefinition,
   riskProfileDefinition,
   tradingDefaultsDefinition,
-  researchSettingsDefinition,
   analysisSettingsDefinition,
 ] as const;
 
@@ -1096,11 +996,6 @@ export const createConfigStores = (
   strategies: new PostgresCrudStore(pool, strategyDefinition, eventPublisher),
   riskProfiles: new PostgresCrudStore(pool, riskProfileDefinition, eventPublisher),
   tradingDefaults: new PostgresCrudStore(pool, tradingDefaultsDefinition, eventPublisher),
-  researchSettings: new PostgresCrudStore(
-    pool,
-    researchSettingsDefinition,
-    eventPublisher,
-  ),
   analysisSettings: new PostgresCrudStore(
     pool,
     analysisSettingsDefinition,
@@ -1308,64 +1203,6 @@ export const tradingDefaultsRecordSchema = {
     "name",
     "description",
     "defaultPositionNotionalUsd",
-    "enabled",
-    "createdAt",
-    "updatedAt",
-  ],
-} as const;
-
-const researchTimeframeWindowSchema = {
-  type: "object",
-  additionalProperties: false,
-  properties: {
-    "1m": { type: "integer", minimum: 1 },
-    "3m": { type: "integer", minimum: 1 },
-    "5m": { type: "integer", minimum: 1 },
-  },
-  required: ["1m", "3m", "5m"],
-} as const;
-
-export const researchSettingsBodySchema = {
-  type: "object",
-  additionalProperties: false,
-  properties: {
-    name: { type: "string", minLength: 1 },
-    description: { type: "string", minLength: 1 },
-    backtestingTimerange: researchTimeframeWindowSchema,
-    favorableTimeslotsBacktestingTimerange: researchTimeframeWindowSchema,
-    optimizationValidityPeriod: researchTimeframeWindowSchema,
-    enabled: { type: "boolean" },
-  },
-  required: [
-    "name",
-    "description",
-    "backtestingTimerange",
-    "favorableTimeslotsBacktestingTimerange",
-    "optimizationValidityPeriod",
-    "enabled",
-  ],
-} as const;
-
-export const researchSettingsRecordSchema = {
-  type: "object",
-  properties: {
-    id: { type: "string" },
-    name: { type: "string" },
-    description: { type: "string" },
-    backtestingTimerange: researchTimeframeWindowSchema,
-    favorableTimeslotsBacktestingTimerange: researchTimeframeWindowSchema,
-    optimizationValidityPeriod: researchTimeframeWindowSchema,
-    enabled: { type: "boolean" },
-    createdAt: { type: "string", format: "date-time" },
-    updatedAt: { type: "string", format: "date-time" },
-  },
-  required: [
-    "id",
-    "name",
-    "description",
-    "backtestingTimerange",
-    "favorableTimeslotsBacktestingTimerange",
-    "optimizationValidityPeriod",
     "enabled",
     "createdAt",
     "updatedAt",

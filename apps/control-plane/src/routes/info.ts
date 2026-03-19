@@ -77,7 +77,6 @@ export const registerInfoRoutes = (
           "strategies CRUD",
           "risk profiles CRUD",
           "trading defaults CRUD",
-          "research settings CRUD",
           "analysis settings CRUD",
           "config-change event publication",
           "resolved analysis settings runtime projection",

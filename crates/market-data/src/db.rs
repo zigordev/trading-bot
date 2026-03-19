@@ -1,7 +1,11 @@
 use anyhow::{Context, Result, bail};
 use chrono::{TimeZone, Utc};
+use futures_util::{StreamExt, TryStreamExt};
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
+use std::time::Duration;
+use tokio_util::codec::{FramedRead, LinesCodec};
+use tracing::warn;
 
 use crate::{
     config::AppConfig,
@@ -22,6 +26,8 @@ pub struct Database {
     historical_trade_retention_days: u64,
     historical_book_ticker_retention_days: u64,
 }
+
+type LineStream = futures_util::stream::BoxStream<'static, Result<String>>;
 
 #[derive(Debug, Deserialize)]
 struct HistoricalKlineRow {
@@ -49,17 +55,10 @@ struct HistoricalKlineRow {
 #[derive(Debug, Deserialize)]
 struct HistoricalTradeRow {
     pair_code: String,
-    symbol: String,
     aggregate_trade_id: i64,
-    ingestion_mode: String,
     price: String,
-    quantity: String,
     #[serde(rename = "latest_trade_time")]
     trade_time: i64,
-    market_maker: bool,
-    occurred_at_ms: i64,
-    #[serde(rename = "latest_updated_at_ms")]
-    updated_at_ms: i64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -86,7 +85,6 @@ struct StoredBacktestRunRow {
     pair_code: String,
     timeframe_code: String,
     strategy_name: String,
-    research_settings_name: String,
     window_kind: String,
     requested_start_time: i64,
     requested_end_time: i64,
@@ -165,15 +163,9 @@ struct HistoricalKlineWriteRow<'a> {
 #[derive(Serialize)]
 struct HistoricalTradeWriteRow<'a> {
     pair_code: &'a str,
-    symbol: &'a str,
     aggregate_trade_id: i64,
-    ingestion_mode: &'a str,
     price: &'a str,
-    quantity: &'a str,
     trade_time: i64,
-    market_maker: bool,
-    occurred_at_ms: i64,
-    updated_at_ms: i64,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -191,8 +183,6 @@ pub struct StoredBacktestRunWrite {
     pub pair_code: String,
     pub timeframe_code: String,
     pub strategy_name: String,
-    pub research_settings_name: String,
-    pub research_settings_id: String,
     pub window_kind: String,
     pub requested_start_time: i64,
     pub requested_end_time: i64,
@@ -204,7 +194,6 @@ pub struct StoredBacktestRunWrite {
     pub signal_count: i64,
     pub trade_count: i64,
     pub total_pnl_percent: f64,
-    pub closed_open_position_at_end: bool,
     pub response_json: String,
 }
 
@@ -217,7 +206,6 @@ pub struct StoredBacktestRunSummary {
     pub pair_code: String,
     pub timeframe_code: String,
     pub strategy_name: String,
-    pub research_settings_name: String,
     pub window_kind: String,
     pub requested_start_time: i64,
     pub requested_end_time: i64,
@@ -256,8 +244,6 @@ struct StoredBacktestRunWriteRow<'a> {
     pair_code: &'a str,
     timeframe_code: &'a str,
     strategy_name: &'a str,
-    research_settings_name: &'a str,
-    research_settings_id: &'a str,
     window_kind: &'a str,
     requested_start_time: i64,
     requested_end_time: i64,
@@ -269,14 +255,12 @@ struct StoredBacktestRunWriteRow<'a> {
     signal_count: i64,
     trade_count: i64,
     total_pnl_percent: f64,
-    closed_open_position_at_end: bool,
     response_json: &'a str,
 }
 
 #[derive(Serialize)]
 struct LatestBacktestRunWriteRow<'a> {
     analysis_setting_id: &'a str,
-    research_settings_name: &'a str,
     window_kind: &'a str,
     backtest_id: &'a str,
     finished_at_ms: i64,
@@ -291,7 +275,6 @@ struct LatestBacktestRunWriteRow<'a> {
     signal_count: i64,
     trade_count: i64,
     total_pnl_percent: f64,
-    closed_open_position_at_end: bool,
     response_json: &'a str,
     updated_at_ms: i64,
 }
@@ -303,8 +286,26 @@ impl Database {
         user: Option<String>,
         password: Option<String>,
     ) -> Result<Self> {
+        // Build a client that can more reliably handle very large ClickHouse responses:
+        // - Compression reduces bytes on the wire substantially.
+        // - Keepalive + idle pool tuning reduces connection churn.
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert(
+            reqwest::header::ACCEPT_ENCODING,
+            reqwest::header::HeaderValue::from_static("gzip, br"),
+        );
+
         Ok(Self {
-            client: reqwest::Client::builder().build()?,
+            // Use a generous timeout because backtest queries can stream
+            // millions of rows and take a while under load.
+            client: reqwest::Client::builder()
+                .default_headers(headers)
+                .tcp_keepalive(Some(Duration::from_secs(60)))
+                .pool_idle_timeout(Some(Duration::from_secs(120)))
+                .pool_max_idle_per_host(16)
+                .connect_timeout(Duration::from_secs(10))
+                .timeout(Duration::from_secs(3_600))
+                .build()?,
             base_url,
             database,
             user,
@@ -379,17 +380,11 @@ impl Database {
             CREATE TABLE IF NOT EXISTS {}.market_data_trades
             (
               pair_code LowCardinality(String),
-              symbol LowCardinality(String),
               aggregate_trade_id Int64,
-              ingestion_mode LowCardinality(String),
               price String,
-              quantity String,
-              trade_time Int64,
-              market_maker Bool,
-              occurred_at_ms Int64,
-              updated_at_ms Int64
+              trade_time Int64
             )
-            ENGINE = ReplacingMergeTree(updated_at_ms)
+            ENGINE = MergeTree
             PARTITION BY toYYYYMMDD(toDateTime(intDiv(trade_time, 1000)))
             ORDER BY (pair_code, trade_time, aggregate_trade_id)
             TTL toDateTime(intDiv(trade_time, 1000)) + INTERVAL {} DAY DELETE
@@ -443,16 +438,29 @@ impl Database {
             sql_ident(&self.database)
         ))
         .await?;
+        // Drop legacy/unneeded columns to minimize storage; backtesting only
+        // needs {pair_code, aggregate_trade_id, trade_time, price} plus
+        // `updated_at_ms` for ReplacingMergeTree.
+        for col in [
+            "symbol",
+            "ingestion_mode",
+            "quantity",
+            "market_maker",
+            "occurred_at_ms",
+        ] {
+            self.execute_sql(&format!(
+                "ALTER TABLE {}.market_data_trades DROP COLUMN IF EXISTS {}",
+                sql_ident(&self.database),
+                col
+            ))
+            .await?;
+        }
+
         self.ensure_ttl(
             "market_data_book_tickers",
             "toDateTime(intDiv(occurred_at_ms, 1000))",
             self.historical_book_ticker_retention_days,
         )
-        .await?;
-        self.execute_sql(&format!(
-            "ALTER TABLE {}.market_data_trades ADD COLUMN IF NOT EXISTS ingestion_mode LowCardinality(String) DEFAULT 'live'",
-            sql_ident(&self.database)
-        ))
         .await?;
 
         Ok(())
@@ -470,8 +478,6 @@ impl Database {
               pair_code LowCardinality(String),
               timeframe_code LowCardinality(String),
               strategy_name LowCardinality(String),
-              research_settings_name LowCardinality(String),
-              research_settings_id String,
               window_kind LowCardinality(String),
               requested_start_time Int64,
               requested_end_time Int64,
@@ -483,7 +489,6 @@ impl Database {
               signal_count Int64,
               trade_count Int64,
               total_pnl_percent Float64,
-              closed_open_position_at_end Bool,
               response_json String
             )
             ENGINE = MergeTree
@@ -502,6 +507,21 @@ impl Database {
             "toDateTime(intDiv(finished_at_ms, 1000))",
             retention_days,
         )
+        .await?;
+        self.execute_sql(&format!(
+            "ALTER TABLE {}.research_backtest_runs DROP COLUMN IF EXISTS closed_open_position_at_end",
+            sql_ident(&self.database)
+        ))
+        .await?;
+        self.execute_sql(&format!(
+            "ALTER TABLE {}.research_backtest_runs DROP COLUMN IF EXISTS research_settings_name",
+            sql_ident(&self.database)
+        ))
+        .await?;
+        self.execute_sql(&format!(
+            "ALTER TABLE {}.research_backtest_runs DROP COLUMN IF EXISTS research_settings_id",
+            sql_ident(&self.database)
+        ))
         .await?;
         self.execute_sql(&format!(
             "ALTER TABLE {}.research_backtest_runs ADD COLUMN IF NOT EXISTS duration_ms Int64 DEFAULT 0",
@@ -885,19 +905,11 @@ impl Database {
     }
 
     pub async fn upsert_trade(&self, event: &NormalizedTradeEvent) -> Result<()> {
-        let occurred_at_ms = parse_rfc3339_to_millis(&event.occurred_at)?;
-        let updated_at_ms = Utc::now().timestamp_millis();
         let row = HistoricalTradeWriteRow {
             pair_code: &event.pair_code,
-            symbol: &event.symbol,
             aggregate_trade_id: event.aggregate_trade_id,
-            ingestion_mode: &event.ingestion_mode,
             price: &event.price,
-            quantity: &event.quantity,
             trade_time: event.trade_time,
-            market_maker: event.market_maker,
-            occurred_at_ms,
-            updated_at_ms,
         };
 
         self.insert_json_each_row(
@@ -917,23 +929,13 @@ impl Database {
         }
 
         let mut payload = String::new();
-        // Use a single updated_at_ms for the batch; for historical backfill
-        // we do not need per-row precision here.
-        let updated_at_ms = Utc::now().timestamp_millis();
 
         for event in events {
-            let occurred_at_ms = parse_rfc3339_to_millis(&event.occurred_at)?;
             let row = HistoricalTradeWriteRow {
                 pair_code: &event.pair_code,
-                symbol: &event.symbol,
                 aggregate_trade_id: event.aggregate_trade_id,
-                ingestion_mode: &event.ingestion_mode,
                 price: &event.price,
-                quantity: &event.quantity,
                 trade_time: event.trade_time,
-                market_maker: event.market_maker,
-                occurred_at_ms,
-                updated_at_ms,
             };
             payload.push_str(&serde_json::to_string(&row)?);
             payload.push('\n');
@@ -973,8 +975,6 @@ impl Database {
             pair_code: &run.pair_code,
             timeframe_code: &run.timeframe_code,
             strategy_name: &run.strategy_name,
-            research_settings_name: &run.research_settings_name,
-            research_settings_id: &run.research_settings_id,
             window_kind: &run.window_kind,
             requested_start_time: run.requested_start_time,
             requested_end_time: run.requested_end_time,
@@ -986,7 +986,6 @@ impl Database {
             signal_count: run.signal_count,
             trade_count: run.trade_count,
             total_pnl_percent: run.total_pnl_percent,
-            closed_open_position_at_end: run.closed_open_position_at_end,
             response_json: &run.response_json,
         };
 
@@ -1012,7 +1011,6 @@ impl Database {
               pair_code,
               timeframe_code,
               strategy_name,
-              research_settings_name,
               window_kind,
               requested_start_time,
               requested_end_time,
@@ -1049,7 +1047,6 @@ impl Database {
               pair_code,
               timeframe_code,
               strategy_name,
-              research_settings_name,
               window_kind,
               requested_start_time,
               requested_end_time,
@@ -1177,15 +1174,9 @@ impl Database {
             r#"
             SELECT
               pair_code,
-              argMax(symbol, updated_at_ms) AS symbol,
               aggregate_trade_id,
-              argMax(ingestion_mode, updated_at_ms) AS ingestion_mode,
-              argMax(price, updated_at_ms) AS price,
-              argMax(quantity, updated_at_ms) AS quantity,
-              argMax(trade_time, updated_at_ms) AS latest_trade_time,
-              argMax(market_maker, updated_at_ms) AS market_maker,
-              argMax(occurred_at_ms, updated_at_ms) AS occurred_at_ms,
-              max(updated_at_ms) AS latest_updated_at_ms
+              any(price) AS price,
+              max(trade_time) AS latest_trade_time
             FROM {}.market_data_trades
             WHERE pair_code = '{}'
             GROUP BY pair_code, aggregate_trade_id
@@ -1217,28 +1208,16 @@ impl Database {
             r#"
             SELECT
               pair_code,
-              symbol,
               aggregate_trade_id,
-              ingestion_mode,
               price,
-              quantity,
-              latest_trade_time,
-              market_maker,
-              occurred_at_ms,
-              latest_updated_at_ms
+              latest_trade_time
             FROM
             (
               SELECT
                 pair_code,
-                argMax(symbol, updated_at_ms) AS symbol,
                 aggregate_trade_id,
-                argMax(ingestion_mode, updated_at_ms) AS ingestion_mode,
-                argMax(price, updated_at_ms) AS price,
-                argMax(quantity, updated_at_ms) AS quantity,
-                argMax(trade_time, updated_at_ms) AS latest_trade_time,
-                argMax(market_maker, updated_at_ms) AS market_maker,
-                argMax(occurred_at_ms, updated_at_ms) AS occurred_at_ms,
-                max(updated_at_ms) AS latest_updated_at_ms
+                any(price) AS price,
+                max(trade_time) AS latest_trade_time
               FROM {}.market_data_trades
               WHERE pair_code = '{}'
               {}
@@ -1252,6 +1231,60 @@ impl Database {
             sql_ident(&self.database),
             sql_string(pair_code),
             time_range,
+            safe_limit
+        );
+
+        self.query_trade_rows(&sql).await
+    }
+
+    pub async fn replay_trades_page(
+        &self,
+        pair_code: &str,
+        start_time: i64,
+        end_time: i64,
+        after_trade_time: Option<i64>,
+        after_aggregate_trade_id: Option<i64>,
+        limit: i64,
+    ) -> Result<Vec<PersistedTradeRecord>> {
+        let safe_limit = limit.clamp(1, 1_000_000);
+        let time_range = sql_numeric_time_range("trade_time", Some(start_time), Some(end_time));
+
+        let after_clause = match (after_trade_time, after_aggregate_trade_id) {
+            (Some(t), Some(id)) => format!(
+                "AND (latest_trade_time > {t} OR (latest_trade_time = {t} AND aggregate_trade_id > {id}))"
+            ),
+            _ => String::new(),
+        };
+
+        let sql = format!(
+            r#"
+            SELECT
+              pair_code,
+              aggregate_trade_id,
+              price,
+              latest_trade_time
+            FROM
+            (
+              SELECT
+                pair_code,
+                aggregate_trade_id,
+                any(price) AS price,
+                max(trade_time) AS latest_trade_time
+              FROM {}.market_data_trades
+              WHERE pair_code = '{}'
+              {}
+              GROUP BY pair_code, aggregate_trade_id
+            )
+            WHERE 1 = 1
+              {}
+            ORDER BY latest_trade_time ASC, aggregate_trade_id ASC
+            LIMIT {}
+            FORMAT JSONEachRow
+            "#,
+            sql_ident(&self.database),
+            sql_string(pair_code),
+            time_range,
+            after_clause,
             safe_limit
         );
 
@@ -1344,11 +1377,15 @@ impl Database {
     }
 
     async fn query_kline_rows(&self, sql: &str) -> Result<Vec<PersistedKlineRecord>> {
-        let body = self.query_text(sql).await?;
+        let mut lines = self.query_lines(sql).await?;
         let mut records = Vec::new();
 
-        for line in body.lines().filter(|line| !line.trim().is_empty()) {
-            let row = serde_json::from_str::<HistoricalKlineRow>(line)?;
+        while let Some(line) = lines.next().await {
+            let line = line?;
+            if line.trim().is_empty() {
+                continue;
+            }
+            let row = serde_json::from_str::<HistoricalKlineRow>(&line)?;
             records.push(PersistedKlineRecord {
                 pair_code: row.pair_code,
                 symbol: row.symbol,
@@ -1392,22 +1429,20 @@ impl Database {
     }
 
     async fn query_trade_rows(&self, sql: &str) -> Result<Vec<PersistedTradeRecord>> {
-        let body = self.query_text(sql).await?;
+        let mut lines = self.query_lines(sql).await?;
         let mut records = Vec::new();
 
-        for line in body.lines().filter(|line| !line.trim().is_empty()) {
-            let row = serde_json::from_str::<HistoricalTradeRow>(line)?;
+        while let Some(line) = lines.next().await {
+            let line = line?;
+            if line.trim().is_empty() {
+                continue;
+            }
+            let row = serde_json::from_str::<HistoricalTradeRow>(&line)?;
             records.push(PersistedTradeRecord {
                 pair_code: row.pair_code,
-                symbol: row.symbol,
                 aggregate_trade_id: row.aggregate_trade_id,
-                ingestion_mode: row.ingestion_mode,
                 price: row.price,
-                quantity: row.quantity,
                 trade_time: row.trade_time,
-                market_maker: row.market_maker,
-                occurred_at: millis_to_rfc3339(row.occurred_at_ms)?,
-                updated_at: millis_to_rfc3339(row.updated_at_ms)?,
             });
         }
 
@@ -1415,11 +1450,15 @@ impl Database {
     }
 
     async fn query_book_ticker_rows(&self, sql: &str) -> Result<Vec<PersistedBookTickerRecord>> {
-        let body = self.query_text(sql).await?;
+        let mut lines = self.query_lines(sql).await?;
         let mut records = Vec::new();
 
-        for line in body.lines().filter(|line| !line.trim().is_empty()) {
-            let row = serde_json::from_str::<HistoricalBookTickerRow>(line)?;
+        while let Some(line) = lines.next().await {
+            let line = line?;
+            if line.trim().is_empty() {
+                continue;
+            }
+            let row = serde_json::from_str::<HistoricalBookTickerRow>(&line)?;
             records.push(PersistedBookTickerRecord {
                 pair_code: row.pair_code,
                 symbol: row.symbol,
@@ -1437,11 +1476,15 @@ impl Database {
     }
 
     async fn query_backtest_rows(&self, sql: &str) -> Result<Vec<StoredBacktestRun>> {
-        let body = self.query_text(sql).await?;
+        let mut lines = self.query_lines(sql).await?;
         let mut records = Vec::new();
 
-        for line in body.lines().filter(|line| !line.trim().is_empty()) {
-            let row = serde_json::from_str::<StoredBacktestRunRow>(line)?;
+        while let Some(line) = lines.next().await {
+            let line = line?;
+            if line.trim().is_empty() {
+                continue;
+            }
+            let row = serde_json::from_str::<StoredBacktestRunRow>(&line)?;
             records.push(StoredBacktestRun {
                 summary: StoredBacktestRunSummary {
                     backtest_id: row.backtest_id,
@@ -1451,7 +1494,6 @@ impl Database {
                     pair_code: row.pair_code,
                     timeframe_code: row.timeframe_code,
                     strategy_name: row.strategy_name,
-                    research_settings_name: row.research_settings_name,
                     window_kind: row.window_kind,
                     requested_start_time: row.requested_start_time,
                     requested_end_time: row.requested_end_time,
@@ -1492,13 +1534,14 @@ impl Database {
         );
 
         let response = self
-            .request(
-                self.client
-                    .post(format!("{}/", self.base_url))
-                    .query(&[("query", sql.as_str())])
-                    .body(payload.to_string()),
-            )
-            .send()
+            .send_with_retries(|| {
+                self.request(
+                    self.client
+                        .post(format!("{}/", self.base_url))
+                        .query(&[("query", sql.as_str())])
+                        .body(payload.to_string()),
+                )
+            })
             .await?;
 
         self.ensure_success(response).await?;
@@ -1507,12 +1550,13 @@ impl Database {
 
     async fn execute_sql(&self, sql: &str) -> Result<()> {
         let response = self
-            .request(
-                self.client
-                    .post(format!("{}/", self.base_url))
-                    .body(sql.to_string()),
-            )
-            .send()
+            .send_with_retries(|| {
+                self.request(
+                    self.client
+                        .post(format!("{}/", self.base_url))
+                        .body(sql.to_string()),
+                )
+            })
             .await?;
         self.ensure_success(response).await?;
         Ok(())
@@ -1520,16 +1564,95 @@ impl Database {
 
     async fn query_text(&self, sql: &str) -> Result<String> {
         let response = self
-            .request(
-                self.client
-                    .post(format!("{}/", self.base_url))
-                    .query(&[("output_format_json_quote_64bit_integers", "0")])
-                    .body(sql.to_string()),
-            )
-            .send()
+            .send_with_retries(|| {
+                self.request(
+                    self.client
+                        .post(format!("{}/", self.base_url))
+                        .query(&[("output_format_json_quote_64bit_integers", "0")])
+                        .body(sql.to_string()),
+                )
+            })
             .await?;
         let response = self.ensure_success(response).await?;
         Ok(response.text().await?)
+    }
+
+    async fn query_lines(
+        &self,
+        sql: &str,
+    ) -> Result<LineStream> {
+        let response = self
+            .send_with_retries(|| {
+                self.request(
+                    self.client
+                        .post(format!("{}/", self.base_url))
+                        .query(&[("output_format_json_quote_64bit_integers", "0")])
+                        .body(sql.to_string()),
+                )
+            })
+            .await?;
+        let response = self.ensure_success(response).await?;
+
+        let byte_stream = response.bytes_stream().map_err(|e| {
+            std::io::Error::new(std::io::ErrorKind::ConnectionAborted, format!("{e}"))
+        });
+        let reader = tokio_util::io::StreamReader::new(byte_stream);
+        let framed = FramedRead::new(reader, LinesCodec::new());
+        Ok(framed
+            .map(|res| res.map_err(|e| anyhow::anyhow!(e)))
+            .boxed())
+    }
+
+    async fn query_bytes(&self, sql: &str) -> Result<Vec<u8>> {
+        let response = self
+            .send_with_retries(|| {
+                self.request(
+                    self.client
+                        .post(format!("{}/", self.base_url))
+                        .body(sql.to_string()),
+                )
+            })
+            .await?;
+        let response = self.ensure_success(response).await?;
+        Ok(response.bytes().await?.to_vec())
+    }
+
+    async fn send_with_retries<F>(&self, build: F) -> Result<reqwest::Response>
+    where
+        F: Fn() -> reqwest::RequestBuilder,
+    {
+        let mut delay_ms = 250u64;
+        for attempt in 0..4 {
+            match build().send().await {
+                Ok(resp) => return Ok(resp),
+                Err(err) => {
+                    let is_transient = err.is_connect() || err.is_timeout() || err.is_request();
+                    if attempt >= 3 || !is_transient {
+                        return Err(anyhow::anyhow!(
+                            "clickhouse request failed (attempt={} transient={} connect={} timeout={} request={}): {}",
+                            attempt + 1,
+                            is_transient,
+                            err.is_connect(),
+                            err.is_timeout(),
+                            err.is_request(),
+                            err
+                        ));
+                    }
+                    warn!(
+                        attempt = attempt + 1,
+                        transient = is_transient,
+                        connect = err.is_connect(),
+                        timeout = err.is_timeout(),
+                        request = err.is_request(),
+                        error = %err,
+                        "clickhouse request failed; retrying"
+                    );
+                    tokio::time::sleep(Duration::from_millis(delay_ms)).await;
+                    delay_ms = (delay_ms * 2).min(2_000);
+                }
+            }
+        }
+        bail!("unreachable: send_with_retries fell through")
     }
 
     async fn query_window_coverage(&self, sql: &str) -> Result<WindowCoverage> {

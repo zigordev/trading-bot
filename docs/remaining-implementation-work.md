@@ -222,32 +222,8 @@ curl -fsS -X POST "$BASE_URL/v1/timeframes" \
   }' | jq
 ```
 
-Create the `smoke` research profile:
-
-```bash
-curl -fsS -X POST "$BASE_URL/v1/research-settings" \
-  -H 'content-type: application/json' \
-  -d '{
-    "name": "smoke",
-    "description": "Smoke-test research profile sized to the current local historian window",
-    "backtestingTimerange": {
-      "1m": 21600000,
-      "3m": 43200000,
-      "5m": 86400000
-    },
-    "favorableTimeslotsBacktestingTimerange": {
-      "1m": 21600000,
-      "3m": 43200000,
-      "5m": 86400000
-    },
-    "optimizationValidityPeriod": {
-      "1m": 604800000,
-      "3m": 604800000,
-      "5m": 604800000
-    },
-    "enabled": true
-  }' | jq
-```
+Make sure `BACKTEST_TIMERANGE_MS_BY_TIMEFRAME` matches the window you want to replay
+(it is configured via `docker/.env.app.local`).
 
 Create analysis bindings:
 

@@ -43,7 +43,7 @@ test("createConfigChangeEventPublisher publishes the expected envelope directly 
 
   await publisher.start();
   await publisher.publish({
-    resourceType: "research_settings",
+    resourceType: "analysis_settings",
     operation: "updated",
     resourceId: "resource-1",
     data: { id: "resource-1", enabled: false },
@@ -63,11 +63,14 @@ test("createConfigChangeEventPublisher publishes the expected envelope directly 
   };
   assert.equal(sent.topic, testConfig.configChangeEventsTopic);
   assert.equal(sent.messages.length, 1);
-  assert.equal(sent.messages[0]?.key, "research_settings:resource-1");
+  assert.equal(
+    sent.messages[0]?.key,
+    "analysis_settings:resource-1",
+  );
 
   const payload = JSON.parse(String(sent.messages[0]?.value)) as ConfigChangeEventEnvelope;
   assert.equal(payload.eventType, "trading-bot.control-plane.config-changed.v1");
-  assert.equal(payload.resourceType, "research_settings");
+  assert.equal(payload.resourceType, "analysis_settings");
   assert.equal(payload.operation, "updated");
   assert.equal(payload.resourceId, "resource-1");
   assert.deepEqual(payload.data, { id: "resource-1", enabled: false });

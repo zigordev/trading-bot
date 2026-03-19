@@ -13,7 +13,7 @@ This repository currently contains the first migration slice:
 - runnable control-plane API
 - runnable Rust `market-data` service
 - runnable Rust `strategy-engine` service
-- PostgreSQL-backed CRUD for pairs, timeframes, strategies, risk profiles, trading defaults, research settings, and analysis settings
+- PostgreSQL-backed CRUD for pairs, timeframes, strategies, risk profiles, trading defaults, and analysis settings
 - direct config-change event publication into Redpanda
 - automatic Kafka topic provisioning for the control-plane, market-data, and strategy-engine contracts
 - a resolved runtime-config projection for active analysis settings
@@ -24,7 +24,7 @@ This repository currently contains the first migration slice:
 - runnable Rust `research-backtesting` service
 - direct ClickHouse kline and aggregate-trade replay for offline backtests
 - offline `emaCross` replay using the same strategy logic used by the live strategy-engine
-- `research_settings`-driven timeframe-specific backtest windows
+- env-driven timeframe-specific backtest windows
 - trade-tape-aware stop-loss, take-profit, reversal, fee, and slippage simulation in offline backtests
 - persisted ClickHouse-backed backtest run storage plus list/get retrieval
 - normalized signal publication into Redpanda
@@ -74,7 +74,6 @@ No live order execution has been added yet.
 - `/v1/strategies`
 - `/v1/risk-profiles`
 - `/v1/trading-defaults`
-- `/v1/research-settings`
 - `/v1/analysis-settings`
 - `/v1/runtime-config/analysis-settings`
 

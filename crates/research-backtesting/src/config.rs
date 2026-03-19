@@ -1,5 +1,5 @@
-use crate::models::BacktestWindowKind;
 use anyhow::{Context, Result, bail};
+use std::collections::BTreeMap;
 
 #[derive(Clone, Debug)]
 pub struct AppConfig {
@@ -10,6 +10,7 @@ pub struct AppConfig {
     pub control_plane_request_timeout_ms: u64,
     pub historical_store_host: String,
     pub historical_store_port: u16,
+    pub historical_store_native_port: u16,
     pub historical_store_database: String,
     pub historical_store_user: Option<String>,
     pub historical_store_password: Option<String>,
@@ -17,6 +18,11 @@ pub struct AppConfig {
     pub default_warmup_multiplier: usize,
     pub max_backtest_klines: usize,
     pub max_backtest_trades: usize,
+    /// Size of each ClickHouse replay page when loading trades for a backtest.
+    /// Large backtests may span tens of millions of trades; paging avoids single
+    /// gigantic HTTP responses that can be dropped by the client/server/network.
+    pub backtest_trade_replay_page_ms: u64,
+    pub backtest_trade_replay_page_rows: usize,
     pub max_backtest_book_tickers: usize,
     pub backtest_result_retention_days: u64,
     pub default_fee_bps: f64,
@@ -29,8 +35,10 @@ pub struct AppConfig {
     pub trade_coverage_tolerance_ms: u64,
     pub auto_backtest_enabled: bool,
     pub auto_backtest_interval_seconds: u64,
-    pub auto_backtest_research_settings_name: String,
-    pub auto_backtest_window_kind: BacktestWindowKind,
+    /// Backtest lookback duration window per timeframe (duration in milliseconds).
+    ///
+    /// Format: `1m=86400000,5m=604800000` (comma-separated `timeframeCode=durationMs` pairs).
+    pub backtesting_timerange_ms_by_timeframe: BTreeMap<String, i64>,
     pub otel_exporter_otlp_endpoint: Option<String>,
 }
 
@@ -66,21 +74,6 @@ fn parse_bool(key: &str, default: bool) -> Result<bool> {
     }
 }
 
-fn parse_backtest_window_kind(key: &str, default: &str) -> Result<BacktestWindowKind> {
-    let raw = env_or_default(key, default).to_ascii_lowercase();
-    match raw.as_str() {
-        "backtesting" => Ok(BacktestWindowKind::Backtesting),
-        "favourabletimeslots" | "favorabletimeslots" => Ok(BacktestWindowKind::FavorableTimeslots),
-        "favorableslots" | "favorable_timeslots" | "favorable-timeslots" => {
-            Ok(BacktestWindowKind::FavorableTimeslots)
-        }
-        "optimizationvalidity" | "optimization_validity" | "optimization-validity" => {
-            Ok(BacktestWindowKind::OptimizationValidity)
-        }
-        value => bail!("unknown value for {key}: {value}"),
-    }
-}
-
 fn parse_usize(key: &str, default: usize) -> Result<usize> {
     let raw = env_or_default(key, &default.to_string());
     let parsed = raw
@@ -111,6 +104,55 @@ pub fn load_config() -> Result<AppConfig> {
     let historical_store_user = std::env::var("HISTORICAL_STORE_USER").ok();
     let historical_store_password = std::env::var("HISTORICAL_STORE_PASSWORD").ok();
 
+    let default_backtesting_timerange_ms_by_timeframe = BTreeMap::from([
+        ("1m".to_string(), 600_000_000),
+        ("3m".to_string(), 1_800_000_000),
+        ("5m".to_string(), 3_000_000_000),
+    ]);
+
+    let parse_timerange_map = |raw: String| -> Result<BTreeMap<String, i64>> {
+        let mut map = BTreeMap::<String, i64>::new();
+        let raw = raw.trim();
+        if raw.is_empty() {
+            return Ok(default_backtesting_timerange_ms_by_timeframe.clone());
+        }
+
+        for entry in raw.split(',') {
+            let entry = entry.trim();
+            if entry.is_empty() {
+                continue;
+            }
+            let Some((k, v)) = entry.split_once('=') else {
+                bail!(
+                    "invalid BACKTEST_TIMERANGE_MS_BY_TIMEFRAME entry '{entry}', expected 'timeframeCode=durationMs'"
+                );
+            };
+            let key = k.trim().to_string();
+            let duration_ms: i64 = v.trim().parse().with_context(|| {
+                format!(
+                    "invalid durationMs for BACKTEST_TIMERANGE_MS_BY_TIMEFRAME entry '{entry}'"
+                )
+            })?;
+            if duration_ms <= 0 {
+                bail!(
+                    "invalid non-positive durationMs={duration_ms} for BACKTEST_TIMERANGE_MS_BY_TIMEFRAME entry '{entry}'"
+                );
+            }
+            map.insert(key, duration_ms);
+        }
+
+        if map.is_empty() {
+            Ok(default_backtesting_timerange_ms_by_timeframe)
+        } else {
+            Ok(map)
+        }
+    };
+
+    let backtesting_timerange_ms_by_timeframe = {
+        let raw = std::env::var("BACKTEST_TIMERANGE_MS_BY_TIMEFRAME").unwrap_or_default();
+        parse_timerange_map(raw)?
+    };
+
     Ok(AppConfig {
         app_env: env_or_default("APP_ENV", "local"),
         service_name: env_or_default("SERVICE_NAME", "trading-bot-research-backtesting"),
@@ -125,6 +167,7 @@ pub fn load_config() -> Result<AppConfig> {
             "trading-bot-historical-store",
         ),
         historical_store_port: parse_u16("HISTORICAL_STORE_PORT", 8123)?,
+        historical_store_native_port: parse_u16("HISTORICAL_STORE_NATIVE_PORT", 9000)?,
         historical_store_database: env_or_default(
             "HISTORICAL_STORE_DATABASE",
             "trading_bot_market_data",
@@ -135,6 +178,8 @@ pub fn load_config() -> Result<AppConfig> {
         default_warmup_multiplier: parse_usize("BACKTEST_WARMUP_MULTIPLIER", 5)?,
         max_backtest_klines: parse_usize("BACKTEST_MAX_KLINES", 100000)?,
         max_backtest_trades: parse_usize("BACKTEST_MAX_TRADES", 1000000)?,
+        backtest_trade_replay_page_ms: parse_u64("BACKTEST_TRADE_REPLAY_PAGE_MS", 3_600_000)?,
+        backtest_trade_replay_page_rows: parse_usize("BACKTEST_TRADE_REPLAY_PAGE_ROWS", 200_000)?,
         max_backtest_book_tickers: parse_usize("BACKTEST_MAX_BOOK_TICKERS", 1000000)?,
         backtest_result_retention_days: parse_u64("BACKTEST_RESULT_RETENTION_DAYS", 365)?,
         default_fee_bps: parse_f64("BACKTEST_FEE_BPS", 0.0)?,
@@ -142,14 +187,7 @@ pub fn load_config() -> Result<AppConfig> {
         trade_coverage_tolerance_ms: parse_u64("BACKTEST_TRADE_COVERAGE_TOLERANCE_MS", 5_000)?,
         auto_backtest_enabled: parse_bool("AUTO_BACKTEST_ENABLED", false)?,
         auto_backtest_interval_seconds: parse_u64("AUTO_BACKTEST_INTERVAL_SECONDS", 3600)?,
-        auto_backtest_research_settings_name: env_or_default(
-            "AUTO_BACKTEST_RESEARCH_SETTINGS_NAME",
-            "default",
-        ),
-        auto_backtest_window_kind: parse_backtest_window_kind(
-            "AUTO_BACKTEST_WINDOW_KIND",
-            "backtesting",
-        )?,
+        backtesting_timerange_ms_by_timeframe,
         otel_exporter_otlp_endpoint: std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT").ok(),
     })
 }
@@ -164,17 +202,13 @@ mod tests {
             std::env::remove_var("SERVICE_NAME");
             std::env::remove_var("BACKTEST_WARMUP_MULTIPLIER");
             std::env::remove_var("AUTO_BACKTEST_ENABLED");
+            std::env::remove_var("BACKTEST_TIMERANGE_MS_BY_TIMEFRAME");
         }
 
         let config = load_config().expect("config should load");
         assert_eq!(config.service_name, "trading-bot-research-backtesting");
         assert_eq!(config.auto_backtest_enabled, false);
         assert_eq!(config.auto_backtest_interval_seconds, 3600);
-        assert_eq!(config.auto_backtest_research_settings_name, "default");
-        assert!(matches!(
-            config.auto_backtest_window_kind,
-            BacktestWindowKind::Backtesting
-        ));
         assert_eq!(config.default_warmup_multiplier, 5);
         assert_eq!(config.max_backtest_trades, 1_000_000);
         assert_eq!(config.max_backtest_book_tickers, 1_000_000);
