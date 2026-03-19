@@ -1,4 +1,6 @@
+use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
 
 use anyhow::{Context, Result, bail};
@@ -79,6 +81,20 @@ pub struct ReadinessChecks {
 #[derive(Clone, Debug)]
 struct CompletedBacktest {
     response: BacktestResponse,
+}
+
+#[derive(Clone)]
+struct TradeWindowCache {
+    pair_code: String,
+    start_time: i64,
+    end_time: i64,
+    rows: Arc<Vec<HistoricalTradeRecord>>,
+}
+
+impl TradeWindowCache {
+    fn contains_window(&self, pair_code: &str, start_time: i64, end_time: i64) -> bool {
+        self.pair_code == pair_code && self.start_time <= start_time && self.end_time >= end_time
+    }
 }
 
 impl ResearchBacktestingService {
@@ -224,6 +240,7 @@ impl ResearchBacktestingService {
             self.inner.config.default_fee_bps,
             self.inner.config.default_slippage_bps,
             started_at.elapsed().as_millis() as i64,
+            None,
         )
         .await?;
         let persisted_run = persisted_backtest_run(&completed.response)?;
@@ -300,29 +317,57 @@ impl ResearchBacktestingService {
             return Ok(0);
         }
 
+        let mut analyses_by_pair: HashMap<String, Vec<ResolvedAnalysisSettingsRecord>> =
+            HashMap::new();
+        for analysis in analyses {
+            analyses_by_pair
+                .entry(analysis.pair_code.clone())
+                .or_default()
+                .push(analysis);
+        }
+
         let mut ran = 0usize;
         let mut failed = 0usize;
 
-        for analysis in analyses {
-            let request = BacktestRequest {
-                analysis_setting_id: analysis.id.clone(),
-                start_time: None,
-                end_time: None,
-                warmup_candles: None,
-            };
-            if let Err(error) = self.run_backtest(request).await {
-                failed += 1;
-                warn!(
-                    error = %error,
-                    analysis_setting_id = %analysis.id,
-                    pair_code = %analysis.pair_code,
-                    timeframe_code = %analysis.timeframe_code,
-                    strategy_name = %analysis.strategy_name,
-                    "scheduled backtest failed"
-                );
-            } else {
-                ran += 1;
+        for (_, mut pair_analyses) in analyses_by_pair {
+            pair_analyses.sort_by_key(|analysis| {
+                std::cmp::Reverse(
+                    self.inner
+                        .config
+                        .backtesting_timerange_ms_by_timeframe
+                        .get(&analysis.timeframe_code)
+                        .copied()
+                        .unwrap_or_default(),
+                )
+            });
+
+            let mut trade_cache: Option<TradeWindowCache> = None;
+
+            for analysis in pair_analyses {
+                let request = BacktestRequest {
+                    analysis_setting_id: analysis.id.clone(),
+                    start_time: None,
+                    end_time: None,
+                    warmup_candles: None,
+                };
+                if let Err(error) = self
+                    .run_backtest_with_trade_cache(request, &mut trade_cache)
+                    .await
+                {
+                    failed += 1;
+                    warn!(
+                        error = %error,
+                        analysis_setting_id = %analysis.id,
+                        pair_code = %analysis.pair_code,
+                        timeframe_code = %analysis.timeframe_code,
+                        strategy_name = %analysis.strategy_name,
+                        "scheduled backtest failed"
+                    );
+                } else {
+                    ran += 1;
+                }
             }
+
         }
 
         info!(
@@ -333,6 +378,98 @@ impl ResearchBacktestingService {
         );
 
         Ok(ran)
+    }
+
+    async fn run_backtest_with_trade_cache(
+        &self,
+        request: BacktestRequest,
+        trade_cache: &mut Option<TradeWindowCache>,
+    ) -> Result<BacktestResponse> {
+        let started_at = Instant::now();
+        if let Err(error) = self.refresh_dependencies().await {
+            self.inner
+                .metrics
+                .backtest_runs_total
+                .with_label_values(&["error"])
+                .inc();
+            return Err(error);
+        }
+
+        let resolved = self.resolve_input(&request).await?;
+        let cached_trades = match trade_cache {
+            Some(existing)
+                if existing.contains_window(
+                    &resolved.analysis.pair_code,
+                    resolved.replay_trade_start_time,
+                    resolved.replay_trade_end_time,
+                ) =>
+            {
+                Some(existing.rows.clone())
+            }
+            _ => {
+                let rows = fetch_trade_window_cache(
+                    &self.inner.historical_store,
+                    &resolved.analysis.pair_code,
+                    resolved.replay_trade_start_time,
+                    resolved.replay_trade_end_time,
+                    self.inner.config.backtest_trade_replay_page_rows,
+                    resolved.replay_trade_max_rows,
+                )
+                .await?;
+                let rows = Arc::new(rows);
+                *trade_cache = Some(TradeWindowCache {
+                    pair_code: resolved.analysis.pair_code.clone(),
+                    start_time: resolved.replay_trade_start_time,
+                    end_time: resolved.replay_trade_end_time,
+                    rows: rows.clone(),
+                });
+                Some(rows)
+            }
+        };
+
+        let completed = execute_backtest(
+            &self.inner.config.service_name,
+            resolved,
+            self.inner.historical_store.clone(),
+            self.inner.config.backtest_trade_replay_page_rows,
+            self.inner.config.default_fee_bps,
+            self.inner.config.default_slippage_bps,
+            started_at.elapsed().as_millis() as i64,
+            cached_trades,
+        )
+        .await?;
+        let persisted_run = persisted_backtest_run(&completed.response)?;
+        self.inner
+            .historical_store
+            .insert_backtest_run(&persisted_run)
+            .await?;
+
+        self.inner
+            .metrics
+            .backtest_runs_total
+            .with_label_values(&["success"])
+            .inc();
+        self.inner
+            .metrics
+            .replayed_klines_total
+            .inc_by(completed.response.dataset.replay_kline_count as u64);
+        self.inner
+            .metrics
+            .emitted_signals_total
+            .inc_by(completed.response.summary.signal_count as u64);
+        self.inner
+            .metrics
+            .simulated_trades_total
+            .inc_by(completed.response.summary.trade_count as u64);
+
+        {
+            let mut status = self.inner.status.write().await;
+            status.last_backtest = Some(map_last_backtest_status(persisted_run_summary(
+                &persisted_run,
+            ))?);
+        }
+
+        Ok(completed.response)
     }
 
     async fn resolve_input(&self, request: &BacktestRequest) -> Result<ResolvedBacktestInput> {
@@ -820,6 +957,101 @@ fn expected_candle_count(start_time: i64, end_time: i64, period_ms: i64) -> Resu
     Ok(count.max(1) as usize)
 }
 
+async fn fetch_trade_window_cache(
+    historical_store: &Database,
+    pair_code: &str,
+    start_time: i64,
+    end_time: i64,
+    page_rows: usize,
+    max_rows: usize,
+) -> Result<Vec<HistoricalTradeRecord>> {
+    let mut rows = Vec::new();
+    let mut after: Option<(i64, i64)> = None;
+    let page_rows = page_rows.clamp(1, 1_000_000) as i64;
+    let mut page = 0usize;
+    let started_at = Instant::now();
+
+    info!(
+        pair_code = %pair_code,
+        requested_start_time = start_time,
+        requested_end_time = end_time,
+        max_rows = max_rows,
+        "shared trade cache prefetch started"
+    );
+
+    while rows.len() < max_rows {
+        let remaining = (max_rows - rows.len()) as i64;
+        let limit = page_rows.min(remaining).max(1);
+        let (after_t, after_id) = after.unzip();
+        let chunk = historical_store
+            .replay_trades_page(
+                pair_code,
+                start_time,
+                end_time,
+                after_t,
+                after_id,
+                limit,
+            )
+            .await?;
+        if chunk.is_empty() {
+            break;
+        }
+        page += 1;
+        after = chunk.last().map(|row| (row.trade_time, row.aggregate_trade_id));
+        rows.extend(chunk);
+
+        if page == 1 || page % 5 == 0 {
+            info!(
+                pair_code = %pair_code,
+                page = page,
+                rows_cached = rows.len(),
+                elapsed_ms = started_at.elapsed().as_millis() as u64,
+                "shared trade cache prefetch progress"
+            );
+        }
+    }
+
+    info!(
+        pair_code = %pair_code,
+        rows_cached = rows.len(),
+        elapsed_ms = started_at.elapsed().as_millis() as u64,
+        "shared trade cache prefetch completed"
+    );
+
+    Ok(rows)
+}
+
+fn replay_trades_page_from_cache(
+    trades: &[HistoricalTradeRecord],
+    start_time: i64,
+    end_time: i64,
+    after: Option<(i64, i64)>,
+    limit: usize,
+) -> Vec<HistoricalTradeRecord> {
+    if limit == 0 {
+        return Vec::new();
+    }
+
+    let start_idx = trades.partition_point(|row| row.trade_time < start_time);
+    let end_idx = trades.partition_point(|row| row.trade_time < end_time);
+    if start_idx >= end_idx {
+        return Vec::new();
+    }
+
+    let cursor_idx = match after {
+        Some((after_time, after_id)) => trades.partition_point(|row| {
+            row.trade_time < after_time
+                || (row.trade_time == after_time && row.aggregate_trade_id <= after_id)
+        }),
+        None => start_idx,
+    }
+    .max(start_idx)
+    .min(end_idx);
+
+    let take_until = cursor_idx.saturating_add(limit).min(end_idx);
+    trades[cursor_idx..take_until].to_vec()
+}
+
 async fn execute_backtest(
     service_name: &str,
     input: ResolvedBacktestInput,
@@ -828,6 +1060,7 @@ async fn execute_backtest(
     fee_bps: f64,
     slippage_bps: f64,
     duration_ms: i64,
+    cached_trades: Option<Arc<Vec<HistoricalTradeRecord>>>,
 ) -> Result<CompletedBacktest> {
     let backtest_id = Uuid::new_v4().to_string();
     let finished_at = Utc::now().to_rfc3339();
@@ -860,25 +1093,102 @@ async fn execute_backtest(
 
     let page_rows = trade_page_rows.clamp(1, 1_000_000) as i64;
     let pair_code = input.analysis.pair_code.clone();
+    let timeframe_code = input.analysis.timeframe_code.clone();
     let start_time = input.replay_trade_start_time;
     let end_time = input.replay_trade_end_time;
     let max_rows = input.replay_trade_max_rows;
+    let retrieval_started_at = Instant::now();
+    let retrieval_window_ms = end_time.saturating_sub(start_time).max(1);
+    let retrieval_backtest_id = backtest_id.clone();
+    let retrieval_page_count = Arc::new(AtomicUsize::new(0));
+    let retrieval_rows_total = Arc::new(AtomicUsize::new(0));
+
+    info!(
+        backtest_id = %retrieval_backtest_id,
+        pair_code = %pair_code,
+        timeframe_code = %timeframe_code,
+        requested_start_time = start_time,
+        requested_end_time = end_time,
+        page_rows = page_rows,
+        max_rows = max_rows,
+        "backtest trade retrieval started"
+    );
 
     let fetch_page = move |after: Option<(i64, i64)>, remaining: i64| {
         let db = historical_store.clone();
         let pair_code = pair_code.clone();
+        let timeframe_code = timeframe_code.clone();
+        let retrieval_backtest_id = retrieval_backtest_id.clone();
+        let retrieval_page_count = retrieval_page_count.clone();
+        let retrieval_rows_total = retrieval_rows_total.clone();
+        let cached_trades = cached_trades.clone();
         let limit = page_rows.min(remaining).max(1);
         Box::pin(async move {
-            let (after_t, after_id) = after.unzip();
-            db.replay_trades_page(
-                &pair_code,
-                start_time,
-                end_time,
-                after_t,
-                after_id,
-                limit,
-            )
-            .await
+            let page = match cached_trades.as_ref() {
+                Some(trades) => replay_trades_page_from_cache(
+                    trades,
+                    start_time,
+                    end_time,
+                    after,
+                    limit as usize,
+                ),
+                None => {
+                    let (after_t, after_id) = after.unzip();
+                    db.replay_trades_page(
+                        &pair_code,
+                        start_time,
+                        end_time,
+                        after_t,
+                        after_id,
+                        limit,
+                    )
+                    .await?
+                }
+            };
+
+            if page.is_empty() {
+                info!(
+                    backtest_id = %retrieval_backtest_id,
+                    pair_code = %pair_code,
+                    timeframe_code = %timeframe_code,
+                    pages_fetched = retrieval_page_count.load(Ordering::Relaxed),
+                    rows_fetched = retrieval_rows_total.load(Ordering::Relaxed),
+                    elapsed_ms = retrieval_started_at.elapsed().as_millis() as u64,
+                    "backtest trade retrieval reached end of dataset"
+                );
+                return Ok(page);
+            }
+
+            let page_count = retrieval_page_count.fetch_add(1, Ordering::Relaxed) + 1;
+            let rows_fetched = retrieval_rows_total.fetch_add(page.len(), Ordering::Relaxed) + page.len();
+            let first_trade_time = page.first().map(|row| row.trade_time).unwrap_or(start_time);
+            let last_trade_time = page.last().map(|row| row.trade_time).unwrap_or(start_time);
+            let progressed_ms = last_trade_time
+                .saturating_sub(start_time)
+                .clamp(0, retrieval_window_ms);
+            let window_progress_percent = (progressed_ms as f64 / retrieval_window_ms as f64) * 100.0;
+            let remaining_row_budget = remaining.saturating_sub(page.len() as i64);
+
+            // Keep logs readable: first page + every 5 pages + short page.
+            if page_count == 1 || page_count % 5 == 0 || (page.len() as i64) < limit
+            {
+                info!(
+                    backtest_id = %retrieval_backtest_id,
+                    pair_code = %pair_code,
+                    timeframe_code = %timeframe_code,
+                    page = page_count,
+                    page_rows = page.len(),
+                    rows_fetched = rows_fetched,
+                    first_trade_time = first_trade_time,
+                    last_trade_time = last_trade_time,
+                    window_progress_percent = window_progress_percent,
+                    remaining_row_budget = remaining_row_budget,
+                    elapsed_ms = retrieval_started_at.elapsed().as_millis() as u64,
+                    "backtest trade retrieval progress"
+                );
+            }
+
+            Ok(page)
         }) as std::pin::Pin<
             Box<
                 dyn std::future::Future<Output = Result<Vec<HistoricalTradeRecord>>> + Send,
