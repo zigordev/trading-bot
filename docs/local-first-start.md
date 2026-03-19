@@ -172,10 +172,8 @@ Set or review these values:
   - set `true` to run all enabled analysis-settings backtests on a schedule
 - `AUTO_BACKTEST_INTERVAL_SECONDS`
   - keep `3600` for hourly scheduling
-- `AUTO_BACKTEST_RESEARCH_SETTINGS_NAME`
-  - keep `default` unless you want another `research_settings` profile for scheduled runs
-- `AUTO_BACKTEST_WINDOW_KIND`
-  - keep `backtesting` unless you want to use another backtest window kind (`favorableTimeslots` or `optimizationValidity`)
+- `BACKTEST_TIMERANGE_MS_BY_TIMEFRAME`
+  - comma-separated timeframeCode=durationMs pairs, e.g. `1m=86400000,5m=604800000`
 
 Leave these placeholders as they are:
 
@@ -288,8 +286,8 @@ What happens after a successful config mutation now:
   `market_data_trades` and `market_data_book_tickers`
 - the strategy-engine consumes the same config-change topic, refreshes its active analyses, warms
   them from `market-data`, and waits for live closed kline events before emitting signals
-- the research-backtesting service reads `research-settings` and runtime-config on demand, then
-  replays historical klines directly from ClickHouse through the shared `emaCross` logic
+- the research-backtesting service reads runtime-config on demand, then
+  replays historical klines directly from ClickHouse through the shared `emaCross` logic (time window duration comes from `BACKTEST_TIMERANGE_MS_BY_TIMEFRAME`)
 - completed backtest runs are also stored in ClickHouse table `research_backtest_runs`
 
 You do not need to create the Redpanda topics manually for the default local setup. The
@@ -410,34 +408,9 @@ Expected results:
 ## 11. Backtesting Smoke Test
 
 Use this when you want to verify that the new offline replay path reads from ClickHouse, honors
-`research_settings`, and reuses the live `emaCross` logic.
+`BACKTEST_TIMERANGE_MS_BY_TIMEFRAME`, and reuses the live `emaCross` logic.
 
-1. Create one research-settings profile if you do not already have one:
-
-```bash
-curl -fsS -X POST http://localhost:3020/v1/research-settings \
-  -H 'content-type: application/json' \
-  -d '{
-    "name": "default",
-    "description": "Default research profile",
-    "backtestingTimerange": {
-      "1m": 86400000,
-      "3m": 259200000,
-      "5m": 604800000
-    },
-    "favorableTimeslotsBacktestingTimerange": {
-      "1m": 86400000,
-      "3m": 259200000,
-      "5m": 604800000
-    },
-    "optimizationValidityPeriod": {
-      "1m": 2592000000,
-      "3m": 2592000000,
-      "5m": 2592000000
-    },
-    "enabled": true
-  }' | jq
-```
+1. Ensure `BACKTEST_TIMERANGE_MS_BY_TIMEFRAME` is set (it is already present in `docker/.env.app.local`).
 
 2. Run a backtest against an existing active analysis setting:
 
@@ -448,8 +421,7 @@ curl -fsS -X POST http://localhost:3050/v1/backtests \
   -H 'content-type: application/json' \
   -d "{
     \"analysisSettingId\": \"${ANALYSIS_SETTING_ID}\",
-    \"researchSettingsName\": \"default\",
-    \"windowKind\": \"backtesting\"
+    \"warmupCandles\": null
   }" | jq
 ```
 
@@ -467,8 +439,6 @@ curl -fsS -X POST http://localhost:3050/v1/backtests \
   -H 'content-type: application/json' \
   -d "{
     \"analysisSettingId\": \"${ANALYSIS_SETTING_ID}\",
-    \"researchSettingsName\": \"default\",
-    \"windowKind\": \"backtesting\",
     \"startTime\": ${START_TIME_MS},
     \"endTime\": ${END_TIME_MS}
   }" | jq
@@ -482,7 +452,7 @@ Expected results:
 - `dataset.replayKlineCount` is non-zero
 - `dataset.replayTradeCount` is non-zero
 - `dataset.replayBookTickerCount` is non-zero when quote coverage exists for the window
-- `timeWindow.windowSource` is `researchSettings` for the first request and `request` for the second
+- `timeWindow.windowSource` is `env` for the first request and `request` for the second
 - `signals` contains offline EMA crossover events when the replay window has enough movement
 - `trades` contains simulated entries/exits resolved from best bid/ask quotes with aggregate-trade fallback
 - `summary.totalPnlUsd` reflects the quote-aware execution model for that window
@@ -495,8 +465,6 @@ BACKTEST_ID="$(curl -fsS -X POST http://localhost:3050/v1/backtests \
   -H 'content-type: application/json' \
   -d "{
     \"analysisSettingId\": \"${ANALYSIS_SETTING_ID}\",
-    \"researchSettingsName\": \"default\",
-    \"windowKind\": \"backtesting\",
     \"startTime\": ${START_TIME_MS},
     \"endTime\": ${END_TIME_MS}
   }" | jq -r '.backtestId')"
@@ -511,7 +479,7 @@ docker compose --env-file docker/.env.app.local -f docker/compose.app.local.yml 
 
 Retention rule for this implemented slice:
 
-- required history = `research_settings` window for the timeframe + indicator warmup +
+- required history = `BACKTEST_TIMERANGE_MS_BY_TIMEFRAME` window for the timeframe + indicator warmup +
   aggregate-trade coverage + book-ticker coverage for the same replay window
 - default warmup = `slowPeriod * BACKTEST_WARMUP_MULTIPLIER`
 - because the window values are milliseconds and keyed by timeframe, the amount of data required

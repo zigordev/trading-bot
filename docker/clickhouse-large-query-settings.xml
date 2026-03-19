@@ -1,0 +1,24 @@
+<yandex>
+    <profiles>
+        <default>
+            <!-- Allow longer-running queries -->
+            <max_execution_time>600</max_execution_time>
+
+            <!-- Allow large results (bytes and rows); 0 means unlimited -->
+            <max_result_rows>0</max_result_rows>
+            <max_result_bytes>0</max_result_bytes>
+
+            <!-- Per-query memory limit (here ~10 GiB, tune to your machine) -->
+            <max_memory_usage>10737418240</max_memory_usage>
+
+            <!-- Slightly larger block size for reads -->
+            <max_block_size>65536</max_block_size>
+
+            <!-- HTTP timeouts/keepalive for slow large responses -->
+            <http_receive_timeout>600</http_receive_timeout>
+            <http_send_timeout>600</http_send_timeout>
+            <http_keep_alive_timeout>600</http_keep_alive_timeout>
+        </default>
+    </profiles>
+</yandex>
+

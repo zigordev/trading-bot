@@ -9,8 +9,6 @@ import {
   pairRecordSchema,
   riskProfileBodySchema,
   riskProfileRecordSchema,
-  researchSettingsBodySchema,
-  researchSettingsRecordSchema,
   strategyBodySchema,
   strategyRecordSchema,
   tradingDefaultsBodySchema,
@@ -266,15 +264,6 @@ export const registerConfigurationRoutes = (
     bodySchema: tradingDefaultsBodySchema,
     recordSchema: tradingDefaultsRecordSchema,
     store: stores.tradingDefaults,
-  });
-
-  registerCrudRoutes(app, {
-    path: "/v1/research-settings",
-    tag: "research-settings",
-    entityName: "research settings profile",
-    bodySchema: researchSettingsBodySchema,
-    recordSchema: researchSettingsRecordSchema,
-    store: stores.researchSettings,
   });
 
   registerCrudRoutes(app, {

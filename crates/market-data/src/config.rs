@@ -1,4 +1,5 @@
 use anyhow::{Context, Result, bail};
+use tracing::warn;
 
 #[derive(Clone, Debug)]
 pub struct AppConfig {
@@ -7,6 +8,7 @@ pub struct AppConfig {
     pub port: u16,
     pub historical_store_host: String,
     pub historical_store_port: u16,
+    pub historical_store_native_port: u16,
     pub historical_store_database: String,
     pub historical_store_user: Option<String>,
     pub historical_store_password: Option<String>,
@@ -108,7 +110,7 @@ pub fn load_config() -> Result<AppConfig> {
         .or_else(|_| std::env::var("MARKET_DATA_EVENTS_TOPIC"))
         .unwrap_or_else(|_| "trading-bot.market-data.klines.v1".to_string());
 
-    Ok(AppConfig {
+    let mut config = AppConfig {
         app_env: env_or_default("APP_ENV", "local"),
         service_name: env_or_default("SERVICE_NAME", "trading-bot-market-data"),
         port: parse_u16("PORT", 8090)?,
@@ -117,6 +119,7 @@ pub fn load_config() -> Result<AppConfig> {
             "trading-bot-historical-store",
         ),
         historical_store_port: parse_u16("HISTORICAL_STORE_PORT", 8123)?,
+        historical_store_native_port: parse_u16("HISTORICAL_STORE_NATIVE_PORT", 9000)?,
         historical_store_database: env_or_default(
             "HISTORICAL_STORE_DATABASE",
             "trading_bot_market_data",
@@ -196,7 +199,40 @@ pub fn load_config() -> Result<AppConfig> {
         )?,
         market_event_dedup_capacity: parse_usize("MARKET_EVENT_DEDUP_CAPACITY", 10000)?,
         otel_exporter_otlp_endpoint: std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT").ok(),
-    })
+    };
+
+    // Guardrail: extremely large (concurrency × insert_batch_rows) settings can easily OOM the
+    // market-data process because each in-flight chunk buffers rows before flushing to ClickHouse.
+    //
+    // We prefer to *reduce concurrency* automatically (with a clear log) rather than crash-looping
+    // the container and destabilizing the rest of the stack.
+    const MAX_IN_FLIGHT_TRADE_ROWS: usize = 500_000;
+    if config.historical_trade_backfill_insert_batch_rows > MAX_IN_FLIGHT_TRADE_ROWS {
+        warn!(
+            historical_trade_backfill_insert_batch_rows =
+                config.historical_trade_backfill_insert_batch_rows,
+            max_in_flight_trade_rows = MAX_IN_FLIGHT_TRADE_ROWS,
+            "HISTORICAL_TRADE_BACKFILL_INSERT_BATCH_ROWS is extremely large; consider lowering it to avoid OOM"
+        );
+    }
+    let in_flight_trade_rows = config
+        .historical_backfill_max_concurrency
+        .saturating_mul(config.historical_trade_backfill_insert_batch_rows);
+    if in_flight_trade_rows > MAX_IN_FLIGHT_TRADE_ROWS {
+        let effective = (MAX_IN_FLIGHT_TRADE_ROWS / config.historical_trade_backfill_insert_batch_rows)
+            .max(1);
+        warn!(
+            configured_historical_backfill_max_concurrency = config.historical_backfill_max_concurrency,
+            historical_trade_backfill_insert_batch_rows = config.historical_trade_backfill_insert_batch_rows,
+            in_flight_trade_rows = in_flight_trade_rows,
+            max_in_flight_trade_rows = MAX_IN_FLIGHT_TRADE_ROWS,
+            effective_historical_backfill_max_concurrency = effective,
+            "backfill settings risk OOM; lowering HISTORICAL_BACKFILL_MAX_CONCURRENCY"
+        );
+        config.historical_backfill_max_concurrency = effective;
+    }
+
+    Ok(config)
 }
 
 #[cfg(test)]
@@ -208,6 +244,7 @@ mod tests {
         unsafe {
             std::env::remove_var("HISTORICAL_STORE_HOST");
             std::env::remove_var("HISTORICAL_STORE_PORT");
+            std::env::remove_var("HISTORICAL_STORE_NATIVE_PORT");
             std::env::remove_var("HISTORICAL_STORE_DATABASE");
             std::env::remove_var("HISTORICAL_STORE_USER");
             std::env::remove_var("HISTORICAL_STORE_PASSWORD");
@@ -230,6 +267,7 @@ mod tests {
         assert_eq!(config.service_name, "trading-bot-market-data");
         assert_eq!(config.historical_store_host, "trading-bot-historical-store");
         assert_eq!(config.historical_store_port, 8123);
+        assert_eq!(config.historical_store_native_port, 9000);
         assert_eq!(config.historical_store_database, "trading_bot_market_data");
         assert_eq!(config.historical_store_user, None);
         assert_eq!(config.historical_store_password, None);

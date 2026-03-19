@@ -145,15 +145,9 @@ pub struct PersistedKlineRecord {
 #[serde(rename_all = "camelCase")]
 pub struct PersistedTradeRecord {
     pub pair_code: String,
-    pub symbol: String,
     pub aggregate_trade_id: i64,
-    pub ingestion_mode: String,
     pub price: String,
-    pub quantity: String,
     pub trade_time: i64,
-    pub market_maker: bool,
-    pub occurred_at: String,
-    pub updated_at: String,
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]

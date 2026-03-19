@@ -73,12 +73,7 @@ INSERT INTO public.analysis_settings VALUES ('62f80875-6c31-4f43-891e-5b1f814c94
 INSERT INTO public.analysis_settings VALUES ('0b48fa1b-2eb8-464d-bca9-c3253162bfa7', 'BTCUSDT', '5m', 'emaCross', 'default', 'default', '{"fastPeriod": 12, "slowPeriod": 26}', true, '2026-03-16 10:45:18.339+00', '2026-03-16 10:45:18.339+00');
 
 
---
--- Data for Name: research_settings; Type: TABLE DATA; Schema: public; Owner: -
---
-
-INSERT INTO public.research_settings VALUES ('869afa21-2af9-47a5-aea4-59543ce39816', 'default_10k', '10k-replay windows per timeframe', '{"1m": 600000000, "3m": 1800000000, "5m": 3000000000}', '{"1m": 600000000, "3m": 1800000000, "5m": 3000000000}', '{"1m": 2592000000, "3m": 2592000000, "5m": 2592000000}', true, '2026-03-16 10:42:15.276+00', '2026-03-16 10:42:15.276+00');
-
+-- (research_settings intentionally omitted)
 
 --
 -- PostgreSQL database dump complete

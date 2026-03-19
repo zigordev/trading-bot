@@ -5,6 +5,13 @@ use trading_bot_strategy_engine::models::{PersistedKlineRecord, ResolvedAnalysis
 
 use crate::models::{BacktestSignalRecord, PositionDirection, SimulatedTradeRecord};
 
+#[derive(Clone, Debug)]
+pub struct TradeReplayStats {
+    pub fetched_trade_count: usize,
+    pub first_trade_time: Option<i64>,
+    pub last_trade_time: Option<i64>,
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct SimulationConfig {
     pub fee_bps: f64,
@@ -56,7 +63,6 @@ pub fn simulate_trade_replay(
     replay_trades: &[PersistedTradeRecord],
     replay_book_tickers: &[PersistedBookTickerRecord],
     analysis: &ResolvedAnalysisSettingsRecord,
-    close_open_position_at_end: bool,
     last_kline: Option<&PersistedKlineRecord>,
     config: SimulationConfig,
 ) -> Result<Vec<SimulatedTradeRecord>> {
@@ -154,37 +160,211 @@ pub fn simulate_trade_replay(
                 trades.push(trade);
             }
             PositionResolution::StillOpen(position, last_fill_before_end) => {
-                if close_open_position_at_end {
-                    let exit_fill = last_fill_before_end.or_else(|| {
-                        last_kline.map(|row| {
-                            fallback_fill(
-                                row.close_time,
-                                row.close.parse::<f64>().unwrap_or_default(),
-                                position.direction,
-                                false,
-                                config.slippage_bps,
-                                "klineFallback",
-                            )
-                        })
-                    });
-                    trades.push(close_position(
-                        trades.len() + 1,
-                        &position,
-                        exit_fill
-                            .as_ref()
-                            .map(|fill| fill.time)
-                            .unwrap_or(position.entry_time),
-                        None,
-                        exit_fill,
-                        "windowEnd",
-                        config.fee_bps,
-                    ));
-                }
+                // Open positions are intentionally left unclosed at the end of the window.
+                // That means they don't contribute to `trades`/PnL aggregation.
             }
         }
     }
 
     Ok(trades)
+}
+
+struct TradePager<F>
+where
+    F: FnMut(Option<(i64, i64)>, i64) -> std::pin::Pin<
+            Box<dyn std::future::Future<Output = Result<Vec<PersistedTradeRecord>>> + Send>,
+        > + Send,
+{
+    fetch: F,
+    max_total: usize,
+    stats: TradeReplayStats,
+    cursor_key: Option<(i64, i64)>,
+    done: bool,
+    buf: Vec<PersistedTradeRecord>,
+}
+
+impl<F> TradePager<F>
+where
+    F: FnMut(Option<(i64, i64)>, i64) -> std::pin::Pin<
+            Box<dyn std::future::Future<Output = Result<Vec<PersistedTradeRecord>>> + Send>,
+        > + Send,
+{
+    fn new(fetch: F, max_total: usize) -> Self {
+        Self {
+            fetch,
+            max_total,
+            stats: TradeReplayStats {
+                fetched_trade_count: 0,
+                first_trade_time: None,
+                last_trade_time: None,
+            },
+            cursor_key: None,
+            done: false,
+            buf: Vec::new(),
+        }
+    }
+
+    async fn ensure_until(&mut self, target_time: i64) -> Result<()> {
+        if self.done {
+            return Ok(());
+        }
+
+        loop {
+            let last_time = self.buf.last().map(|t| t.trade_time);
+            if last_time.is_some_and(|t| t >= target_time) {
+                return Ok(());
+            }
+            if self.stats.fetched_trade_count >= self.max_total {
+                self.done = true;
+                return Ok(());
+            }
+
+            let remaining = (self.max_total - self.stats.fetched_trade_count) as i64;
+            let page = (self.fetch)(self.cursor_key, remaining).await?;
+            if page.is_empty() {
+                self.done = true;
+                return Ok(());
+            }
+
+            if self.stats.first_trade_time.is_none() {
+                self.stats.first_trade_time = page.first().map(|t| t.trade_time);
+            }
+            self.stats.last_trade_time = page.last().map(|t| t.trade_time);
+            self.stats.fetched_trade_count += page.len();
+            self.cursor_key = page.last().map(|t| (t.trade_time, t.aggregate_trade_id));
+
+            self.buf.extend(page);
+        }
+    }
+
+    fn maybe_drain_consumed(&mut self, trade_cursor: &mut usize) {
+        // Keep memory bounded by dropping the consumed prefix.
+        const DRAIN_THRESHOLD: usize = 200_000;
+        if *trade_cursor > DRAIN_THRESHOLD {
+            self.buf.drain(0..*trade_cursor);
+            *trade_cursor = 0;
+        }
+    }
+}
+
+pub async fn simulate_trade_replay_paged<F>(
+    signals: &[BacktestSignalRecord],
+    replay_book_tickers: &[PersistedBookTickerRecord],
+    analysis: &ResolvedAnalysisSettingsRecord,
+    config: SimulationConfig,
+    requested_end_time: i64,
+    max_total_trades: usize,
+    fetch_page: F,
+) -> Result<(Vec<SimulatedTradeRecord>, TradeReplayStats)>
+where
+    F: FnMut(Option<(i64, i64)>, i64) -> std::pin::Pin<
+            Box<dyn std::future::Future<Output = Result<Vec<PersistedTradeRecord>>> + Send>,
+        > + Send,
+{
+    let replay_book_tickers = replay_book_tickers
+        .iter()
+        .map(parse_book_ticker)
+        .collect::<Result<Vec<_>>>()?;
+
+    let mut trades = Vec::new();
+    let mut open_position: Option<OpenPosition> = None;
+    let mut trade_cursor = 0usize;
+    let mut book_ticker_cursor = 0usize;
+
+    let mut pager = TradePager::new(fetch_page, max_total_trades);
+
+    for signal in signals {
+        pager.ensure_until(signal.close_time).await?;
+
+        if let Some(position) = open_position.take() {
+            match resolve_until_time(
+                &position,
+                &pager.buf,
+                &replay_book_tickers,
+                &mut trade_cursor,
+                &mut book_ticker_cursor,
+                signal.close_time,
+                config,
+            )? {
+                PositionResolution::Closed(trade) => trades.push(trade),
+                PositionResolution::StillOpen(position, _) => open_position = Some(position),
+            }
+        }
+
+        pager.maybe_drain_consumed(&mut trade_cursor);
+
+        let next_direction = signal_direction(signal);
+        match &open_position {
+            None => {
+                pager.ensure_until(signal.close_time).await?;
+                open_position = open_position_from_signal(
+                    signal,
+                    next_direction,
+                    &pager.buf,
+                    &replay_book_tickers,
+                    &mut trade_cursor,
+                    &mut book_ticker_cursor,
+                    analysis,
+                    config,
+                )?;
+            }
+            Some(position) if position.direction == next_direction => {}
+            Some(position) => {
+                pager.ensure_until(signal.close_time).await?;
+                let exit_fill = fill_at_or_after(
+                    &pager.buf,
+                    &replay_book_tickers,
+                    &mut trade_cursor,
+                    &mut book_ticker_cursor,
+                    signal.close_time,
+                    signal.close_price,
+                    next_direction,
+                    false,
+                    config.slippage_bps,
+                );
+                trades.push(close_position(
+                    trades.len() + 1,
+                    position,
+                    signal.close_time,
+                    Some(signal.sequence),
+                    exit_fill,
+                    "reversal",
+                    config.fee_bps,
+                ));
+                open_position = open_position_from_signal(
+                    signal,
+                    next_direction,
+                    &pager.buf,
+                    &replay_book_tickers,
+                    &mut trade_cursor,
+                    &mut book_ticker_cursor,
+                    analysis,
+                    config,
+                )?;
+            }
+        }
+    }
+
+    // Resolve remaining position up to end of window; leave any still-open
+    // position open (do not force-close at window end).
+    let end_time = requested_end_time.saturating_sub(1);
+    pager.ensure_until(end_time).await?;
+    if let Some(position) = open_position.take() {
+        match resolve_until_time(
+            &position,
+            &pager.buf,
+            &replay_book_tickers,
+            &mut trade_cursor,
+            &mut book_ticker_cursor,
+            end_time.saturating_add(1),
+            config,
+        )? {
+            PositionResolution::Closed(trade) => trades.push(trade),
+            PositionResolution::StillOpen(_, _) => {}
+        }
+    }
+
+    Ok((trades, pager.stats))
 }
 
 fn resolve_until_time(
@@ -743,16 +923,9 @@ mod tests {
     fn trade(id: i64, trade_time: i64, price: f64) -> PersistedTradeRecord {
         PersistedTradeRecord {
             pair_code: "BTCUSDT".to_string(),
-            symbol: "BTCUSDT".to_string(),
-            event_time: trade_time,
             aggregate_trade_id: id,
-            ingestion_mode: "backfill".to_string(),
             price: price.to_string(),
-            quantity: "0.5".to_string(),
             trade_time,
-            market_maker: false,
-            occurred_at: "2026-01-01T00:00:00Z".to_string(),
-            updated_at: "2026-01-01T00:00:00Z".to_string(),
         }
     }
 

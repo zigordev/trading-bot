@@ -613,33 +613,6 @@ curl -fsS -X POST "$BASE_URL/v1/analysis-settings" \
   }' | jq
 ```
 
-Create research settings:
-
-```bash
-curl -fsS -X POST "$BASE_URL/v1/research-settings" \
-  -H 'content-type: application/json' \
-  -d '{
-    "name": "default",
-    "description": "Default research profile",
-    "backtestingTimerange": {
-      "1m": 86400000,
-      "3m": 259200000,
-      "5m": 604800000
-    },
-    "favorableTimeslotsBacktestingTimerange": {
-      "1m": 86400000,
-      "3m": 259200000,
-      "5m": 604800000
-    },
-    "optimizationValidityPeriod": {
-      "1m": 2592000000,
-      "3m": 2592000000,
-      "5m": 2592000000
-    },
-    "enabled": true
-  }' | jq
-```
-
 ### 4. Validate the control-plane
 
 ```bash
