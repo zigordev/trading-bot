@@ -53,15 +53,6 @@ struct HistoricalKlineRow {
 }
 
 #[derive(Debug, Deserialize)]
-struct HistoricalTradeRow {
-    pair_code: String,
-    aggregate_trade_id: i64,
-    price: String,
-    #[serde(rename = "latest_trade_time")]
-    trade_time: i64,
-}
-
-#[derive(Debug, Deserialize)]
 struct HistoricalBookTickerRow {
     pair_code: String,
     symbol: String,
@@ -1182,7 +1173,7 @@ impl Database {
             GROUP BY pair_code, aggregate_trade_id
             ORDER BY latest_trade_time DESC, aggregate_trade_id DESC
             LIMIT {}
-            FORMAT JSONEachRow
+            FORMAT RowBinary
             "#,
             sql_ident(&self.database),
             sql_string(pair_code),
@@ -1226,7 +1217,7 @@ impl Database {
             WHERE 1 = 1
             ORDER BY latest_trade_time ASC, aggregate_trade_id ASC
             LIMIT {}
-            FORMAT JSONEachRow
+            FORMAT RowBinary
             "#,
             sql_ident(&self.database),
             sql_string(pair_code),
@@ -1246,7 +1237,7 @@ impl Database {
         after_aggregate_trade_id: Option<i64>,
         limit: i64,
     ) -> Result<Vec<PersistedTradeRecord>> {
-        let safe_limit = limit.clamp(1, 1_000_000);
+        let safe_limit = limit.clamp(1, 50_000_000);
         let time_range = sql_numeric_time_range("trade_time", Some(start_time), Some(end_time));
 
         let after_clause = match (after_trade_time, after_aggregate_trade_id) {
@@ -1279,7 +1270,7 @@ impl Database {
               {}
             ORDER BY latest_trade_time ASC, aggregate_trade_id ASC
             LIMIT {}
-            FORMAT JSONEachRow
+            FORMAT RowBinary
             "#,
             sql_ident(&self.database),
             sql_string(pair_code),
@@ -1429,24 +1420,8 @@ impl Database {
     }
 
     async fn query_trade_rows(&self, sql: &str) -> Result<Vec<PersistedTradeRecord>> {
-        let mut lines = self.query_lines(sql).await?;
-        let mut records = Vec::new();
-
-        while let Some(line) = lines.next().await {
-            let line = line?;
-            if line.trim().is_empty() {
-                continue;
-            }
-            let row = serde_json::from_str::<HistoricalTradeRow>(&line)?;
-            records.push(PersistedTradeRecord {
-                pair_code: row.pair_code,
-                aggregate_trade_id: row.aggregate_trade_id,
-                price: row.price,
-                trade_time: row.trade_time,
-            });
-        }
-
-        Ok(records)
+        let bytes = self.query_bytes(sql).await?;
+        parse_trade_rows_row_binary(&bytes)
     }
 
     async fn query_book_ticker_rows(&self, sql: &str) -> Result<Vec<PersistedBookTickerRecord>> {
@@ -1742,4 +1717,71 @@ fn millis_to_rfc3339(value: i64) -> Result<String> {
         .single()
         .with_context(|| format!("invalid unix timestamp in millis: {value}"))?;
     Ok(timestamp.to_rfc3339())
+}
+
+fn parse_trade_rows_row_binary(bytes: &[u8]) -> Result<Vec<PersistedTradeRecord>> {
+    let mut offset = 0usize;
+    let mut rows = Vec::new();
+    while offset < bytes.len() {
+        let pair_code = parse_row_binary_string(bytes, &mut offset)?;
+        let aggregate_trade_id = parse_row_binary_i64(bytes, &mut offset)?;
+        let price = parse_row_binary_string(bytes, &mut offset)?;
+        let trade_time = parse_row_binary_i64(bytes, &mut offset)?;
+        rows.push(PersistedTradeRecord {
+            pair_code,
+            aggregate_trade_id,
+            price,
+            trade_time,
+        });
+    }
+    Ok(rows)
+}
+
+fn parse_row_binary_uvarint(bytes: &[u8], offset: &mut usize) -> Result<usize> {
+    let mut value: u64 = 0;
+    let mut shift = 0u32;
+    loop {
+        if *offset >= bytes.len() {
+            bail!("invalid RowBinary payload: truncated varint");
+        }
+        let b = bytes[*offset];
+        *offset += 1;
+        value |= ((b & 0x7f) as u64) << shift;
+        if (b & 0x80) == 0 {
+            break;
+        }
+        shift += 7;
+        if shift > 63 {
+            bail!("invalid RowBinary payload: varint too large");
+        }
+    }
+    usize::try_from(value).context("invalid RowBinary payload: varint overflows usize")
+}
+
+fn parse_row_binary_string(bytes: &[u8], offset: &mut usize) -> Result<String> {
+    let len = parse_row_binary_uvarint(bytes, offset)?;
+    let end = offset
+        .checked_add(len)
+        .context("invalid RowBinary payload: string length overflow")?;
+    if end > bytes.len() {
+        bail!("invalid RowBinary payload: truncated string");
+    }
+    let value = std::str::from_utf8(&bytes[*offset..end])
+        .context("invalid RowBinary payload: invalid UTF-8 string")?
+        .to_string();
+    *offset = end;
+    Ok(value)
+}
+
+fn parse_row_binary_i64(bytes: &[u8], offset: &mut usize) -> Result<i64> {
+    let end = offset
+        .checked_add(8)
+        .context("invalid RowBinary payload: i64 length overflow")?;
+    if end > bytes.len() {
+        bail!("invalid RowBinary payload: truncated i64");
+    }
+    let mut buf = [0u8; 8];
+    buf.copy_from_slice(&bytes[*offset..end]);
+    *offset = end;
+    Ok(i64::from_le_bytes(buf))
 }
