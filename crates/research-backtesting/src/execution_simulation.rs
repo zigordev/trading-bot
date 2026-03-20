@@ -971,7 +971,6 @@ mod tests {
             &replay_trades,
             &[],
             &analysis,
-            true,
             None,
             SimulationConfig {
                 fee_bps: 0.0,
@@ -980,10 +979,9 @@ mod tests {
         )
         .expect("simulation should succeed");
 
-        assert_eq!(result.len(), 2);
+        assert_eq!(result.len(), 1);
         assert_eq!(result[0].exit_reason, "takeProfit");
         assert_eq!(result[0].exit_fill_source, "aggTrade");
-        assert_eq!(result[1].direction, PositionDirection::Short);
     }
 
     #[test]
@@ -1011,7 +1009,6 @@ mod tests {
             &replay_trades,
             &replay_book_tickers,
             &analysis,
-            true,
             None,
             SimulationConfig {
                 fee_bps: 0.0,
@@ -1020,11 +1017,10 @@ mod tests {
         )
         .expect("simulation should succeed");
 
-        assert_eq!(result.len(), 2);
+        assert_eq!(result.len(), 1);
         assert_eq!(result[0].entry_fill_source, "bookTicker");
         assert_eq!(result[0].exit_fill_source, "bookTicker");
         assert_eq!(result[0].entry_price, 100.1);
         assert_eq!(result[0].exit_reason, "takeProfit");
-        assert_eq!(result[1].entry_fill_source, "bookTicker");
     }
 }

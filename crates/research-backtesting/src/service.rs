@@ -143,6 +143,12 @@ impl ResearchBacktestingService {
         }
 
         if service.inner.config.auto_backtest_enabled {
+            if let Err(error) = service
+                .run_enabled_analysis_backtests_if_ready("startup")
+                .await
+            {
+                warn!(error = %error, "startup backtest batch failed");
+            }
             service.start_auto_backtest_scheduler();
         }
 
@@ -154,8 +160,12 @@ impl ResearchBacktestingService {
         let interval = StdDuration::from_secs(service.inner.config.auto_backtest_interval_seconds);
 
         tokio::spawn(async move {
+            tokio::time::sleep(interval).await;
             loop {
-                if let Err(error) = service.run_enabled_analysis_backtests().await {
+                if let Err(error) = service
+                    .run_enabled_analysis_backtests_if_ready("periodic")
+                    .await
+                {
                     error!(
                         error = %error,
                         "scheduled backtest batch failed"
@@ -304,14 +314,8 @@ impl ResearchBacktestingService {
 
     async fn run_enabled_analysis_backtests(
         &self,
+        analyses: Vec<ResolvedAnalysisSettingsRecord>,
     ) -> Result<usize> {
-        let analyses = self
-            .fetch_runtime_analysis_settings()
-            .await?
-            .into_iter()
-            .filter(|analysis| analysis.enabled)
-            .collect::<Vec<_>>();
-
         if analyses.is_empty() {
             warn!("no enabled analysis settings found for scheduled backtests");
             return Ok(0);
@@ -378,6 +382,122 @@ impl ResearchBacktestingService {
         );
 
         Ok(ran)
+    }
+
+    async fn run_enabled_analysis_backtests_if_ready(&self, reason: &str) -> Result<usize> {
+        let analyses = self
+            .fetch_runtime_analysis_settings()
+            .await?
+            .into_iter()
+            .filter(|analysis| analysis.enabled)
+            .collect::<Vec<_>>();
+
+        if analyses.is_empty() {
+            warn!("no enabled analysis settings found for scheduled backtests");
+            return Ok(0);
+        }
+
+        let mut not_ready = Vec::new();
+        for analysis in &analyses {
+            if let Some(blocker) = self
+                .scheduled_backtest_readiness_blocker(analysis)
+                .await?
+            {
+                not_ready.push((analysis.id.clone(), blocker));
+            }
+        }
+
+        if !not_ready.is_empty() {
+            let blocked_analysis_ids = not_ready
+                .iter()
+                .map(|(id, _)| id.clone())
+                .collect::<Vec<_>>();
+            warn!(
+                reason,
+                blocked_analysis_ids = ?blocked_analysis_ids,
+                blocked_count = not_ready.len(),
+                "scheduled backtest batch skipped because historical data is not ready"
+            );
+            return Ok(0);
+        }
+
+        self.run_enabled_analysis_backtests(analyses).await
+    }
+
+    async fn scheduled_backtest_readiness_blocker(
+        &self,
+        analysis: &ResolvedAnalysisSettingsRecord,
+    ) -> Result<Option<String>> {
+        let Some(spec) = build_analysis_spec(analysis)? else {
+            return Ok(Some("analysis is not runnable offline".to_string()));
+        };
+
+        let request = BacktestRequest {
+            analysis_setting_id: analysis.id.clone(),
+            start_time: None,
+            end_time: None,
+            warmup_candles: None,
+        };
+        let time_window = resolve_time_window(
+            analysis,
+            &request,
+            &spec,
+            self.inner.config.default_warmup_multiplier,
+            &self.inner.config.backtesting_timerange_ms_by_timeframe,
+        )?;
+
+        let expected_klines = expected_candle_count(
+            time_window.effective_warmup_start_time,
+            time_window.requested_end_time,
+            analysis.timeframe.period_ms,
+        )?;
+        let kline_coverage = self
+            .inner
+            .historical_store
+            .kline_window_coverage_in_range(
+                &analysis.pair_code,
+                &analysis.timeframe_code,
+                time_window.effective_warmup_start_time,
+                time_window.requested_end_time,
+            )
+            .await?;
+        if kline_coverage.row_count < expected_klines as u64 {
+            return Ok(Some(format!(
+                "kline coverage incomplete (have {}, need {})",
+                kline_coverage.row_count, expected_klines
+            )));
+        }
+
+        let trade_coverage = self
+            .inner
+            .historical_store
+            .trade_window_coverage_in_range(
+                &analysis.pair_code,
+                time_window.requested_start_time,
+                time_window.requested_end_time,
+            )
+            .await?;
+        let tolerance = self.inner.config.trade_coverage_tolerance_ms as i64;
+        let trade_ready = match (trade_coverage.min_time, trade_coverage.max_time) {
+            (Some(min_t), Some(max_t)) => {
+                let latest_acceptable_min =
+                    time_window.requested_start_time.saturating_add(tolerance);
+                let earliest_acceptable_max = time_window
+                    .requested_end_time
+                    .saturating_sub(1)
+                    .saturating_sub(tolerance);
+                min_t <= latest_acceptable_min && max_t >= earliest_acceptable_max
+            }
+            _ => false,
+        };
+        if !trade_ready {
+            return Ok(Some(format!(
+                "trade coverage incomplete (row_count={}, min_time={:?}, max_time={:?})",
+                trade_coverage.row_count, trade_coverage.min_time, trade_coverage.max_time
+            )));
+        }
+
+        Ok(None)
     }
 
     async fn run_backtest_with_trade_cache(
