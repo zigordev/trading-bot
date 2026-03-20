@@ -393,7 +393,7 @@ impl StrategyEngineService {
         for record in &records {
             match build_analysis_spec(record)? {
                 Some(spec) => {
-                    let key = subscription_key(&spec.pair_code, &spec.timeframe_code);
+                    let key = subscription_key(&spec.symbol, &spec.timeframe_code);
                     let limit =
                         (spec.slow_period + 2).min(self.inner.config.strategy_warmup_history_limit);
                     grouped_history_limits
@@ -421,7 +421,7 @@ impl StrategyEngineService {
         let mut analyses_by_id = HashMap::new();
         let mut analyses_by_subscription = HashMap::<String, Vec<String>>::new();
         for spec in supported_specs {
-            let key = subscription_key(&spec.pair_code, &spec.timeframe_code);
+            let key = subscription_key(&spec.symbol, &spec.timeframe_code);
             let history = history_by_subscription
                 .get(&key)
                 .cloned()

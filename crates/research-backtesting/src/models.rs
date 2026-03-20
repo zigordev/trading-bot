@@ -6,6 +6,8 @@ use trading_bot_strategy_engine::models::{PersistedKlineRecord, ResolvedAnalysis
 #[serde(rename_all = "camelCase")]
 pub struct BacktestRequest {
     pub analysis_setting_id: String,
+    #[serde(default)]
+    pub risk_profile_name: Option<String>,
     pub start_time: Option<i64>,
     pub end_time: Option<i64>,
     pub warmup_candles: Option<usize>,
@@ -113,7 +115,9 @@ pub struct BacktestResponse {
     pub backtest_id: String,
     pub finished_at: String,
     #[serde(default)]
-    pub duration_ms: i64,
+    pub backtest_duration_ms: i64,
+    #[serde(default)]
+    pub data_retrieval_duration_ms: i64,
     pub service: String,
     pub analysis_setting_id: String,
     pub time_window: BacktestTimeWindow,
@@ -140,9 +144,11 @@ pub struct BacktestExecutionAssumptions {
 pub struct LastBacktestStatus {
     pub backtest_id: String,
     pub finished_at: String,
-    pub duration_ms: i64,
+    pub backtest_duration_ms: i64,
+    pub data_retrieval_duration_ms: i64,
     pub analysis_setting_id: String,
-    pub pair_code: String,
+    pub risk_profile_name: String,
+    pub symbol: String,
     pub timeframe_code: String,
     pub replay_kline_count: usize,
     pub signal_count: usize,
@@ -154,9 +160,11 @@ pub struct LastBacktestStatus {
 pub struct PersistedBacktestRunSummary {
     pub backtest_id: String,
     pub finished_at: String,
-    pub duration_ms: i64,
+    pub backtest_duration_ms: i64,
+    pub data_retrieval_duration_ms: i64,
     pub analysis_setting_id: String,
-    pub pair_code: String,
+    pub risk_profile_name: String,
+    pub symbol: String,
     pub timeframe_code: String,
     pub strategy_name: String,
     pub requested_start_time: i64,

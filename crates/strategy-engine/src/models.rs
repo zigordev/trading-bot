@@ -69,7 +69,8 @@ pub struct TradingDefaultsRecord {
 #[serde(rename_all = "camelCase")]
 pub struct ResolvedAnalysisSettingsRecord {
     pub id: String,
-    pub pair_code: String,
+    #[serde(rename = "pairCode")]
+    pub symbol: String,
     pub timeframe_code: String,
     pub strategy_name: String,
     pub risk_profile_name: String,
@@ -142,6 +143,7 @@ pub struct MarketDataKlineEvent {
 pub struct AnalysisSummary {
     pub analysis_setting_id: String,
     pub pair_code: String,
+    pub symbol: String,
     pub timeframe_code: String,
     pub strategy_name: String,
     pub strategy_kind: String,
@@ -163,6 +165,7 @@ pub struct StrategySignalEvent {
     pub exchange: String,
     pub analysis_setting_id: String,
     pub pair_code: String,
+    pub symbol: String,
     pub timeframe_code: String,
     pub strategy_name: String,
     pub strategy_kind: String,

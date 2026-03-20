@@ -12,7 +12,10 @@ use trading_bot_market_data::models::PersistedBookTickerRecord as HistoricalBook
 use trading_bot_market_data::models::PersistedKlineRecord as HistoricalKlineRecord;
 use trading_bot_market_data::models::PersistedTradeRecord as HistoricalTradeRecord;
 use trading_bot_strategy_engine::{
-    models::{MarketDataKlineEvent, PersistedKlineRecord, ResolvedAnalysisSettingsRecord},
+    models::{
+        MarketDataKlineEvent, PersistedKlineRecord, ResolvedAnalysisSettingsRecord,
+        RiskProfileRecord,
+    },
     strategy_logic::{AnalysisEvaluator, AnalysisSpec, build_analysis_spec},
 };
 
@@ -22,8 +25,8 @@ use crate::{
     metrics::Metrics,
     models::{
         BacktestDatasetSummary, BacktestExecutionAssumptions, BacktestRequest, BacktestResponse,
-        BacktestSignalRecord, BacktestSummary, BacktestTimeWindow,
-        LastBacktestStatus, PersistedBacktestRunSummary, ResolvedBacktestInput, SimulatedTradeRecord,
+        BacktestSignalRecord, BacktestSummary, BacktestTimeWindow, LastBacktestStatus,
+        PersistedBacktestRunSummary, ResolvedBacktestInput, SimulatedTradeRecord,
     },
 };
 use tracing::{error, info, warn};
@@ -88,6 +91,7 @@ struct TradeWindowCache {
     pair_code: String,
     start_time: i64,
     end_time: i64,
+    data_retrieval_duration_ms: i64,
     rows: Arc<Vec<HistoricalTradeRecord>>,
 }
 
@@ -95,6 +99,33 @@ impl TradeWindowCache {
     fn contains_window(&self, pair_code: &str, start_time: i64, end_time: i64) -> bool {
         self.pair_code == pair_code && self.start_time <= start_time && self.end_time >= end_time
     }
+}
+
+fn apply_risk_profile(
+    analysis: &ResolvedAnalysisSettingsRecord,
+    risk_profile: &RiskProfileRecord,
+) -> ResolvedAnalysisSettingsRecord {
+    let mut resolved = analysis.clone();
+    resolved.risk_profile_name = risk_profile.name.clone();
+    resolved.risk_profile = risk_profile.clone();
+    resolved
+}
+
+fn expand_analyses_by_risk_profiles(
+    analyses: Vec<ResolvedAnalysisSettingsRecord>,
+    risk_profiles: &[RiskProfileRecord],
+) -> Vec<ResolvedAnalysisSettingsRecord> {
+    if risk_profiles.is_empty() {
+        return analyses;
+    }
+
+    let mut expanded = Vec::with_capacity(analyses.len().saturating_mul(risk_profiles.len()));
+    for analysis in analyses {
+        for risk_profile in risk_profiles {
+            expanded.push(apply_risk_profile(&analysis, risk_profile));
+        }
+    }
+    expanded
 }
 
 impl ResearchBacktestingService {
@@ -231,7 +262,6 @@ impl ResearchBacktestingService {
     }
 
     pub async fn run_backtest(&self, request: BacktestRequest) -> Result<BacktestResponse> {
-        let started_at = Instant::now();
         if let Err(error) = self.refresh_dependencies().await {
             self.inner
                 .metrics
@@ -249,7 +279,7 @@ impl ResearchBacktestingService {
             self.inner.config.backtest_trade_replay_page_rows,
             self.inner.config.default_fee_bps,
             self.inner.config.default_slippage_bps,
-            started_at.elapsed().as_millis() as i64,
+            None,
             None,
         )
         .await?;
@@ -325,7 +355,7 @@ impl ResearchBacktestingService {
             HashMap::new();
         for analysis in analyses {
             analyses_by_pair
-                .entry(analysis.pair_code.clone())
+                .entry(analysis.symbol.clone())
                 .or_default()
                 .push(analysis);
         }
@@ -350,6 +380,7 @@ impl ResearchBacktestingService {
             for analysis in pair_analyses {
                 let request = BacktestRequest {
                     analysis_setting_id: analysis.id.clone(),
+                    risk_profile_name: Some(analysis.risk_profile_name.clone()),
                     start_time: None,
                     end_time: None,
                     warmup_candles: None,
@@ -362,7 +393,8 @@ impl ResearchBacktestingService {
                     warn!(
                         error = %error,
                         analysis_setting_id = %analysis.id,
-                        pair_code = %analysis.pair_code,
+                        risk_profile_name = %analysis.risk_profile_name,
+                        symbol = %analysis.symbol,
                         timeframe_code = %analysis.timeframe_code,
                         strategy_name = %analysis.strategy_name,
                         "scheduled backtest failed"
@@ -371,7 +403,6 @@ impl ResearchBacktestingService {
                     ran += 1;
                 }
             }
-
         }
 
         info!(
@@ -391,20 +422,20 @@ impl ResearchBacktestingService {
             .into_iter()
             .filter(|analysis| analysis.enabled)
             .collect::<Vec<_>>();
+        let risk_profiles = self.fetch_enabled_risk_profiles().await?;
+        let analyses = expand_analyses_by_risk_profiles(analyses, &risk_profiles);
 
         if analyses.is_empty() {
-            warn!("no enabled analysis settings found for scheduled backtests");
+            warn!("no enabled analysis settings or risk profiles found for scheduled backtests");
             return Ok(0);
         }
 
         let mut not_ready = Vec::new();
         for analysis in &analyses {
-            if let Some(blocker) = self
-                .scheduled_backtest_readiness_blocker(analysis)
-                .await?
-            {
+            if let Some(blocker) = self.scheduled_backtest_readiness_blocker(analysis).await? {
                 let request = BacktestRequest {
                     analysis_setting_id: analysis.id.clone(),
+                    risk_profile_name: Some(analysis.risk_profile_name.clone()),
                     start_time: None,
                     end_time: None,
                     warmup_candles: None,
@@ -421,15 +452,14 @@ impl ResearchBacktestingService {
                     })
                     .transpose()?;
                 not_ready.push((
-                    analysis.id.clone(),
-                    analysis.pair_code.clone(),
+                    format!("{}:{}", analysis.id, analysis.risk_profile_name),
+                    analysis.symbol.clone(),
                     analysis.timeframe_code.clone(),
+                    analysis.risk_profile_name.clone(),
                     time_window
                         .as_ref()
                         .map(|window| window.requested_start_time),
-                    time_window
-                        .as_ref()
-                        .map(|window| window.requested_end_time),
+                    time_window.as_ref().map(|window| window.requested_end_time),
                     blocker,
                 ));
             }
@@ -443,9 +473,9 @@ impl ResearchBacktestingService {
             let blocked_analyses = not_ready
                 .iter()
                 .map(
-                    |(id, pair_code, timeframe_code, requested_start_time, requested_end_time, blocker)| {
+                    |(id, pair_code, timeframe_code, risk_profile_name, requested_start_time, requested_end_time, blocker)| {
                         format!(
-                            "analysis_id={id} pair={pair_code} timeframe={timeframe_code} requested_start_ms={requested_start_time:?} requested_end_ms={requested_end_time:?} blocker={blocker}"
+                            "analysis_id={id} pair={pair_code} timeframe={timeframe_code} risk_profile_name={risk_profile_name} requested_start_ms={requested_start_time:?} requested_end_ms={requested_end_time:?} blocker={blocker}"
                         )
                     },
                 )
@@ -473,6 +503,7 @@ impl ResearchBacktestingService {
 
         let request = BacktestRequest {
             analysis_setting_id: analysis.id.clone(),
+            risk_profile_name: Some(analysis.risk_profile_name.clone()),
             start_time: None,
             end_time: None,
             warmup_candles: None,
@@ -494,7 +525,7 @@ impl ResearchBacktestingService {
             .inner
             .historical_store
             .kline_window_coverage_in_range(
-                &analysis.pair_code,
+                &analysis.symbol,
                 &analysis.timeframe_code,
                 time_window.effective_warmup_start_time,
                 time_window.requested_end_time,
@@ -511,7 +542,7 @@ impl ResearchBacktestingService {
             .inner
             .historical_store
             .trade_window_coverage_in_range(
-                &analysis.pair_code,
+                &analysis.symbol,
                 time_window.requested_start_time,
                 time_window.requested_end_time,
             )
@@ -544,7 +575,6 @@ impl ResearchBacktestingService {
         request: BacktestRequest,
         trade_cache: &mut Option<TradeWindowCache>,
     ) -> Result<BacktestResponse> {
-        let started_at = Instant::now();
         if let Err(error) = self.refresh_dependencies().await {
             self.inner
                 .metrics
@@ -555,34 +585,40 @@ impl ResearchBacktestingService {
         }
 
         let resolved = self.resolve_input(&request).await?;
-        let cached_trades = match trade_cache {
+        let (cached_trades, data_retrieval_duration_ms) = match trade_cache {
             Some(existing)
                 if existing.contains_window(
-                    &resolved.analysis.pair_code,
+                    &resolved.analysis.symbol,
                     resolved.replay_trade_start_time,
                     resolved.replay_trade_end_time,
                 ) =>
             {
-                Some(existing.rows.clone())
+                (
+                    Some(existing.rows.clone()),
+                    Some(existing.data_retrieval_duration_ms),
+                )
             }
             _ => {
+                let retrieval_started_at = Instant::now();
                 let rows = fetch_trade_window_cache(
                     &self.inner.historical_store,
-                    &resolved.analysis.pair_code,
+                    &resolved.analysis.symbol,
                     resolved.replay_trade_start_time,
                     resolved.replay_trade_end_time,
                     self.inner.config.backtest_trade_replay_page_rows,
                     resolved.replay_trade_max_rows,
                 )
                 .await?;
+                let data_retrieval_duration_ms = retrieval_started_at.elapsed().as_millis() as i64;
                 let rows = Arc::new(rows);
                 *trade_cache = Some(TradeWindowCache {
-                    pair_code: resolved.analysis.pair_code.clone(),
+                    pair_code: resolved.analysis.symbol.clone(),
                     start_time: resolved.replay_trade_start_time,
                     end_time: resolved.replay_trade_end_time,
+                    data_retrieval_duration_ms,
                     rows: rows.clone(),
                 });
-                Some(rows)
+                (Some(rows), Some(data_retrieval_duration_ms))
             }
         };
 
@@ -593,7 +629,7 @@ impl ResearchBacktestingService {
             self.inner.config.backtest_trade_replay_page_rows,
             self.inner.config.default_fee_bps,
             self.inner.config.default_slippage_bps,
-            started_at.elapsed().as_millis() as i64,
+            data_retrieval_duration_ms,
             cached_trades,
         )
         .await?;
@@ -633,7 +669,7 @@ impl ResearchBacktestingService {
 
     async fn resolve_input(&self, request: &BacktestRequest) -> Result<ResolvedBacktestInput> {
         let analyses = self.fetch_runtime_analysis_settings().await?;
-        let analysis = analyses
+        let base_analysis = analyses
             .into_iter()
             .find(|record| record.id == request.analysis_setting_id)
             .with_context(|| {
@@ -642,6 +678,19 @@ impl ResearchBacktestingService {
                     request.analysis_setting_id
                 )
             })?;
+        let analysis = if let Some(risk_profile_name) = &request.risk_profile_name {
+            let risk_profile = self
+                .fetch_enabled_risk_profiles()
+                .await?
+                .into_iter()
+                .find(|profile| profile.name == *risk_profile_name)
+                .with_context(|| {
+                    format!("enabled risk profile {} was not found", risk_profile_name)
+                })?;
+            apply_risk_profile(&base_analysis, &risk_profile)
+        } else {
+            base_analysis
+        };
 
         let Some(spec) = build_analysis_spec(&analysis)? else {
             bail!(
@@ -683,7 +732,7 @@ impl ResearchBacktestingService {
             .inner
             .historical_store
             .replay_klines(
-                &analysis.pair_code,
+                &analysis.symbol,
                 &analysis.timeframe_code,
                 Some(time_window.effective_warmup_start_time),
                 Some(time_window.requested_end_time),
@@ -698,7 +747,7 @@ impl ResearchBacktestingService {
             .inner
             .historical_store
             .replay_book_tickers(
-                &analysis.pair_code,
+                &analysis.symbol,
                 Some(time_window.requested_start_time),
                 Some(time_window.requested_end_time),
                 expected_book_tickers as i64,
@@ -723,7 +772,7 @@ impl ResearchBacktestingService {
         if replay_rows.is_empty() {
             bail!(
                 "no historical klines were found in ClickHouse for {} {} within {}..{}",
-                analysis.pair_code,
+                analysis.symbol,
                 analysis.timeframe_code,
                 time_window.requested_start_time,
                 time_window.requested_end_time
@@ -736,7 +785,7 @@ impl ResearchBacktestingService {
             .inner
             .historical_store
             .trade_window_coverage_in_range(
-                &analysis.pair_code,
+                &analysis.symbol,
                 time_window.requested_start_time,
                 time_window.requested_end_time,
             )
@@ -744,7 +793,7 @@ impl ResearchBacktestingService {
             .unwrap_or_else(|error| {
                 warn!(
                     error = %error,
-                    pair_code = %analysis.pair_code,
+                    symbol = %analysis.symbol,
                     requested_start_time = time_window.requested_start_time,
                     requested_end_time = time_window.requested_end_time,
                     "failed to compute trade window coverage for backtest window"
@@ -777,7 +826,7 @@ impl ResearchBacktestingService {
 
         if !has_full_trade_coverage {
             warn!(
-                pair_code = %analysis.pair_code,
+                symbol = %analysis.symbol,
                 timeframe_code = %analysis.timeframe_code,
                 requested_start_time = time_window.requested_start_time,
                 requested_end_time = time_window.requested_end_time,
@@ -790,7 +839,7 @@ impl ResearchBacktestingService {
 
             bail!(
                 "insufficient historical aggregate trades in ClickHouse for {} within {}..{}; fill-aware backtesting requires full market_data_trades coverage (trade_row_count={}, trade_min_time={:?}, trade_max_time={:?})",
-                analysis.pair_code,
+                analysis.symbol,
                 time_window.requested_start_time,
                 time_window.requested_end_time,
                 trade_coverage.row_count,
@@ -884,11 +933,30 @@ impl ResearchBacktestingService {
             .json::<Vec<ResolvedAnalysisSettingsRecord>>()
             .await?)
     }
+
+    async fn fetch_enabled_risk_profiles(&self) -> Result<Vec<RiskProfileRecord>> {
+        let response = self
+            .inner
+            .control_plane_client
+            .get(format!(
+                "{}/v1/risk-profiles",
+                self.inner.config.control_plane_base_url
+            ))
+            .send()
+            .await?;
+        let response = response.error_for_status()?;
+        Ok(response
+            .json::<Vec<RiskProfileRecord>>()
+            .await?
+            .into_iter()
+            .filter(|profile| profile.enabled)
+            .collect())
+    }
 }
 
 fn map_historical_kline_row(row: HistoricalKlineRecord) -> PersistedKlineRecord {
     PersistedKlineRecord {
-        pair_code: row.pair_code,
+        pair_code: row.symbol.clone(),
         symbol: row.symbol,
         timeframe_code: row.timeframe_code,
         period_ms: row.period_ms,
@@ -919,9 +987,12 @@ fn persisted_backtest_run(response: &BacktestResponse) -> Result<StoredBacktestR
         finished_at_ms: DateTime::parse_from_rfc3339(&response.finished_at)
             .with_context(|| format!("invalid finishedAt timestamp: {}", response.finished_at))?
             .timestamp_millis(),
-        duration_ms: response.duration_ms,
+        duration_ms: response.backtest_duration_ms,
+        backtest_duration_ms: response.backtest_duration_ms,
+        data_retrieval_duration_ms: response.data_retrieval_duration_ms,
         analysis_setting_id: response.analysis_setting_id.clone(),
-        pair_code: response.analysis.pair_code.clone(),
+        risk_profile_name: response.analysis.risk_profile_name.clone(),
+        pair_code: response.analysis.symbol.clone(),
         timeframe_code: response.analysis.timeframe_code.clone(),
         strategy_name: response.analysis.strategy_name.clone(),
         // This app only supports backtesting windows.
@@ -945,7 +1016,10 @@ fn persisted_run_summary(run: &StoredBacktestRunWrite) -> StoredBacktestRunSumma
         backtest_id: run.backtest_id.clone(),
         finished_at_ms: run.finished_at_ms,
         duration_ms: run.duration_ms,
+        backtest_duration_ms: run.backtest_duration_ms,
+        data_retrieval_duration_ms: run.data_retrieval_duration_ms,
         analysis_setting_id: run.analysis_setting_id.clone(),
+        risk_profile_name: run.risk_profile_name.clone(),
         pair_code: run.pair_code.clone(),
         timeframe_code: run.timeframe_code.clone(),
         strategy_name: run.strategy_name.clone(),
@@ -966,9 +1040,11 @@ fn map_persisted_backtest_summary(
     Ok(PersistedBacktestRunSummary {
         backtest_id: row.backtest_id,
         finished_at: millis_to_rfc3339(row.finished_at_ms)?,
-        duration_ms: row.duration_ms,
+        backtest_duration_ms: row.backtest_duration_ms,
+        data_retrieval_duration_ms: row.data_retrieval_duration_ms,
         analysis_setting_id: row.analysis_setting_id,
-        pair_code: row.pair_code,
+        risk_profile_name: row.risk_profile_name,
+        symbol: row.pair_code,
         timeframe_code: row.timeframe_code,
         strategy_name: row.strategy_name,
         requested_start_time: row.requested_start_time,
@@ -985,9 +1061,11 @@ fn map_last_backtest_status(row: StoredBacktestRunSummary) -> Result<LastBacktes
     Ok(LastBacktestStatus {
         backtest_id: row.backtest_id,
         finished_at: millis_to_rfc3339(row.finished_at_ms)?,
-        duration_ms: row.duration_ms,
+        backtest_duration_ms: row.backtest_duration_ms,
+        data_retrieval_duration_ms: row.data_retrieval_duration_ms,
         analysis_setting_id: row.analysis_setting_id,
-        pair_code: row.pair_code,
+        risk_profile_name: row.risk_profile_name,
+        symbol: row.pair_code,
         timeframe_code: row.timeframe_code,
         replay_kline_count: row.replay_kline_count as usize,
         signal_count: row.signal_count as usize,
@@ -1010,8 +1088,10 @@ fn resolve_time_window(
     default_warmup_multiplier: usize,
     backtesting_timerange_ms_by_timeframe: &std::collections::BTreeMap<String, i64>,
 ) -> Result<BacktestTimeWindow> {
-    let configured_duration_ms =
-        configured_duration_ms(backtesting_timerange_ms_by_timeframe, &analysis.timeframe_code)?;
+    let configured_duration_ms = configured_duration_ms(
+        backtesting_timerange_ms_by_timeframe,
+        &analysis.timeframe_code,
+    )?;
     let (requested_start_time, requested_end_time, window_source) =
         match (request.start_time, request.end_time) {
             (Some(start_time), Some(end_time)) => {
@@ -1078,7 +1158,11 @@ fn configured_duration_ms(
             )
         })?;
     if duration_ms <= 0 {
-        bail!("invalid non-positive duration {} for timeframe {}", duration_ms, timeframe_code);
+        bail!(
+            "invalid non-positive duration {} for timeframe {}",
+            duration_ms,
+            timeframe_code
+        );
     }
     Ok(duration_ms)
 }
@@ -1154,20 +1238,15 @@ async fn fetch_trade_window_cache(
         let limit = page_rows.min(remaining).max(1);
         let (after_t, after_id) = after.unzip();
         let chunk = historical_store
-            .replay_trades_page(
-                pair_code,
-                start_time,
-                end_time,
-                after_t,
-                after_id,
-                limit,
-            )
+            .replay_trades_page(pair_code, start_time, end_time, after_t, after_id, limit)
             .await?;
         if chunk.is_empty() {
             break;
         }
         page += 1;
-        after = chunk.last().map(|row| (row.trade_time, row.aggregate_trade_id));
+        after = chunk
+            .last()
+            .map(|row| (row.trade_time, row.aggregate_trade_id));
         rows.extend(chunk);
 
         if page == 1 || page % 5 == 0 {
@@ -1229,9 +1308,10 @@ async fn execute_backtest(
     trade_page_rows: usize,
     fee_bps: f64,
     slippage_bps: f64,
-    duration_ms: i64,
+    data_retrieval_duration_ms_override: Option<i64>,
     cached_trades: Option<Arc<Vec<HistoricalTradeRecord>>>,
 ) -> Result<CompletedBacktest> {
+    let execution_started_at = Instant::now();
     let backtest_id = Uuid::new_v4().to_string();
     let finished_at = Utc::now().to_rfc3339();
     let Some(spec) = build_analysis_spec(&input.analysis)? else {
@@ -1262,7 +1342,7 @@ async fn execute_backtest(
     }
 
     let page_rows = trade_page_rows.clamp(1, 50_000_000) as i64;
-    let pair_code = input.analysis.pair_code.clone();
+    let pair_code = input.analysis.symbol.clone();
     let timeframe_code = input.analysis.timeframe_code.clone();
     let start_time = input.replay_trade_start_time;
     let end_time = input.replay_trade_end_time;
@@ -1305,12 +1385,7 @@ async fn execute_backtest(
                 None => {
                     let (after_t, after_id) = after.unzip();
                     db.replay_trades_page(
-                        &pair_code,
-                        start_time,
-                        end_time,
-                        after_t,
-                        after_id,
-                        limit,
+                        &pair_code, start_time, end_time, after_t, after_id, limit,
                     )
                     .await?
                 }
@@ -1330,18 +1405,19 @@ async fn execute_backtest(
             }
 
             let page_count = retrieval_page_count.fetch_add(1, Ordering::Relaxed) + 1;
-            let rows_fetched = retrieval_rows_total.fetch_add(page.len(), Ordering::Relaxed) + page.len();
+            let rows_fetched =
+                retrieval_rows_total.fetch_add(page.len(), Ordering::Relaxed) + page.len();
             let first_trade_time = page.first().map(|row| row.trade_time).unwrap_or(start_time);
             let last_trade_time = page.last().map(|row| row.trade_time).unwrap_or(start_time);
             let progressed_ms = last_trade_time
                 .saturating_sub(start_time)
                 .clamp(0, retrieval_window_ms);
-            let window_progress_percent = (progressed_ms as f64 / retrieval_window_ms as f64) * 100.0;
+            let window_progress_percent =
+                (progressed_ms as f64 / retrieval_window_ms as f64) * 100.0;
             let remaining_row_budget = remaining.saturating_sub(page.len() as i64);
 
             // Keep logs readable: first page + every 5 pages + short page.
-            if page_count == 1 || page_count % 5 == 0 || (page.len() as i64) < limit
-            {
+            if page_count == 1 || page_count % 5 == 0 || (page.len() as i64) < limit {
                 info!(
                     backtest_id = %retrieval_backtest_id,
                     pair_code = %pair_code,
@@ -1359,11 +1435,10 @@ async fn execute_backtest(
             }
 
             Ok(page)
-        }) as std::pin::Pin<
-            Box<
-                dyn std::future::Future<Output = Result<Vec<HistoricalTradeRecord>>> + Send,
-            >,
-        >
+        })
+            as std::pin::Pin<
+                Box<dyn std::future::Future<Output = Result<Vec<HistoricalTradeRecord>>> + Send>,
+            >
     };
 
     let (trades, trade_stats) = simulate_trade_replay_paged(
@@ -1381,6 +1456,9 @@ async fn execute_backtest(
     .await?;
     let trades = resequence_trades(trades);
     let summary = summarize_backtest(&signals, &trades);
+    let backtest_duration_ms = execution_started_at.elapsed().as_millis() as i64;
+    let data_retrieval_duration_ms = data_retrieval_duration_ms_override
+        .unwrap_or_else(|| retrieval_started_at.elapsed().as_millis() as i64);
     let dataset = BacktestDatasetSummary {
         fetched_kline_count: input.warmup_rows.len() + input.replay_rows.len(),
         warmup_kline_count: input.warmup_rows.len(),
@@ -1409,7 +1487,8 @@ async fn execute_backtest(
         response: BacktestResponse {
             backtest_id,
             finished_at,
-            duration_ms,
+            backtest_duration_ms,
+            data_retrieval_duration_ms,
             service: service_name.to_string(),
             analysis_setting_id: input.analysis.id.clone(),
             time_window: input.time_window,
@@ -1456,7 +1535,7 @@ fn synthetic_live_kline(
             row.symbol.to_ascii_lowercase(),
             row.timeframe_code
         ),
-        pair_code: row.pair_code.clone(),
+        pair_code: row.symbol.clone(),
         symbol: row.symbol.clone(),
         timeframe_code: row.timeframe_code.clone(),
         period_ms: row.period_ms,
@@ -1556,7 +1635,7 @@ mod tests {
     fn analysis_record() -> ResolvedAnalysisSettingsRecord {
         ResolvedAnalysisSettingsRecord {
             id: "analysis-1".to_string(),
-            pair_code: "BTCUSDT".to_string(),
+            symbol: "BTCUSDT".to_string(),
             timeframe_code: "1m".to_string(),
             strategy_name: "emaCross".to_string(),
             risk_profile_name: "default".to_string(),
@@ -1649,7 +1728,7 @@ mod tests {
 
     fn trade(aggregate_trade_id: i64, trade_time: i64, price: f64) -> PersistedTradeRecord {
         PersistedTradeRecord {
-            pair_code: "BTCUSDT".to_string(),
+            symbol: "BTCUSDT".to_string(),
             aggregate_trade_id,
             price: price.to_string(),
             trade_time,
@@ -1664,6 +1743,7 @@ mod tests {
             .expect("spec present");
         let request = BacktestRequest {
             analysis_setting_id: analysis.id.clone(),
+            risk_profile_name: None,
             start_time: Some(1_000_000),
             end_time: None,
             warmup_candles: None,

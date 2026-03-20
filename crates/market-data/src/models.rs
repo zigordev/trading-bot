@@ -69,7 +69,8 @@ pub struct TradingDefaultsRecord {
 #[serde(rename_all = "camelCase")]
 pub struct ResolvedAnalysisSettingsRecord {
     pub id: String,
-    pub pair_code: String,
+    #[serde(rename = "pairCode")]
+    pub symbol: String,
     pub timeframe_code: String,
     pub strategy_name: String,
     pub risk_profile_name: String,
@@ -121,7 +122,6 @@ pub struct PairStreamSubscription {
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct PersistedKlineRecord {
-    pub pair_code: String,
     pub symbol: String,
     pub timeframe_code: String,
     pub period_ms: i64,
@@ -144,7 +144,7 @@ pub struct PersistedKlineRecord {
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct PersistedTradeRecord {
-    pub pair_code: String,
+    pub symbol: String,
     pub aggregate_trade_id: i64,
     pub price: String,
     pub trade_time: i64,
@@ -153,7 +153,6 @@ pub struct PersistedTradeRecord {
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct PersistedBookTickerRecord {
-    pub pair_code: String,
     pub symbol: String,
     pub order_book_update_id: i64,
     pub bid_price: String,

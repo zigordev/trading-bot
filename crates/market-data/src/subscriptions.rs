@@ -51,19 +51,19 @@ pub fn derive_active_subscriptions(
     let mut pair_groups = BTreeMap::<String, PairStreamSubscription>::new();
 
     for record in records {
-        let symbol = to_binance_symbol(&record.pair_code)?;
+        let symbol = to_binance_symbol(&record.symbol)?;
         let interval = record.timeframe_code.trim().to_string();
         if interval.is_empty() {
             bail!("Timeframe code cannot be empty");
         }
 
-        let kline_subscription_id = format!("{}:{}", record.pair_code, record.timeframe_code);
+        let kline_subscription_id = format!("{}:{}", record.symbol, record.timeframe_code);
         let kline_stream_name = build_kline_stream_name(&symbol, &interval);
         let kline_entry = kline_groups
             .entry(kline_subscription_id.clone())
             .or_insert_with(|| KlineSubscription {
                 subscription_id: kline_subscription_id.clone(),
-                pair_code: record.pair_code.clone(),
+                pair_code: record.symbol.clone(),
                 symbol: symbol.clone(),
                 timeframe_code: record.timeframe_code.clone(),
                 binance_interval: interval.clone(),
@@ -77,16 +77,17 @@ pub fn derive_active_subscriptions(
             .strategy_names
             .push(record.strategy_name.clone());
 
-        let pair_entry = pair_groups
-            .entry(record.pair_code.clone())
-            .or_insert_with(|| PairStreamSubscription {
-                pair_code: record.pair_code.clone(),
-                symbol: symbol.clone(),
-                trade_stream_name: build_trade_stream_name(&symbol),
-                book_ticker_stream_name: build_book_ticker_stream_name(&symbol),
-                analysis_setting_ids: Vec::new(),
-                strategy_names: Vec::new(),
-            });
+        let pair_entry =
+            pair_groups
+                .entry(record.symbol.clone())
+                .or_insert_with(|| PairStreamSubscription {
+                    pair_code: record.symbol.clone(),
+                    symbol: symbol.clone(),
+                    trade_stream_name: build_trade_stream_name(&symbol),
+                    book_ticker_stream_name: build_book_ticker_stream_name(&symbol),
+                    analysis_setting_ids: Vec::new(),
+                    strategy_names: Vec::new(),
+                });
         pair_entry.analysis_setting_ids.push(record.id.clone());
         pair_entry.strategy_names.push(record.strategy_name.clone());
     }
@@ -156,7 +157,7 @@ mod tests {
     fn resolved(id: &str, strategy_name: &str) -> ResolvedAnalysisSettingsRecord {
         ResolvedAnalysisSettingsRecord {
             id: id.to_string(),
-            pair_code: "BTC/USDT".to_string(),
+            symbol: "BTC/USDT".to_string(),
             timeframe_code: "1m".to_string(),
             strategy_name: strategy_name.to_string(),
             risk_profile_name: "default-risk".to_string(),

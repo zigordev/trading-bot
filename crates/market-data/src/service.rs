@@ -2,11 +2,11 @@ use std::{
     collections::HashMap,
     num::NonZeroUsize,
     sync::Arc,
-    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant, SystemTime},
 };
 
 use anyhow::{Context, Result};
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use futures_util::{SinkExt, StreamExt};
 use lru::LruCache;
 use rdkafka::{
@@ -26,7 +26,7 @@ use tokio_tungstenite::{connect_async, tungstenite::protocol::Message as WsMessa
 
 use crate::{
     config::AppConfig,
-    db::{Database, TimeGap},
+    db::{Database, TimeGap, TimeInterval},
     events::{
         NormalizedWsEvent, normalize_rest_book_ticker, normalize_rest_kline, normalize_rest_trade,
         normalize_ws_message,
@@ -61,6 +61,7 @@ struct Inner {
     metrics: Metrics,
     database: Database,
     http_client: reqwest::Client,
+    binance_weight_limiter: BinanceWeightLimiter,
     kafka_producer: FutureProducer,
     runtime_status: RwLock<RuntimeStatus>,
     kline_by_stream: RwLock<HashMap<String, KlineSubscription>>,
@@ -162,6 +163,188 @@ struct RequiredHistoryPlan {
     trade_gap_threshold_by_pair_code: HashMap<String, i64>,
 }
 
+#[derive(Clone)]
+struct BinanceWeightLimiter {
+    state: Arc<Mutex<BinanceWeightLimiterState>>,
+}
+
+#[derive(Debug)]
+struct BinanceWeightLimiterState {
+    current_window_minute: i64,
+    reserved_weight: u64,
+    observed_used_weight_1m: u64,
+    last_warned_used_weight_1m: u64,
+}
+
+#[derive(Debug)]
+struct BinanceWeightObservation {
+    current_window_minute: i64,
+    effective_used_weight_1m: u64,
+    target_weight_1m: u64,
+    limit_weight_1m: u64,
+    warn_weight_1m: u64,
+}
+
+impl BinanceWeightLimiter {
+    fn new() -> Self {
+        Self {
+            state: Arc::new(Mutex::new(BinanceWeightLimiterState {
+                current_window_minute: current_binance_window_minute(),
+                reserved_weight: 0,
+                observed_used_weight_1m: 0,
+                last_warned_used_weight_1m: 0,
+            })),
+        }
+    }
+
+    async fn acquire(
+        &self,
+        request_weight: u64,
+        target_weight_1m: u64,
+        metrics: &Metrics,
+        path: &str,
+    ) {
+        loop {
+            let maybe_wait_ms = {
+                let mut state = self.state.lock().await;
+                state.roll_window_if_needed();
+                let used_weight_1m = state.reserved_weight.max(state.observed_used_weight_1m);
+                if used_weight_1m.saturating_add(request_weight) <= target_weight_1m {
+                    state.reserved_weight = used_weight_1m.saturating_add(request_weight);
+                    metrics
+                        .binance_rest_used_weight_1m
+                        .set(state.reserved_weight.min(i64::MAX as u64) as i64);
+                    None
+                } else {
+                    Some(millis_until_next_binance_minute_window())
+                }
+            };
+
+            match maybe_wait_ms {
+                None => return,
+                Some(wait_ms) => {
+                    metrics.binance_rest_limiter_waits_total.inc();
+                    metrics.binance_rest_limiter_wait_ms_total.inc_by(wait_ms);
+                    tracing::info!(
+                        path,
+                        request_weight,
+                        target_weight_1m,
+                        wait_ms,
+                        "local Binance REQUEST_WEIGHT limiter delaying request until next minute window"
+                    );
+                    tokio::time::sleep(Duration::from_millis(wait_ms)).await;
+                }
+            }
+        }
+    }
+
+    async fn observe_response(
+        &self,
+        used_weight_1m: Option<u64>,
+        limit_weight_1m: u64,
+        target_weight_1m: u64,
+        warn_weight_1m: u64,
+        metrics: &Metrics,
+    ) -> Option<BinanceWeightObservation> {
+        let mut state = self.state.lock().await;
+        state.roll_window_if_needed();
+
+        if let Some(used_weight_1m) = used_weight_1m {
+            state.observed_used_weight_1m = state.observed_used_weight_1m.max(used_weight_1m);
+            state.reserved_weight = state.reserved_weight.max(used_weight_1m);
+        }
+
+        let effective_used_weight_1m = state.reserved_weight.max(state.observed_used_weight_1m);
+        metrics
+            .binance_rest_used_weight_1m
+            .set(effective_used_weight_1m.min(i64::MAX as u64) as i64);
+
+        if effective_used_weight_1m >= warn_weight_1m
+            && effective_used_weight_1m > state.last_warned_used_weight_1m
+        {
+            state.last_warned_used_weight_1m = effective_used_weight_1m;
+            return Some(BinanceWeightObservation {
+                current_window_minute: state.current_window_minute,
+                effective_used_weight_1m,
+                target_weight_1m,
+                limit_weight_1m,
+                warn_weight_1m,
+            });
+        }
+
+        None
+    }
+}
+
+impl BinanceWeightLimiterState {
+    fn roll_window_if_needed(&mut self) {
+        let current_window_minute = current_binance_window_minute();
+        if self.current_window_minute != current_window_minute {
+            self.current_window_minute = current_window_minute;
+            self.reserved_weight = 0;
+            self.observed_used_weight_1m = 0;
+            self.last_warned_used_weight_1m = 0;
+        }
+    }
+}
+
+fn current_binance_window_minute() -> i64 {
+    Utc::now().timestamp().div_euclid(60)
+}
+
+fn millis_until_next_binance_minute_window() -> u64 {
+    let now_ms = Utc::now().timestamp_millis();
+    let next_window_ms = now_ms
+        .div_euclid(60_000)
+        .saturating_add(1)
+        .saturating_mul(60_000)
+        .saturating_add(50);
+    next_window_ms.saturating_sub(now_ms).max(1) as u64
+}
+
+fn compute_target_weight_1m(limit_weight_1m: u64, target_utilization_percent: u64) -> u64 {
+    limit_weight_1m
+        .saturating_mul(target_utilization_percent)
+        .saturating_div(100)
+        .max(1)
+}
+
+fn compute_warn_weight_1m(limit_weight_1m: u64, warn_utilization_percent: u64) -> u64 {
+    limit_weight_1m
+        .saturating_mul(warn_utilization_percent)
+        .saturating_div(100)
+        .max(1)
+}
+
+fn binance_request_weight_for_path(path: &str, query: &[(&str, String)]) -> u64 {
+    match path {
+        "/api/v3/aggTrades" => 4,
+        "/api/v3/depth" => {
+            let limit = query
+                .iter()
+                .find_map(|(key, value)| (*key == "limit").then_some(value))
+                .and_then(|value| value.parse::<usize>().ok())
+                .unwrap_or(100);
+            match limit {
+                0..=100 => 5,
+                101..=500 => 25,
+                501..=1000 => 50,
+                _ => 250,
+            }
+        }
+        "/api/v3/klines" | "/api/v3/uiKlines" => 2,
+        "/api/v3/trades" | "/api/v3/historicalTrades" => 25,
+        _ => 1,
+    }
+}
+
+fn parse_used_weight_1m(headers: &reqwest::header::HeaderMap) -> Option<u64> {
+    headers
+        .get("x-mbx-used-weight-1m")
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.parse::<u64>().ok())
+}
+
 impl MarketDataService {
     pub async fn new(config: AppConfig) -> Result<Self> {
         let database = Database::connect(&config).await?;
@@ -183,6 +366,18 @@ impl MarketDataService {
             .build()?;
         let metrics = Metrics::new()?;
         metrics.database_connected.set(1);
+        metrics.binance_rest_limit_weight_1m.set(
+            config
+                .binance_rest_request_weight_limit_per_minute
+                .min(i64::MAX as u64) as i64,
+        );
+        metrics.binance_rest_target_weight_1m.set(
+            compute_target_weight_1m(
+                config.binance_rest_request_weight_limit_per_minute,
+                config.binance_rest_target_utilization_percent,
+            )
+            .min(i64::MAX as u64) as i64,
+        );
 
         let kafka_producer = ClientConfig::new()
             .set("bootstrap.servers", &config.kafka_bootstrap_servers)
@@ -191,7 +386,10 @@ impl MarketDataService {
 
         let (refresh_tx, refresh_rx) = mpsc::channel::<String>(32);
         let (live_trade_tx, live_trade_rx) = mpsc::channel::<NormalizedTradeEvent>(
-            config.live_trade_insert_batch_rows.saturating_mul(4).max(1_000),
+            config
+                .live_trade_insert_batch_rows
+                .saturating_mul(4)
+                .max(1_000),
         );
         let (subscriptions_tx, _) = watch::channel(ActiveSubscriptions::default());
         let (shutdown_tx, _) = watch::channel(false);
@@ -219,6 +417,7 @@ impl MarketDataService {
             metrics,
             database,
             http_client,
+            binance_weight_limiter: BinanceWeightLimiter::new(),
             kafka_producer,
             runtime_status: RwLock::new(runtime_status),
             kline_by_stream: RwLock::new(HashMap::new()),
@@ -247,7 +446,9 @@ impl MarketDataService {
             );
         }
 
-        service.start_with_refresh_loop(refresh_rx, live_trade_rx).await;
+        service
+            .start_with_refresh_loop(refresh_rx, live_trade_rx)
+            .await;
         Ok(service)
     }
 
@@ -290,7 +491,9 @@ impl MarketDataService {
 
         let trade_writer_service = self.clone();
         let trade_writer_handle = tokio::spawn(async move {
-            trade_writer_service.live_trade_writer_loop(live_trade_rx).await;
+            trade_writer_service
+                .live_trade_writer_loop(live_trade_rx)
+                .await;
         });
 
         let mut handles = self.inner.task_handles.lock().await;
@@ -866,8 +1069,9 @@ impl MarketDataService {
             required_history_plan.kline_by_subscription_id.clone();
         *self.inner.required_trade_history_ms.write().await =
             required_history_plan.trade_by_pair_code.clone();
-        *self.inner.required_trade_gap_threshold_ms.write().await =
-            required_history_plan.trade_gap_threshold_by_pair_code.clone();
+        *self.inner.required_trade_gap_threshold_ms.write().await = required_history_plan
+            .trade_gap_threshold_by_pair_code
+            .clone();
         let _ = self.inner.subscriptions_tx.send(active.clone());
 
         tracing::info!(
@@ -885,8 +1089,8 @@ impl MarketDataService {
         // older leading gaps unfixed. The deep audit re-checks from the
         // earliest kline we have for each pair (bounded by config).
         if reason == "startup" && self.inner.config.trade_gap_repair_enabled {
-            if let Err(error) =
-                self.run_trade_gap_audit_and_repair(
+            if let Err(error) = self
+                .run_trade_gap_audit_and_repair(
                     &active,
                     &required_history_plan.trade_by_pair_code,
                     &required_history_plan.trade_gap_threshold_by_pair_code,
@@ -950,33 +1154,31 @@ impl MarketDataService {
                 })
                 .max(record.timeframe.period_ms.max(1));
 
-            let warmup_candles = estimate_warmup_candles(
-                record,
-                self.inner.config.default_warmup_multiplier,
-            );
-            let warmup_ms = (warmup_candles as i64).saturating_mul(record.timeframe.period_ms.max(1));
+            let warmup_candles =
+                estimate_warmup_candles(record, self.inner.config.default_warmup_multiplier);
+            let warmup_ms =
+                (warmup_candles as i64).saturating_mul(record.timeframe.period_ms.max(1));
             let kline_headroom_ms = (self.inner.config.backtest_kline_headroom_candles as i64)
                 .saturating_mul(record.timeframe.period_ms.max(1));
             let headroom_ms = self.inner.config.scheduled_backtest_history_headroom_ms as i64;
             let required_kline_history_ms = configured_duration_ms
                 .saturating_add(warmup_ms)
-                .saturating_add(kline_headroom_ms)
-                .saturating_add(headroom_ms);
+                .saturating_add(kline_headroom_ms);
             let required_trade_history_ms = configured_duration_ms.saturating_add(headroom_ms);
 
-            let kline_key = (record.pair_code.clone(), record.timeframe_code.clone());
+            let kline_key = (record.symbol.clone(), record.timeframe_code.clone());
             kline_by_key
                 .entry(kline_key)
                 .and_modify(|current| *current = (*current).max(required_kline_history_ms))
                 .or_insert(required_kline_history_ms);
 
             trade_by_pair_code
-                .entry(record.pair_code.clone())
+                .entry(record.symbol.clone())
                 .and_modify(|current| *current = (*current).max(required_trade_history_ms))
                 .or_insert(required_trade_history_ms);
 
             book_ticker_by_pair_code
-                .entry(record.pair_code.clone())
+                .entry(record.symbol.clone())
                 .and_modify(|current| *current = (*current).max(required_trade_history_ms))
                 .or_insert(required_trade_history_ms);
         }
@@ -1010,13 +1212,12 @@ impl MarketDataService {
         active: &ActiveSubscriptions,
         required_history_plan: &RequiredHistoryPlan,
     ) -> Result<()> {
-
         let result = async {
             self.run_kline_backfill_and_gap_repair(
                 &active.kline_subscriptions,
                 &required_history_plan.kline_by_subscription_id,
             )
-                .await?;
+            .await?;
             self.run_trade_backfill_and_gap_repair(
                 &active.pair_subscriptions,
                 &required_history_plan.trade_by_pair_code,
@@ -1027,7 +1228,7 @@ impl MarketDataService {
                 &active.pair_subscriptions,
                 &required_history_plan.book_ticker_by_pair_code,
             )
-                .await
+            .await
         }
         .await;
 
@@ -1038,9 +1239,7 @@ impl MarketDataService {
 
         if result.is_ok()
             && self.inner.config.historical_store_compact_after_refresh
-            && let Err(error) = self
-                .run_market_data_compaction("post-refresh")
-                .await
+            && let Err(error) = self.run_market_data_compaction("post-refresh").await
         {
             tracing::warn!(?error, "market-data post-refresh compaction failed");
         }
@@ -1160,11 +1359,7 @@ impl MarketDataService {
         let end_grace_ms = self.inner.config.trade_gap_repair_end_grace_ms as i64;
         let end_limit_ms = now_ms.saturating_sub(end_grace_ms).max(0);
 
-        let max_batch_rows = self
-            .inner
-            .config
-            .historical_trade_backfill_limit
-            .min(1000);
+        let max_batch_rows = self.inner.config.historical_trade_backfill_limit.min(1000);
         let max_batches = self
             .inner
             .config
@@ -1174,8 +1369,9 @@ impl MarketDataService {
         let startup_cap_ms = self.inner.config.trade_gap_repair_startup_max_window_ms as i64;
         let periodic_lookback_ms = self.inner.config.trade_gap_repair_periodic_lookback_ms as i64;
 
-        let semaphore =
-            std::sync::Arc::new(tokio::sync::Semaphore::new(self.inner.config.historical_backfill_max_concurrency));
+        let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(
+            self.inner.config.historical_backfill_max_concurrency,
+        ));
         let mut tasks: Vec<tokio::task::JoinHandle<Result<()>>> =
             Vec::with_capacity(active.pair_subscriptions.len());
 
@@ -1241,6 +1437,27 @@ impl MarketDataService {
                     "trade gap audit/repair begin"
                 );
 
+                let planned_gaps = service
+                    .planned_trade_gaps_for_pair(
+                        &subscription.pair_code,
+                        window_start_ms,
+                        window_end_ms,
+                        gap_threshold_ms,
+                        10_000,
+                    )
+                    .await?;
+                if planned_gaps.is_empty() {
+                    tracing::info!(
+                        table = "market_data_trades",
+                        pair_code = %subscription.pair_code,
+                        mode = ?mode,
+                        window_start_ms = window_start_ms,
+                        window_end_ms = window_end_ms,
+                        "trade gap audit/repair skipped because persisted coverage state already covers the required window"
+                    );
+                    return Ok(());
+                }
+
                 service
                     .repair_trade_gaps_for_pair(
                         &subscription,
@@ -1251,6 +1468,26 @@ impl MarketDataService {
                         gap_threshold_ms,
                     )
                     .await?;
+
+                if let Err(error) = service
+                    .sync_trade_coverage_state_from_db(
+                        &subscription.pair_code,
+                        window_start_ms,
+                        window_end_ms,
+                        gap_threshold_ms,
+                    )
+                    .await
+                {
+                    tracing::warn!(
+                        ?error,
+                        table = "market_data_trades",
+                        pair_code = %subscription.pair_code,
+                        mode = ?mode,
+                        window_start_ms = window_start_ms,
+                        window_end_ms = window_end_ms,
+                        "failed to sync trade coverage state after gap audit/repair"
+                    );
+                }
 
                 tracing::info!(
                     table = "market_data_trades",
@@ -1296,8 +1533,16 @@ impl MarketDataService {
             let required_history_ms = required_history_by_pair_code
                 .get(&subscription.pair_code)
                 .copied()
-                .unwrap_or(self.inner.config.historical_book_ticker_backfill_interval_ms as i64)
-                .max(self.inner.config.historical_book_ticker_backfill_interval_ms as i64);
+                .unwrap_or(
+                    self.inner
+                        .config
+                        .historical_book_ticker_backfill_interval_ms as i64,
+                )
+                .max(
+                    self.inner
+                        .config
+                        .historical_book_ticker_backfill_interval_ms as i64,
+                );
             tasks.push(tokio::spawn(async move {
                 let _permit = permit;
                 service
@@ -1328,6 +1573,14 @@ impl MarketDataService {
         timestamp_ms - (timestamp_ms % period_ms)
     }
 
+    fn previous_midnight_utc(reference_time: DateTime<Utc>) -> DateTime<Utc> {
+        reference_time
+            .date_naive()
+            .and_hms_opt(0, 0, 0)
+            .expect("midnight is valid")
+            .and_utc()
+    }
+
     fn value_to_i64(value: &Value) -> Option<i64> {
         value
             .as_i64()
@@ -1335,9 +1588,8 @@ impl MarketDataService {
     }
 
     async fn live_trade_writer_loop(&self, mut rx: mpsc::Receiver<NormalizedTradeEvent>) {
-        let flush_interval = Duration::from_millis(
-            self.inner.config.live_trade_insert_flush_interval_ms,
-        );
+        let flush_interval =
+            Duration::from_millis(self.inner.config.live_trade_insert_flush_interval_ms);
         let batch_size = self.inner.config.live_trade_insert_batch_rows.max(1);
         let mut shutdown_rx = self.inner.shutdown_tx.subscribe();
         let mut buffer = Vec::with_capacity(batch_size);
@@ -1383,10 +1635,7 @@ impl MarketDataService {
         }
     }
 
-    async fn flush_live_trade_buffer(
-        &self,
-        buffer: &mut Vec<NormalizedTradeEvent>,
-    ) -> Result<()> {
+    async fn flush_live_trade_buffer(&self, buffer: &mut Vec<NormalizedTradeEvent>) -> Result<()> {
         if buffer.is_empty() {
             return Ok(());
         }
@@ -1397,7 +1646,9 @@ impl MarketDataService {
             .database
             .insert_new_trades_batch(
                 buffer,
-                self.inner.config.historical_trade_backfill_use_rowbinary_insert,
+                self.inner
+                    .config
+                    .historical_trade_backfill_use_rowbinary_insert,
             )
             .await?;
         buffer.clear();
@@ -1434,7 +1685,233 @@ impl MarketDataService {
         merged
     }
 
-    async fn detect_trade_gaps_for_pair(
+    fn merge_time_intervals(mut intervals: Vec<TimeInterval>) -> Vec<TimeInterval> {
+        if intervals.is_empty() {
+            return intervals;
+        }
+        intervals.sort_by_key(|interval| interval.start_time);
+        let mut merged: Vec<TimeInterval> = Vec::with_capacity(intervals.len());
+        for interval in intervals {
+            if interval.end_time <= interval.start_time {
+                continue;
+            }
+            if let Some(last) = merged.last_mut()
+                && interval.start_time <= last.end_time.saturating_add(1)
+            {
+                last.end_time = last.end_time.max(interval.end_time);
+            } else {
+                merged.push(interval);
+            }
+        }
+        merged
+    }
+
+    fn subtract_covered_intervals(
+        window_start: i64,
+        window_end: i64,
+        covered_intervals: &[TimeInterval],
+    ) -> Vec<TimeGap> {
+        if window_end <= window_start {
+            return Vec::new();
+        }
+
+        let mut gaps = Vec::new();
+        let mut cursor = window_start;
+        for interval in covered_intervals {
+            let covered_start = interval.start_time.max(window_start);
+            let covered_end = interval.end_time.min(window_end);
+            if covered_end <= covered_start {
+                continue;
+            }
+            if covered_start > cursor {
+                gaps.push(TimeGap {
+                    start_time: cursor,
+                    end_time: covered_start,
+                    gap_ms: covered_start.saturating_sub(cursor),
+                });
+            }
+            cursor = cursor.max(covered_end);
+            if cursor >= window_end {
+                break;
+            }
+        }
+
+        if cursor < window_end {
+            gaps.push(TimeGap {
+                start_time: cursor,
+                end_time: window_end,
+                gap_ms: window_end.saturating_sub(cursor),
+            });
+        }
+
+        Self::merge_time_gaps(gaps)
+    }
+
+    fn covered_intervals_from_missing_ranges(
+        window_start: i64,
+        window_end: i64,
+        missing_ranges: &[TimeGap],
+    ) -> Vec<TimeInterval> {
+        if window_end <= window_start {
+            return Vec::new();
+        }
+
+        let mut covered = Vec::new();
+        let mut cursor = window_start;
+        let mut gaps = missing_ranges.to_vec();
+        gaps.sort_by_key(|gap| gap.start_time);
+        for gap in gaps {
+            let gap_start = gap.start_time.max(window_start);
+            let gap_end = gap.end_time.min(window_end);
+            if gap_end <= gap_start {
+                continue;
+            }
+            if cursor < gap_start {
+                covered.push(TimeInterval {
+                    start_time: cursor,
+                    end_time: gap_start,
+                });
+            }
+            cursor = cursor.max(gap_end);
+            if cursor >= window_end {
+                break;
+            }
+        }
+
+        if cursor < window_end {
+            covered.push(TimeInterval {
+                start_time: cursor,
+                end_time: window_end,
+            });
+        }
+
+        Self::merge_time_intervals(covered)
+    }
+
+    fn replace_coverage_window(
+        existing_intervals: Vec<TimeInterval>,
+        window_start: i64,
+        window_end: i64,
+        replacement_intervals: Vec<TimeInterval>,
+    ) -> Vec<TimeInterval> {
+        let mut kept = Vec::new();
+        for interval in existing_intervals {
+            if interval.end_time <= window_start || interval.start_time >= window_end {
+                kept.push(interval);
+                continue;
+            }
+
+            if interval.start_time < window_start {
+                kept.push(TimeInterval {
+                    start_time: interval.start_time,
+                    end_time: window_start,
+                });
+            }
+            if interval.end_time > window_end {
+                kept.push(TimeInterval {
+                    start_time: window_end,
+                    end_time: interval.end_time,
+                });
+            }
+        }
+
+        kept.extend(replacement_intervals);
+        Self::merge_time_intervals(kept)
+    }
+
+    async fn sync_trade_coverage_state_from_db(
+        &self,
+        pair_code: &str,
+        window_start: i64,
+        window_end: i64,
+        min_gap_ms: i64,
+    ) -> Result<Vec<TimeInterval>> {
+        let missing_ranges = self
+            .detect_trade_gaps_from_db_for_pair(
+                pair_code,
+                window_start,
+                window_end,
+                min_gap_ms,
+                10_000,
+            )
+            .await?;
+        let replacement_intervals =
+            Self::covered_intervals_from_missing_ranges(window_start, window_end, &missing_ranges);
+        let existing_intervals = self
+            .inner
+            .database
+            .trade_coverage_intervals(pair_code)
+            .await?;
+        let merged_intervals = Self::replace_coverage_window(
+            existing_intervals,
+            window_start,
+            window_end,
+            replacement_intervals,
+        );
+        self.inner
+            .database
+            .replace_trade_coverage_intervals(pair_code, &merged_intervals)
+            .await?;
+        Ok(merged_intervals)
+    }
+
+    async fn planned_trade_gaps_for_pair(
+        &self,
+        pair_code: &str,
+        window_start: i64,
+        window_end: i64,
+        min_gap_ms: i64,
+        limit: i64,
+    ) -> Result<Vec<TimeGap>> {
+        let coverage_intervals = self
+            .inner
+            .database
+            .trade_coverage_intervals(pair_code)
+            .await?;
+        if !coverage_intervals.is_empty() {
+            let merged_intervals = Self::merge_time_intervals(coverage_intervals);
+            let missing_ranges =
+                Self::subtract_covered_intervals(window_start, window_end, &merged_intervals);
+            tracing::info!(
+                table = "market_data_trades",
+                pair_code,
+                window_start_ms = window_start,
+                window_end_ms = window_end,
+                covered_interval_count = merged_intervals.len(),
+                missing_interval_count = missing_ranges.len(),
+                "trade backfill planning used persisted coverage state"
+            );
+            return Ok(missing_ranges);
+        }
+
+        let missing_ranges = self
+            .detect_trade_gaps_from_db_for_pair(
+                pair_code,
+                window_start,
+                window_end,
+                min_gap_ms,
+                limit,
+            )
+            .await?;
+        let covered_intervals =
+            Self::covered_intervals_from_missing_ranges(window_start, window_end, &missing_ranges);
+        self.inner
+            .database
+            .replace_trade_coverage_intervals(pair_code, &covered_intervals)
+            .await?;
+        tracing::info!(
+            table = "market_data_trades",
+            pair_code,
+            window_start_ms = window_start,
+            window_end_ms = window_end,
+            covered_interval_count = covered_intervals.len(),
+            missing_interval_count = missing_ranges.len(),
+            "trade backfill planning bootstrapped persisted coverage state from raw trade scan"
+        );
+        Ok(missing_ranges)
+    }
+
+    async fn detect_trade_gaps_from_db_for_pair(
         &self,
         pair_code: &str,
         window_start: i64,
@@ -1727,14 +2204,14 @@ impl MarketDataService {
             return Ok(());
         }
 
-        let now_ms = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .context("system clock is before unix epoch")?
-            .as_millis() as i64;
-
         let period_ms = subscription.period_ms.max(1);
-        let required_end_ms = Self::align_to_period_ms(now_ms, period_ms);
-        let required_lookback_ms = required_history_ms.max(period_ms);
+        let scheduled_backtest_end_ms = Self::previous_midnight_utc(Utc::now()).timestamp_millis();
+        let required_end_ms = Self::align_to_period_ms(scheduled_backtest_end_ms, period_ms);
+        let max_retention_lookback_ms = (self.inner.config.historical_kline_retention_days as i64)
+            .saturating_mul(24 * 60 * 60 * 1000)
+            .max(period_ms);
+        let unclamped_required_lookback_ms = required_history_ms.max(period_ms);
+        let required_lookback_ms = unclamped_required_lookback_ms.min(max_retention_lookback_ms);
         let required_start_ms = if required_end_ms > required_lookback_ms {
             Self::align_to_period_ms(
                 required_end_ms.saturating_sub(required_lookback_ms),
@@ -1767,6 +2244,19 @@ impl MarketDataService {
             )
             .await?;
 
+        if unclamped_required_lookback_ms > max_retention_lookback_ms {
+            tracing::warn!(
+                table = "market_data_klines",
+                pair_code = %subscription.pair_code,
+                timeframe_code = %subscription.timeframe_code,
+                unclamped_required_lookback_ms,
+                max_retention_lookback_ms,
+                required_start_ms,
+                required_end_ms,
+                "clamped kline required lookback to retention horizon"
+            );
+        }
+
         if gaps.is_empty() {
             tracing::info!(
                 table = "market_data_klines",
@@ -1774,6 +2264,7 @@ impl MarketDataService {
                 timeframe_code = %subscription.timeframe_code,
                 required_start_ms,
                 required_end_ms,
+                scheduled_backtest_end_ms,
                 required_lookback_ms,
                 required_count,
                 current_count,
@@ -1788,6 +2279,7 @@ impl MarketDataService {
             timeframe_code = %subscription.timeframe_code,
             required_start_ms,
             required_end_ms,
+            scheduled_backtest_end_ms,
             required_lookback_ms,
             required_count,
             current_count,
@@ -1898,7 +2390,7 @@ impl MarketDataService {
         }
 
         let missing_ranges = self
-            .detect_trade_gaps_for_pair(
+            .planned_trade_gaps_for_pair(
                 &subscription.pair_code,
                 window_start,
                 window_end,
@@ -1951,7 +2443,11 @@ impl MarketDataService {
             .inner
             .config
             .historical_backfill_max_concurrency
-            .min(self.inner.config.historical_trade_backfill_pair_max_concurrency)
+            .min(
+                self.inner
+                    .config
+                    .historical_trade_backfill_pair_max_concurrency,
+            )
             .max(1);
         let pair_semaphore =
             std::sync::Arc::new(tokio::sync::Semaphore::new(pair_chunk_concurrency));
@@ -1963,7 +2459,13 @@ impl MarketDataService {
             tasks.push(tokio::spawn(async move {
                 let _permit = permit;
                 service
-                    .backfill_pair_trades_for_chunk(sub, start_ms, end_ms, max_batch_rows, max_batches)
+                    .backfill_pair_trades_for_chunk(
+                        sub,
+                        start_ms,
+                        end_ms,
+                        max_batch_rows,
+                        max_batches,
+                    )
                     .await
             }));
         }
@@ -1992,17 +2494,31 @@ impl MarketDataService {
             gap_threshold_ms,
         )
         .await?;
+        if let Err(error) = self
+            .sync_trade_coverage_state_from_db(
+                &subscription.pair_code,
+                window_start,
+                window_end,
+                gap_threshold_ms,
+            )
+            .await
+        {
+            tracing::warn!(
+                ?error,
+                table = "market_data_trades",
+                pair_code = %subscription.pair_code,
+                window_start_ms = window_start,
+                window_end_ms = window_end,
+                "failed to sync trade coverage state after trade backfill"
+            );
+        }
         // After backfilling all chunks for this pair, log what ClickHouse
         // actually contains for the requested window so operators can see
         // whether coverage is complete or there are still gaps.
         match self
             .inner
             .database
-            .trade_window_coverage_in_range(
-                &subscription.pair_code,
-                window_start,
-                window_end,
-            )
+            .trade_window_coverage_in_range(&subscription.pair_code, window_start, window_end)
             .await
         {
             Ok(coverage) => {
@@ -2066,7 +2582,7 @@ impl MarketDataService {
         for round in 1..=MAX_REPAIR_ROUNDS {
             let min_gap_ms = required_period_ms.max(60_000);
             let gaps = self
-                .detect_trade_gaps_for_pair(
+                .detect_trade_gaps_from_db_for_pair(
                     &subscription.pair_code,
                     window_start,
                     window_end,
@@ -2255,7 +2771,9 @@ impl MarketDataService {
                         .database
                         .insert_new_trades_batch(
                             &buffered_events,
-                            self.inner.config.historical_trade_backfill_use_rowbinary_insert,
+                            self.inner
+                                .config
+                                .historical_trade_backfill_use_rowbinary_insert,
                         )
                         .await?;
                     let flush_ms = flush_started.elapsed().as_millis() as u64;
@@ -2299,7 +2817,8 @@ impl MarketDataService {
             let progressed_ms = last_trade_time_ms
                 .unwrap_or(next_start)
                 .saturating_sub(chunk_start_ms)
-                .clamp(0, chunk_end_ms.saturating_sub(chunk_start_ms)) as f64;
+                .clamp(0, chunk_end_ms.saturating_sub(chunk_start_ms))
+                as f64;
             let chunk_time_progress_percent = (progressed_ms / chunk_span_ms) * 100.0;
 
             // Readable logs: first page, every 5 pages, short/partial Binance page.
@@ -2361,7 +2880,9 @@ impl MarketDataService {
                 .database
                 .insert_new_trades_batch(
                     &buffered_events,
-                    self.inner.config.historical_trade_backfill_use_rowbinary_insert,
+                    self.inner
+                        .config
+                        .historical_trade_backfill_use_rowbinary_insert,
                 )
                 .await?;
             let flush_ms = flush_started.elapsed().as_millis() as u64;
@@ -2573,18 +3094,20 @@ impl MarketDataService {
             .database
             .insert_new_trades_batch(
                 std::slice::from_ref(&event),
-                self.inner.config.historical_trade_backfill_use_rowbinary_insert,
+                self.inner
+                    .config
+                    .historical_trade_backfill_use_rowbinary_insert,
             )
             .await
         {
-                self.inner.metrics.trade_store_failures_total.inc();
-                self.inner.metrics.database_connected.set(0);
-                {
-                    let mut status = self.inner.runtime_status.write().await;
-                    status.database.connected = false;
-                    status.database.last_backfill_error = Some(error.to_string());
-                }
-                return Err(error);
+            self.inner.metrics.trade_store_failures_total.inc();
+            self.inner.metrics.database_connected.set(0);
+            {
+                let mut status = self.inner.runtime_status.write().await;
+                status.database.connected = false;
+                status.database.last_backfill_error = Some(error.to_string());
+            }
+            return Err(error);
         }
 
         if event.ingestion_mode != "live" {
@@ -2655,15 +3178,61 @@ impl MarketDataService {
     {
         let url = format!("{}{}", self.inner.config.binance_rest_base_url, path);
         let mut backoff_ms = self.inner.config.binance_rest_retry_backoff_ms;
+        let request_weight = binance_request_weight_for_path(path, query);
+        let limit_weight_1m = self
+            .inner
+            .config
+            .binance_rest_request_weight_limit_per_minute;
+        let target_weight_1m = compute_target_weight_1m(
+            limit_weight_1m,
+            self.inner.config.binance_rest_target_utilization_percent,
+        );
+        let warn_weight_1m = compute_warn_weight_1m(
+            limit_weight_1m,
+            self.inner.config.binance_rest_warn_utilization_percent,
+        );
 
         for attempt in 0..=self.inner.config.binance_rest_max_retries {
+            self.inner
+                .binance_weight_limiter
+                .acquire(request_weight, target_weight_1m, &self.inner.metrics, path)
+                .await;
             let response = self.inner.http_client.get(&url).query(query).send().await?;
+            let status = response.status();
+            let used_weight_1m = parse_used_weight_1m(response.headers());
 
-            if response.status().is_success() {
+            if let Some(observation) = self
+                .inner
+                .binance_weight_limiter
+                .observe_response(
+                    used_weight_1m,
+                    limit_weight_1m,
+                    target_weight_1m,
+                    warn_weight_1m,
+                    &self.inner.metrics,
+                )
+                .await
+            {
+                tracing::warn!(
+                    path,
+                    used_weight_1m = observation.effective_used_weight_1m,
+                    warn_weight_1m = observation.warn_weight_1m,
+                    target_weight_1m = observation.target_weight_1m,
+                    limit_weight_1m = observation.limit_weight_1m,
+                    current_window_minute = observation.current_window_minute,
+                    "Binance REQUEST_WEIGHT usage is approaching the configured minute ceiling"
+                );
+            }
+
+            if status.is_success() {
+                self.inner
+                    .metrics
+                    .binance_rest_requests_total
+                    .with_label_values(&[path, "success"])
+                    .inc();
                 return Ok(response.json::<T>().await?);
             }
 
-            let status = response.status();
             let retry_after_ms = response
                 .headers()
                 .get("retry-after")
@@ -2675,12 +3244,42 @@ impl MarketDataService {
                 || status.is_server_error()
                 || status.as_u16() == 418;
 
+            if status == StatusCode::TOO_MANY_REQUESTS || status.as_u16() == 418 {
+                self.inner
+                    .metrics
+                    .binance_rest_rate_limit_responses_total
+                    .with_label_values(&[path, status.as_str()])
+                    .inc();
+            }
+
             if should_retry && attempt < self.inner.config.binance_rest_max_retries {
+                self.inner
+                    .metrics
+                    .binance_rest_requests_total
+                    .with_label_values(&[path, "retry"])
+                    .inc();
+                tracing::warn!(
+                    path,
+                    status = %status,
+                    attempt,
+                    max_retries = self.inner.config.binance_rest_max_retries,
+                    request_weight,
+                    retry_after_ms,
+                    used_weight_1m,
+                    body,
+                    "Binance REST request failed; backing off before retry"
+                );
                 tokio::time::sleep(Duration::from_millis(retry_after_ms.unwrap_or(backoff_ms)))
                     .await;
                 backoff_ms = backoff_ms.saturating_mul(2);
                 continue;
             }
+
+            self.inner
+                .metrics
+                .binance_rest_requests_total
+                .with_label_values(&[path, "error"])
+                .inc();
 
             return Err(anyhow::anyhow!(
                 "Binance REST {} failed with status {}: {}",

@@ -11,8 +11,15 @@ pub struct Metrics {
     pub database_connected: IntGauge,
     pub active_kline_subscriptions: IntGauge,
     pub active_pair_subscriptions: IntGauge,
+    pub binance_rest_used_weight_1m: IntGauge,
+    pub binance_rest_target_weight_1m: IntGauge,
+    pub binance_rest_limit_weight_1m: IntGauge,
     pub config_refresh_total: IntCounterVec,
     pub backfill_total: IntCounterVec,
+    pub binance_rest_requests_total: IntCounterVec,
+    pub binance_rest_rate_limit_responses_total: IntCounterVec,
+    pub binance_rest_limiter_waits_total: IntCounter,
+    pub binance_rest_limiter_wait_ms_total: IntCounter,
     pub kline_publish_total: IntCounter,
     pub trade_publish_total: IntCounter,
     pub book_ticker_publish_total: IntCounter,
@@ -52,6 +59,18 @@ impl Metrics {
             "trading_bot_market_data_active_pair_subscriptions",
             "Number of active pair-level subscriptions",
         )?;
+        let binance_rest_used_weight_1m = IntGauge::new(
+            "trading_bot_market_data_binance_rest_used_weight_1m",
+            "Latest observed Binance REQUEST_WEIGHT usage for the current 1-minute window",
+        )?;
+        let binance_rest_target_weight_1m = IntGauge::new(
+            "trading_bot_market_data_binance_rest_target_weight_1m",
+            "Local Binance REQUEST_WEIGHT target budget per 1-minute window",
+        )?;
+        let binance_rest_limit_weight_1m = IntGauge::new(
+            "trading_bot_market_data_binance_rest_limit_weight_1m",
+            "Configured Binance REQUEST_WEIGHT ceiling per 1-minute window",
+        )?;
         let config_refresh_total = IntCounterVec::new(
             prometheus::Opts::new(
                 "trading_bot_market_data_config_refresh_total",
@@ -65,6 +84,28 @@ impl Metrics {
                 "Number of backfill and gap-repair runs",
             ),
             &["outcome"],
+        )?;
+        let binance_rest_requests_total = IntCounterVec::new(
+            prometheus::Opts::new(
+                "trading_bot_market_data_binance_rest_requests_total",
+                "Number of Binance REST requests by endpoint and result",
+            ),
+            &["path", "outcome"],
+        )?;
+        let binance_rest_rate_limit_responses_total = IntCounterVec::new(
+            prometheus::Opts::new(
+                "trading_bot_market_data_binance_rest_rate_limit_responses_total",
+                "Number of Binance REST 429/418 responses by endpoint and status",
+            ),
+            &["path", "status"],
+        )?;
+        let binance_rest_limiter_waits_total = IntCounter::new(
+            "trading_bot_market_data_binance_rest_limiter_waits_total",
+            "Number of times the local Binance REQUEST_WEIGHT limiter delayed requests",
+        )?;
+        let binance_rest_limiter_wait_ms_total = IntCounter::new(
+            "trading_bot_market_data_binance_rest_limiter_wait_ms_total",
+            "Total milliseconds spent waiting on the local Binance REQUEST_WEIGHT limiter",
         )?;
         let kline_publish_total = IntCounter::new(
             "trading_bot_market_data_kline_publish_total",
@@ -98,8 +139,15 @@ impl Metrics {
         registry.register(Box::new(database_connected.clone()))?;
         registry.register(Box::new(active_kline_subscriptions.clone()))?;
         registry.register(Box::new(active_pair_subscriptions.clone()))?;
+        registry.register(Box::new(binance_rest_used_weight_1m.clone()))?;
+        registry.register(Box::new(binance_rest_target_weight_1m.clone()))?;
+        registry.register(Box::new(binance_rest_limit_weight_1m.clone()))?;
         registry.register(Box::new(config_refresh_total.clone()))?;
         registry.register(Box::new(backfill_total.clone()))?;
+        registry.register(Box::new(binance_rest_requests_total.clone()))?;
+        registry.register(Box::new(binance_rest_rate_limit_responses_total.clone()))?;
+        registry.register(Box::new(binance_rest_limiter_waits_total.clone()))?;
+        registry.register(Box::new(binance_rest_limiter_wait_ms_total.clone()))?;
         registry.register(Box::new(kline_publish_total.clone()))?;
         registry.register(Box::new(trade_publish_total.clone()))?;
         registry.register(Box::new(book_ticker_publish_total.clone()))?;
@@ -116,8 +164,15 @@ impl Metrics {
             database_connected,
             active_kline_subscriptions,
             active_pair_subscriptions,
+            binance_rest_used_weight_1m,
+            binance_rest_target_weight_1m,
+            binance_rest_limit_weight_1m,
             config_refresh_total,
             backfill_total,
+            binance_rest_requests_total,
+            binance_rest_rate_limit_responses_total,
+            binance_rest_limiter_waits_total,
+            binance_rest_limiter_wait_ms_total,
             kline_publish_total,
             trade_publish_total,
             book_ticker_publish_total,

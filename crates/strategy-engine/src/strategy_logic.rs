@@ -11,7 +11,7 @@ use crate::models::{
 #[derive(Clone, Debug)]
 pub struct AnalysisSpec {
     pub analysis_setting_id: String,
-    pub pair_code: String,
+    pub symbol: String,
     pub timeframe_code: String,
     pub strategy_name: String,
     pub strategy_kind: String,
@@ -105,7 +105,7 @@ pub fn build_analysis_spec(
 
     Ok(Some(AnalysisSpec {
         analysis_setting_id: record.id.clone(),
-        pair_code: record.pair_code.clone(),
+        symbol: record.symbol.clone(),
         timeframe_code: record.timeframe_code.clone(),
         strategy_name: record.strategy_name.clone(),
         strategy_kind: "emaCross".to_string(),
@@ -157,7 +157,8 @@ impl AnalysisEvaluator {
     pub fn summary(&self) -> AnalysisSummary {
         AnalysisSummary {
             analysis_setting_id: self.spec.analysis_setting_id.clone(),
-            pair_code: self.spec.pair_code.clone(),
+            pair_code: self.spec.symbol.clone(),
+            symbol: self.spec.symbol.clone(),
             timeframe_code: self.spec.timeframe_code.clone(),
             strategy_name: self.spec.strategy_name.clone(),
             strategy_kind: self.spec.strategy_kind.clone(),
@@ -181,7 +182,8 @@ impl AnalysisEvaluator {
             occurred_at: emitted.occurred_at,
             exchange: emitted.exchange,
             analysis_setting_id: self.spec.analysis_setting_id.clone(),
-            pair_code: self.spec.pair_code.clone(),
+            pair_code: self.spec.symbol.clone(),
+            symbol: self.spec.symbol.clone(),
             timeframe_code: self.spec.timeframe_code.clone(),
             strategy_name: self.spec.strategy_name.clone(),
             strategy_kind: self.spec.strategy_kind.clone(),
