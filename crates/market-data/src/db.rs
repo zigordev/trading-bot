@@ -3,6 +3,7 @@ use chrono::{TimeZone, Utc};
 use futures_util::{StreamExt, TryStreamExt};
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::time::Duration;
 use tokio_util::codec::{FramedRead, LinesCodec};
 use tracing::warn;
@@ -120,6 +121,11 @@ struct WindowCoverageRow {
     row_count: u64,
     min_time: Option<i64>,
     max_time: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+struct AggregateTradeIdRow {
+    aggregate_trade_id: i64,
 }
 
 #[derive(Clone, Debug)]
@@ -723,6 +729,83 @@ impl Database {
         self.query_window_coverage(&sql).await
     }
 
+    pub async fn kline_time_gaps_in_range(
+        &self,
+        pair_code: &str,
+        timeframe_code: &str,
+        start_time: i64,
+        end_time: i64,
+        period_ms: i64,
+        limit: i64,
+    ) -> Result<Vec<TimeGap>> {
+        let safe_limit = limit.clamp(1, 10_000);
+        let safe_period_ms = period_ms.max(1);
+        let sql = format!(
+            r#"
+            SELECT
+              prev_open_time,
+              open_time,
+              (open_time - prev_open_time) AS gap_ms
+            FROM
+            (
+              SELECT
+                open_time,
+                nullIf(
+                  lagInFrame(open_time) OVER (
+                    ORDER BY open_time ASC
+                    ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+                  ),
+                  0
+                ) AS prev_open_time
+              FROM
+              (
+                SELECT DISTINCT open_time
+                FROM {}.market_data_klines
+                WHERE pair_code = '{}'
+                  AND timeframe_code = '{}'
+                  AND open_time >= {}
+                  AND open_time <= {}
+              )
+            )
+            WHERE prev_open_time IS NOT NULL
+              AND (open_time - prev_open_time) > {}
+            ORDER BY gap_ms DESC
+            LIMIT {}
+            FORMAT JSONEachRow
+            "#,
+            sql_ident(&self.database),
+            sql_string(pair_code),
+            sql_string(timeframe_code),
+            start_time,
+            end_time,
+            safe_period_ms,
+            safe_limit
+        );
+
+        #[derive(Deserialize)]
+        struct KlineGapRow {
+            prev_open_time: i64,
+            open_time: i64,
+            gap_ms: i64,
+        }
+
+        let mut lines = self.query_lines(&sql).await?;
+        let mut gaps = Vec::new();
+        while let Some(line) = lines.next().await {
+            let line = line?;
+            if line.trim().is_empty() {
+                continue;
+            }
+            let row = serde_json::from_str::<KlineGapRow>(&line)?;
+            gaps.push(TimeGap {
+                start_time: row.prev_open_time.saturating_add(safe_period_ms),
+                end_time: row.open_time,
+                gap_ms: row.gap_ms.saturating_sub(safe_period_ms),
+            });
+        }
+        Ok(gaps)
+    }
+
     pub async fn trade_window_coverage_in_range(
         &self,
         pair_code: &str,
@@ -775,9 +858,12 @@ impl Database {
             (
               SELECT
                 latest_trade_time AS trade_time,
-                lagInFrame(latest_trade_time) OVER (
-                  ORDER BY latest_trade_time ASC
-                  ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+                nullIf(
+                  lagInFrame(latest_trade_time) OVER (
+                    ORDER BY latest_trade_time ASC
+                    ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+                  ),
+                  0
                 ) AS prev_trade_time
               FROM
               (
@@ -901,6 +987,116 @@ impl Database {
             }
             _ => Ok(None),
         }
+    }
+
+    pub async fn book_ticker_window_coverage_in_range(
+        &self,
+        pair_code: &str,
+        start_time: i64,
+        end_time: i64,
+    ) -> Result<WindowCoverage> {
+        let time_range =
+            sql_numeric_time_range("latest_occurred_at_ms", Some(start_time), Some(end_time));
+        let sql = format!(
+            r#"
+            SELECT
+              COUNT(*) AS row_count,
+              MIN(latest_occurred_at_ms) AS min_time,
+              MAX(latest_occurred_at_ms) AS max_time
+            FROM
+            (
+              SELECT
+                argMax(occurred_at_ms, updated_at_ms) AS latest_occurred_at_ms
+              FROM {}.market_data_book_tickers
+              WHERE pair_code = '{}'
+              GROUP BY pair_code, order_book_update_id
+            )
+            WHERE 1 = 1
+              {}
+            FORMAT JSONEachRow
+            "#,
+            sql_ident(&self.database),
+            sql_string(pair_code),
+            time_range
+        );
+
+        self.query_window_coverage(&sql).await
+    }
+
+    pub async fn book_ticker_time_gaps_in_range(
+        &self,
+        pair_code: &str,
+        start_time: i64,
+        end_time: i64,
+        min_gap_ms: i64,
+        limit: i64,
+    ) -> Result<Vec<TimeGap>> {
+        let safe_limit = limit.clamp(1, 10_000);
+        let safe_min_gap_ms = min_gap_ms.max(1);
+        let sql = format!(
+            r#"
+            SELECT
+              prev_occurred_at_ms,
+              occurred_at_ms,
+              (occurred_at_ms - prev_occurred_at_ms) AS gap_ms
+            FROM
+            (
+              SELECT
+                occurred_at_ms,
+                nullIf(
+                  lagInFrame(occurred_at_ms) OVER (
+                    ORDER BY occurred_at_ms ASC
+                    ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+                  ),
+                  0
+                ) AS prev_occurred_at_ms
+              FROM
+              (
+                SELECT
+                  argMax(occurred_at_ms, updated_at_ms) AS occurred_at_ms
+                FROM {}.market_data_book_tickers
+                WHERE pair_code = '{}'
+                GROUP BY pair_code, order_book_update_id
+                HAVING occurred_at_ms >= {}
+                   AND occurred_at_ms < {}
+              )
+            )
+            WHERE prev_occurred_at_ms IS NOT NULL
+              AND (occurred_at_ms - prev_occurred_at_ms) > {}
+            ORDER BY gap_ms DESC
+            LIMIT {}
+            FORMAT JSONEachRow
+            "#,
+            sql_ident(&self.database),
+            sql_string(pair_code),
+            start_time,
+            end_time,
+            safe_min_gap_ms,
+            safe_limit
+        );
+
+        #[derive(Deserialize)]
+        struct BookTickerGapRow {
+            prev_occurred_at_ms: i64,
+            occurred_at_ms: i64,
+            gap_ms: i64,
+        }
+
+        let mut lines = self.query_lines(&sql).await?;
+        let mut gaps = Vec::new();
+        while let Some(line) = lines.next().await {
+            let line = line?;
+            if line.trim().is_empty() {
+                continue;
+            }
+            let row = serde_json::from_str::<BookTickerGapRow>(&line)?;
+            gaps.push(TimeGap {
+                start_time: row.prev_occurred_at_ms.saturating_add(1),
+                end_time: row.occurred_at_ms,
+                gap_ms: row.gap_ms,
+            });
+        }
+        Ok(gaps)
     }
 
     pub async fn upsert_kline(&self, event: &NormalizedKlineEvent) -> Result<()> {
@@ -1040,6 +1236,44 @@ impl Database {
         self.insert_row_binary("market_data_trades", &payload).await
     }
 
+    pub async fn insert_new_trades_batch(
+        &self,
+        events: &[NormalizedTradeEvent],
+        use_rowbinary: bool,
+    ) -> Result<usize> {
+        if events.is_empty() {
+            return Ok(0);
+        }
+
+        let mut grouped: BTreeMap<String, Vec<NormalizedTradeEvent>> = BTreeMap::new();
+        for event in events {
+            grouped
+                .entry(event.pair_code.clone())
+                .or_default()
+                .push(event.clone());
+        }
+
+        let mut rows_to_insert = Vec::new();
+        for (pair_code, pair_events) in grouped {
+            let filtered = self
+                .filter_new_trade_events_for_pair(&pair_code, pair_events)
+                .await?;
+            rows_to_insert.extend(filtered);
+        }
+
+        if rows_to_insert.is_empty() {
+            return Ok(0);
+        }
+
+        if use_rowbinary {
+            self.upsert_trades_batch_rowbinary(&rows_to_insert).await?;
+        } else {
+            self.upsert_trades_batch(&rows_to_insert).await?;
+        }
+
+        Ok(rows_to_insert.len())
+    }
+
     pub async fn upsert_book_ticker(&self, event: &NormalizedBookTickerEvent) -> Result<()> {
         let occurred_at_ms = parse_rfc3339_to_millis(&event.occurred_at)?;
         let updated_at_ms = Utc::now().timestamp_millis();
@@ -1090,6 +1324,105 @@ impl Database {
             &format!("{}\n", serde_json::to_string(&row)?),
         )
         .await
+    }
+
+    async fn filter_new_trade_events_for_pair(
+        &self,
+        pair_code: &str,
+        events: Vec<NormalizedTradeEvent>,
+    ) -> Result<Vec<NormalizedTradeEvent>> {
+        if events.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let mut unique_by_id: HashMap<i64, NormalizedTradeEvent> =
+            HashMap::with_capacity(events.len());
+        for event in events {
+            match unique_by_id.get_mut(&event.aggregate_trade_id) {
+                Some(existing) => {
+                    if event.trade_time > existing.trade_time {
+                        *existing = event;
+                    }
+                }
+                None => {
+                    unique_by_id.insert(event.aggregate_trade_id, event);
+                }
+            }
+        }
+
+        let mut deduped = unique_by_id.into_values().collect::<Vec<_>>();
+        deduped.sort_by_key(|event| (event.trade_time, event.aggregate_trade_id));
+
+        let min_trade_time = deduped.first().map(|event| event.trade_time).unwrap_or(0);
+        let max_trade_time = deduped.last().map(|event| event.trade_time).unwrap_or(0);
+        let min_aggregate_trade_id = deduped
+            .iter()
+            .map(|event| event.aggregate_trade_id)
+            .min()
+            .unwrap_or(0);
+        let max_aggregate_trade_id = deduped
+            .iter()
+            .map(|event| event.aggregate_trade_id)
+            .max()
+            .unwrap_or(0);
+
+        let existing_ids = self
+            .existing_trade_ids_for_window_and_id_span(
+                pair_code,
+                min_trade_time,
+                max_trade_time,
+                min_aggregate_trade_id,
+                max_aggregate_trade_id,
+            )
+            .await?;
+
+        Ok(deduped
+            .into_iter()
+            .filter(|event| !existing_ids.contains(&event.aggregate_trade_id))
+            .collect())
+    }
+
+    async fn existing_trade_ids_for_window_and_id_span(
+        &self,
+        pair_code: &str,
+        start_time: i64,
+        end_time: i64,
+        min_aggregate_trade_id: i64,
+        max_aggregate_trade_id: i64,
+    ) -> Result<HashSet<i64>> {
+        let sql = format!(
+            r#"
+            SELECT
+              aggregate_trade_id
+            FROM {}.market_data_trades
+            WHERE pair_code = '{}'
+              AND trade_time >= {}
+              AND trade_time <= {}
+              AND aggregate_trade_id >= {}
+              AND aggregate_trade_id <= {}
+            GROUP BY aggregate_trade_id
+            FORMAT JSONEachRow
+            "#,
+            sql_ident(&self.database),
+            sql_string(pair_code),
+            start_time,
+            end_time,
+            min_aggregate_trade_id,
+            max_aggregate_trade_id
+        );
+
+        let mut lines = self.query_lines(&sql).await?;
+        let mut ids = HashSet::new();
+        while let Some(line) = lines.next().await {
+            let line = line?;
+            if line.trim().is_empty() {
+                continue;
+            }
+            let row = serde_json::from_str::<AggregateTradeIdRow>(&line)?;
+            ids.insert(row.aggregate_trade_id);
+        }
+
+        Ok(ids)
     }
 
     // latest_research_backtest_runs has been removed; callers should query

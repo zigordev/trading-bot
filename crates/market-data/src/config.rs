@@ -80,6 +80,14 @@ pub struct AppConfig {
     pub live_trade_insert_batch_rows: usize,
     pub live_trade_insert_flush_interval_ms: u64,
     pub default_warmup_multiplier: usize,
+    /// Extra completed klines kept beyond the nominal backtest window plus
+    /// warmup so market-data retention matches research-backtesting's replay
+    /// cushion when validating/reading kline windows.
+    pub backtest_kline_headroom_candles: usize,
+    /// Extra history headroom kept in market-data so scheduled backtests that
+    /// end at a prior UTC midnight still find the full required window plus
+    /// warmup, even when market-data computes retention relative to "now".
+    pub scheduled_backtest_history_headroom_ms: u64,
     pub backtesting_timerange_ms_by_timeframe: BTreeMap<String, i64>,
     pub market_event_dedup_capacity: usize,
     pub otel_exporter_otlp_endpoint: Option<String>,
@@ -316,6 +324,11 @@ pub fn load_config() -> Result<AppConfig> {
             250,
         )?,
         default_warmup_multiplier: parse_usize("BACKTEST_WARMUP_MULTIPLIER", 5)?,
+        backtest_kline_headroom_candles: parse_usize("BACKTEST_KLINE_HEADROOM_CANDLES", 4)?,
+        scheduled_backtest_history_headroom_ms: parse_u64(
+            "SCHEDULED_BACKTEST_HISTORY_HEADROOM_MS",
+            48 * 60 * 60 * 1000,
+        )?,
         backtesting_timerange_ms_by_timeframe,
         market_event_dedup_capacity: parse_usize("MARKET_EVENT_DEDUP_CAPACITY", 10000)?,
         otel_exporter_otlp_endpoint: std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT").ok(),
@@ -380,6 +393,8 @@ mod tests {
             std::env::remove_var("HISTORICAL_TRADE_BACKFILL_MAX_BATCHES");
             std::env::remove_var("HISTORICAL_BOOK_TICKER_BACKFILL_INTERVAL_MS");
             std::env::remove_var("HISTORICAL_BACKFILL_MAX_IN_FLIGHT_TRADE_ROWS");
+            std::env::remove_var("BACKTEST_KLINE_HEADROOM_CANDLES");
+            std::env::remove_var("SCHEDULED_BACKTEST_HISTORY_HEADROOM_MS");
         }
 
         let config = load_config().expect("config should load");
@@ -405,5 +420,7 @@ mod tests {
         assert_eq!(config.historical_book_ticker_backfill_interval_ms, 60_000);
         assert_eq!(config.historical_trade_backfill_limit, 1000);
         assert_eq!(config.historical_trade_backfill_max_batches, 100);
+        assert_eq!(config.backtest_kline_headroom_candles, 4);
+        assert_eq!(config.scheduled_backtest_history_headroom_ms, 172_800_000);
     }
 }
