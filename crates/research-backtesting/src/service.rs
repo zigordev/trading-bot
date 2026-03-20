@@ -403,18 +403,57 @@ impl ResearchBacktestingService {
                 .scheduled_backtest_readiness_blocker(analysis)
                 .await?
             {
-                not_ready.push((analysis.id.clone(), blocker));
+                let request = BacktestRequest {
+                    analysis_setting_id: analysis.id.clone(),
+                    start_time: None,
+                    end_time: None,
+                    warmup_candles: None,
+                };
+                let time_window = build_analysis_spec(analysis)?
+                    .map(|spec| {
+                        resolve_time_window(
+                            analysis,
+                            &request,
+                            &spec,
+                            self.inner.config.default_warmup_multiplier,
+                            &self.inner.config.backtesting_timerange_ms_by_timeframe,
+                        )
+                    })
+                    .transpose()?;
+                not_ready.push((
+                    analysis.id.clone(),
+                    analysis.pair_code.clone(),
+                    analysis.timeframe_code.clone(),
+                    time_window
+                        .as_ref()
+                        .map(|window| window.requested_start_time),
+                    time_window
+                        .as_ref()
+                        .map(|window| window.requested_end_time),
+                    blocker,
+                ));
             }
         }
 
         if !not_ready.is_empty() {
             let blocked_analysis_ids = not_ready
                 .iter()
-                .map(|(id, _)| id.clone())
+                .map(|(id, ..)| id.clone())
+                .collect::<Vec<_>>();
+            let blocked_analyses = not_ready
+                .iter()
+                .map(
+                    |(id, pair_code, timeframe_code, requested_start_time, requested_end_time, blocker)| {
+                        format!(
+                            "analysis_id={id} pair={pair_code} timeframe={timeframe_code} requested_start_ms={requested_start_time:?} requested_end_ms={requested_end_time:?} blocker={blocker}"
+                        )
+                    },
+                )
                 .collect::<Vec<_>>();
             warn!(
                 reason,
                 blocked_analysis_ids = ?blocked_analysis_ids,
+                blocked_analyses = ?blocked_analyses,
                 blocked_count = not_ready.len(),
                 "scheduled backtest batch skipped because historical data is not ready"
             );
@@ -446,7 +485,7 @@ impl ResearchBacktestingService {
             &self.inner.config.backtesting_timerange_ms_by_timeframe,
         )?;
 
-        let expected_klines = expected_candle_count(
+        let required_klines = exact_candle_count_inclusive(
             time_window.effective_warmup_start_time,
             time_window.requested_end_time,
             analysis.timeframe.period_ms,
@@ -461,10 +500,10 @@ impl ResearchBacktestingService {
                 time_window.requested_end_time,
             )
             .await?;
-        if kline_coverage.row_count < expected_klines as u64 {
+        if kline_coverage.row_count < required_klines as u64 {
             return Ok(Some(format!(
                 "kline coverage incomplete (have {}, need {})",
-                kline_coverage.row_count, expected_klines
+                kline_coverage.row_count, required_klines
             )));
         }
 
@@ -1074,6 +1113,17 @@ fn expected_candle_count(start_time: i64, end_time: i64, period_ms: i64) -> Resu
         .checked_sub(start_time)
         .context("replay span overflowed i64")?;
     let count = (span_ms / period_ms) + 5;
+    Ok(count.max(1) as usize)
+}
+
+fn exact_candle_count_inclusive(start_time: i64, end_time: i64, period_ms: i64) -> Result<usize> {
+    if period_ms <= 0 {
+        bail!("periodMs must be greater than zero");
+    }
+    let span_ms = end_time
+        .checked_sub(start_time)
+        .context("replay span overflowed i64")?;
+    let count = (span_ms / period_ms) + 1;
     Ok(count.max(1) as usize)
 }
 
