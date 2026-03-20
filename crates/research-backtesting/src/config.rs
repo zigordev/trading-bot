@@ -129,9 +129,7 @@ pub fn load_config() -> Result<AppConfig> {
             };
             let key = k.trim().to_string();
             let duration_ms: i64 = v.trim().parse().with_context(|| {
-                format!(
-                    "invalid durationMs for BACKTEST_TIMERANGE_MS_BY_TIMEFRAME entry '{entry}'"
-                )
+                format!("invalid durationMs for BACKTEST_TIMERANGE_MS_BY_TIMEFRAME entry '{entry}'")
             })?;
             if duration_ms <= 0 {
                 bail!(

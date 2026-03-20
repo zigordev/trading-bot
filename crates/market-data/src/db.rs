@@ -73,7 +73,13 @@ struct StoredBacktestRunRow {
     finished_at_ms: i64,
     #[serde(default)]
     duration_ms: i64,
+    #[serde(default)]
+    backtest_duration_ms: i64,
+    #[serde(default)]
+    data_retrieval_duration_ms: i64,
     analysis_setting_id: String,
+    #[serde(default)]
+    risk_profile_name: String,
     pair_code: String,
     timeframe_code: String,
     strategy_name: String,
@@ -142,6 +148,12 @@ pub struct TimeGap {
     pub gap_ms: i64,
 }
 
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+pub struct TimeInterval {
+    pub start_time: i64,
+    pub end_time: i64,
+}
+
 #[derive(Serialize)]
 struct HistoricalKlineWriteRow<'a> {
     pair_code: &'a str,
@@ -183,7 +195,10 @@ pub struct StoredBacktestRunWrite {
     pub backtest_id: String,
     pub finished_at_ms: i64,
     pub duration_ms: i64,
+    pub backtest_duration_ms: i64,
+    pub data_retrieval_duration_ms: i64,
     pub analysis_setting_id: String,
+    pub risk_profile_name: String,
     pub pair_code: String,
     pub timeframe_code: String,
     pub strategy_name: String,
@@ -206,7 +221,10 @@ pub struct StoredBacktestRunSummary {
     pub backtest_id: String,
     pub finished_at_ms: i64,
     pub duration_ms: i64,
+    pub backtest_duration_ms: i64,
+    pub data_retrieval_duration_ms: i64,
     pub analysis_setting_id: String,
+    pub risk_profile_name: String,
     pub pair_code: String,
     pub timeframe_code: String,
     pub strategy_name: String,
@@ -240,11 +258,26 @@ struct HistoricalBookTickerWriteRow<'a> {
 }
 
 #[derive(Serialize)]
+struct TradeCoverageStateWriteRow<'a> {
+    pair_code: &'a str,
+    intervals_json: &'a str,
+    updated_at_ms: i64,
+}
+
+#[derive(Deserialize)]
+struct TradeCoverageStateRow {
+    intervals_json: String,
+}
+
+#[derive(Serialize)]
 struct StoredBacktestRunWriteRow<'a> {
     backtest_id: &'a str,
     finished_at_ms: i64,
     duration_ms: i64,
+    backtest_duration_ms: i64,
+    data_retrieval_duration_ms: i64,
     analysis_setting_id: &'a str,
+    risk_profile_name: &'a str,
     pair_code: &'a str,
     timeframe_code: &'a str,
     strategy_name: &'a str,
@@ -424,6 +457,22 @@ impl Database {
         ))
         .await?;
 
+        self.execute_sql(&format!(
+            r#"
+            CREATE TABLE IF NOT EXISTS {}.market_data_trade_coverage_state
+            (
+              pair_code LowCardinality(String),
+              intervals_json String,
+              updated_at_ms Int64
+            )
+            ENGINE = ReplacingMergeTree(updated_at_ms)
+            ORDER BY (pair_code)
+            SETTINGS index_granularity = 8192
+            "#,
+            sql_ident(&self.database)
+        ))
+        .await?;
+
         self.ensure_ttl(
             "market_data_klines",
             "toDateTime(intDiv(open_time, 1000))",
@@ -477,7 +526,10 @@ impl Database {
               backtest_id String,
               finished_at_ms Int64,
               duration_ms Int64,
+              backtest_duration_ms Int64,
+              data_retrieval_duration_ms Int64,
               analysis_setting_id String,
+              risk_profile_name LowCardinality(String),
               pair_code LowCardinality(String),
               timeframe_code LowCardinality(String),
               strategy_name LowCardinality(String),
@@ -528,6 +580,21 @@ impl Database {
         .await?;
         self.execute_sql(&format!(
             "ALTER TABLE {}.research_backtest_runs ADD COLUMN IF NOT EXISTS duration_ms Int64 DEFAULT 0",
+            sql_ident(&self.database)
+        ))
+        .await?;
+        self.execute_sql(&format!(
+            "ALTER TABLE {}.research_backtest_runs ADD COLUMN IF NOT EXISTS backtest_duration_ms Int64 DEFAULT duration_ms",
+            sql_ident(&self.database)
+        ))
+        .await?;
+        self.execute_sql(&format!(
+            "ALTER TABLE {}.research_backtest_runs ADD COLUMN IF NOT EXISTS data_retrieval_duration_ms Int64 DEFAULT 0",
+            sql_ident(&self.database)
+        ))
+        .await?;
+        self.execute_sql(&format!(
+            "ALTER TABLE {}.research_backtest_runs ADD COLUMN IF NOT EXISTS risk_profile_name LowCardinality(String) DEFAULT ''",
             sql_ident(&self.database)
         ))
         .await
@@ -1099,6 +1166,52 @@ impl Database {
         Ok(gaps)
     }
 
+    pub async fn trade_coverage_intervals(&self, pair_code: &str) -> Result<Vec<TimeInterval>> {
+        let sql = format!(
+            r#"
+            SELECT
+              argMax(intervals_json, updated_at_ms) AS intervals_json
+            FROM {}.market_data_trade_coverage_state
+            WHERE pair_code = '{}'
+            GROUP BY pair_code
+            FORMAT JSONEachRow
+            "#,
+            sql_ident(&self.database),
+            sql_string(pair_code)
+        );
+
+        let body = self.query_text(&sql).await?;
+        let trimmed = body.trim();
+        if trimmed.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let row = serde_json::from_str::<TradeCoverageStateRow>(trimmed)?;
+        let intervals = serde_json::from_str::<Vec<TimeInterval>>(&row.intervals_json)
+            .context("failed to parse trade coverage intervals_json")?;
+        Ok(intervals)
+    }
+
+    pub async fn replace_trade_coverage_intervals(
+        &self,
+        pair_code: &str,
+        intervals: &[TimeInterval],
+    ) -> Result<()> {
+        let intervals_json = serde_json::to_string(intervals)?;
+        let updated_at_ms = Utc::now().timestamp_millis();
+        let row = TradeCoverageStateWriteRow {
+            pair_code,
+            intervals_json: &intervals_json,
+            updated_at_ms,
+        };
+
+        self.insert_json_each_row(
+            "market_data_trade_coverage_state",
+            &format!("{}\n", serde_json::to_string(&row)?),
+        )
+        .await
+    }
+
     pub async fn upsert_kline(&self, event: &NormalizedKlineEvent) -> Result<()> {
         let occurred_at_ms = parse_rfc3339_to_millis(&event.occurred_at)?;
         let updated_at_ms = Utc::now().timestamp_millis();
@@ -1167,7 +1280,8 @@ impl Database {
             payload.push('\n');
         }
 
-        self.insert_json_each_row("market_data_klines", &payload).await
+        self.insert_json_each_row("market_data_klines", &payload)
+            .await
     }
 
     pub async fn upsert_trade(&self, event: &NormalizedTradeEvent) -> Result<()> {
@@ -1207,7 +1321,8 @@ impl Database {
             payload.push('\n');
         }
 
-        self.insert_json_each_row("market_data_trades", &payload).await
+        self.insert_json_each_row("market_data_trades", &payload)
+            .await
     }
 
     /// Insert a batch of normalized trade events into ClickHouse using a
@@ -1301,7 +1416,10 @@ impl Database {
             backtest_id: &run.backtest_id,
             finished_at_ms: run.finished_at_ms,
             duration_ms: run.duration_ms,
+            backtest_duration_ms: run.backtest_duration_ms,
+            data_retrieval_duration_ms: run.data_retrieval_duration_ms,
             analysis_setting_id: &run.analysis_setting_id,
+            risk_profile_name: &run.risk_profile_name,
             pair_code: &run.pair_code,
             timeframe_code: &run.timeframe_code,
             strategy_name: &run.strategy_name,
@@ -1436,7 +1554,10 @@ impl Database {
               backtest_id,
               finished_at_ms,
               duration_ms,
+              backtest_duration_ms,
+              data_retrieval_duration_ms,
               analysis_setting_id,
+              risk_profile_name,
               pair_code,
               timeframe_code,
               strategy_name,
@@ -1472,7 +1593,10 @@ impl Database {
               backtest_id,
               finished_at_ms,
               duration_ms,
+              backtest_duration_ms,
+              data_retrieval_duration_ms,
               analysis_setting_id,
+              risk_profile_name,
               pair_code,
               timeframe_code,
               strategy_name,
@@ -1816,7 +1940,6 @@ impl Database {
             }
             let row = serde_json::from_str::<HistoricalKlineRow>(&line)?;
             records.push(PersistedKlineRecord {
-                pair_code: row.pair_code,
                 symbol: row.symbol,
                 timeframe_code: row.timeframe_code,
                 period_ms: row.period_ms,
@@ -1873,7 +1996,6 @@ impl Database {
             }
             let row = serde_json::from_str::<HistoricalBookTickerRow>(&line)?;
             records.push(PersistedBookTickerRecord {
-                pair_code: row.pair_code,
                 symbol: row.symbol,
                 order_book_update_id: row.order_book_update_id,
                 bid_price: row.bid_price,
@@ -1903,7 +2025,14 @@ impl Database {
                     backtest_id: row.backtest_id,
                     finished_at_ms: row.finished_at_ms,
                     duration_ms: row.duration_ms,
+                    backtest_duration_ms: if row.backtest_duration_ms > 0 {
+                        row.backtest_duration_ms
+                    } else {
+                        row.duration_ms
+                    },
+                    data_retrieval_duration_ms: row.data_retrieval_duration_ms,
                     analysis_setting_id: row.analysis_setting_id,
+                    risk_profile_name: row.risk_profile_name,
                     pair_code: row.pair_code,
                     timeframe_code: row.timeframe_code,
                     strategy_name: row.strategy_name,
@@ -2012,10 +2141,7 @@ impl Database {
         Ok(response.text().await?)
     }
 
-    async fn query_lines(
-        &self,
-        sql: &str,
-    ) -> Result<LineStream> {
+    async fn query_lines(&self, sql: &str) -> Result<LineStream> {
         let response = self
             .send_with_retries(|| {
                 self.request(
@@ -2104,8 +2230,8 @@ impl Database {
         let row = serde_json::from_str::<WindowCoverageRow>(trimmed)?;
         Ok(WindowCoverage {
             row_count: row.row_count,
-            min_time: row.min_time,
-            max_time: row.max_time,
+            min_time: if row.row_count == 0 { None } else { row.min_time },
+            max_time: if row.row_count == 0 { None } else { row.max_time },
         })
     }
 
@@ -2188,7 +2314,7 @@ fn parse_trade_rows_row_binary(bytes: &[u8]) -> Result<Vec<PersistedTradeRecord>
         let price = parse_row_binary_string(bytes, &mut offset)?;
         let trade_time = parse_row_binary_i64(bytes, &mut offset)?;
         rows.push(PersistedTradeRecord {
-            pair_code,
+            symbol: pair_code,
             aggregate_trade_id,
             price,
             trade_time,

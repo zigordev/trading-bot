@@ -28,6 +28,15 @@ pub struct AppConfig {
     pub binance_reconnect_backoff_ms: u64,
     pub binance_rest_max_retries: usize,
     pub binance_rest_retry_backoff_ms: u64,
+    /// Configured Binance REQUEST_WEIGHT minute ceiling used by the local
+    /// limiter. The service stays below a target percentage of this budget.
+    pub binance_rest_request_weight_limit_per_minute: u64,
+    /// Percentage of the configured minute limit the local limiter may consume
+    /// before waiting for the next Binance minute window.
+    pub binance_rest_target_utilization_percent: u64,
+    /// Warn when the observed 1-minute Binance used weight reaches at least
+    /// this percentage of the configured limit.
+    pub binance_rest_warn_utilization_percent: u64,
     pub historical_backfill_limit: usize,
     pub historical_trade_backfill_limit: usize,
     pub historical_trade_backfill_max_batches: usize,
@@ -104,7 +113,9 @@ fn optional_env(key: &str) -> Option<String> {
 }
 
 fn optional_positive_usize(key: &str) -> Option<usize> {
-    optional_env(key).and_then(|raw| raw.parse::<usize>().ok()).filter(|&n| n > 0)
+    optional_env(key)
+        .and_then(|raw| raw.parse::<usize>().ok())
+        .filter(|&n| n > 0)
 }
 
 fn parse_u16(key: &str, default: u16) -> Result<u16> {
@@ -123,6 +134,14 @@ fn parse_u64(key: &str, default: u64) -> Result<u64> {
         bail!("{key} must be greater than zero");
     }
 
+    Ok(parsed)
+}
+
+fn parse_percent_u64(key: &str, default: u64) -> Result<u64> {
+    let parsed = parse_u64(key, default)?;
+    if parsed > 100 {
+        bail!("{key} must be between 1 and 100");
+    }
     Ok(parsed)
 }
 
@@ -174,9 +193,7 @@ pub fn load_config() -> Result<AppConfig> {
             };
             let key = k.trim().to_string();
             let duration_ms: i64 = v.trim().parse().with_context(|| {
-                format!(
-                    "invalid durationMs for BACKTEST_TIMERANGE_MS_BY_TIMEFRAME entry '{entry}'"
-                )
+                format!("invalid durationMs for BACKTEST_TIMERANGE_MS_BY_TIMEFRAME entry '{entry}'")
             })?;
             if duration_ms <= 0 {
                 bail!(
@@ -251,6 +268,18 @@ pub fn load_config() -> Result<AppConfig> {
         binance_reconnect_backoff_ms: parse_u64("BINANCE_RECONNECT_BACKOFF_MS", 2000)?,
         binance_rest_max_retries: parse_usize("BINANCE_REST_MAX_RETRIES", 5)?,
         binance_rest_retry_backoff_ms: parse_u64("BINANCE_REST_RETRY_BACKOFF_MS", 500)?,
+        binance_rest_request_weight_limit_per_minute: parse_u64(
+            "BINANCE_REST_REQUEST_WEIGHT_LIMIT_PER_MINUTE",
+            6000,
+        )?,
+        binance_rest_target_utilization_percent: parse_percent_u64(
+            "BINANCE_REST_TARGET_UTILIZATION_PERCENT",
+            90,
+        )?,
+        binance_rest_warn_utilization_percent: parse_percent_u64(
+            "BINANCE_REST_WARN_UTILIZATION_PERCENT",
+            85,
+        )?,
         historical_backfill_limit: parse_usize("HISTORICAL_BACKFILL_LIMIT", 500)?,
         historical_trade_backfill_limit: parse_usize("HISTORICAL_TRADE_BACKFILL_LIMIT", 1000)?,
         historical_trade_backfill_max_batches: parse_usize(
@@ -287,7 +316,10 @@ pub fn load_config() -> Result<AppConfig> {
             "HISTORICAL_BOOK_TICKER_RETENTION_DAYS",
             30,
         )?,
-        historical_store_compaction_enabled: parse_bool("HISTORICAL_STORE_COMPACTION_ENABLED", false)?,
+        historical_store_compaction_enabled: parse_bool(
+            "HISTORICAL_STORE_COMPACTION_ENABLED",
+            false,
+        )?,
         historical_store_compaction_interval_ms: parse_u64(
             "HISTORICAL_STORE_COMPACTION_INTERVAL_MS",
             180000,
@@ -297,10 +329,7 @@ pub fn load_config() -> Result<AppConfig> {
             false,
         )?,
         trade_gap_repair_enabled: parse_bool("TRADE_GAP_REPAIR_ENABLED", true)?,
-        trade_gap_repair_interval_ms: parse_u64(
-            "TRADE_GAP_REPAIR_INTERVAL_MS",
-            60 * 60 * 1000,
-        )?,
+        trade_gap_repair_interval_ms: parse_u64("TRADE_GAP_REPAIR_INTERVAL_MS", 60 * 60 * 1000)?,
         trade_gap_repair_end_grace_ms: parse_u64("TRADE_GAP_REPAIR_END_GRACE_MS", 5 * 60 * 1000)?,
         trade_gap_repair_startup_max_window_ms: parse_u64(
             "TRADE_GAP_REPAIR_STARTUP_MAX_WINDOW_MS",
@@ -319,10 +348,7 @@ pub fn load_config() -> Result<AppConfig> {
             true,
         )?,
         live_trade_insert_batch_rows: parse_usize("LIVE_TRADE_INSERT_BATCH_ROWS", 2_000)?,
-        live_trade_insert_flush_interval_ms: parse_u64(
-            "LIVE_TRADE_INSERT_FLUSH_INTERVAL_MS",
-            250,
-        )?,
+        live_trade_insert_flush_interval_ms: parse_u64("LIVE_TRADE_INSERT_FLUSH_INTERVAL_MS", 250)?,
         default_warmup_multiplier: parse_usize("BACKTEST_WARMUP_MULTIPLIER", 5)?,
         backtest_kline_headroom_candles: parse_usize("BACKTEST_KLINE_HEADROOM_CANDLES", 4)?,
         scheduled_backtest_history_headroom_ms: parse_u64(
@@ -342,11 +368,13 @@ pub fn load_config() -> Result<AppConfig> {
             .historical_backfill_max_concurrency
             .saturating_mul(config.historical_trade_backfill_insert_batch_rows);
         if in_flight_trade_rows > max_in_flight {
-            let effective = (max_in_flight / config.historical_trade_backfill_insert_batch_rows)
-                .max(1);
+            let effective =
+                (max_in_flight / config.historical_trade_backfill_insert_batch_rows).max(1);
             warn!(
-                configured_historical_backfill_max_concurrency = config.historical_backfill_max_concurrency,
-                historical_trade_backfill_insert_batch_rows = config.historical_trade_backfill_insert_batch_rows,
+                configured_historical_backfill_max_concurrency =
+                    config.historical_backfill_max_concurrency,
+                historical_trade_backfill_insert_batch_rows =
+                    config.historical_trade_backfill_insert_batch_rows,
                 in_flight_trade_rows = in_flight_trade_rows,
                 max_in_flight_trade_rows = max_in_flight,
                 effective_historical_backfill_max_concurrency = effective,
@@ -417,6 +445,9 @@ mod tests {
         );
         assert_eq!(config.binance_rest_max_retries, 5);
         assert_eq!(config.binance_rest_retry_backoff_ms, 500);
+        assert_eq!(config.binance_rest_request_weight_limit_per_minute, 6000);
+        assert_eq!(config.binance_rest_target_utilization_percent, 90);
+        assert_eq!(config.binance_rest_warn_utilization_percent, 85);
         assert_eq!(config.historical_book_ticker_backfill_interval_ms, 60_000);
         assert_eq!(config.historical_trade_backfill_limit, 1000);
         assert_eq!(config.historical_trade_backfill_max_batches, 100);

@@ -171,7 +171,10 @@ pub fn simulate_trade_replay(
 
 struct TradePager<F>
 where
-    F: FnMut(Option<(i64, i64)>, i64) -> std::pin::Pin<
+    F: FnMut(
+            Option<(i64, i64)>,
+            i64,
+        ) -> std::pin::Pin<
             Box<dyn std::future::Future<Output = Result<Vec<PersistedTradeRecord>>> + Send>,
         > + Send,
 {
@@ -185,7 +188,10 @@ where
 
 impl<F> TradePager<F>
 where
-    F: FnMut(Option<(i64, i64)>, i64) -> std::pin::Pin<
+    F: FnMut(
+            Option<(i64, i64)>,
+            i64,
+        ) -> std::pin::Pin<
             Box<dyn std::future::Future<Output = Result<Vec<PersistedTradeRecord>>> + Send>,
         > + Send,
 {
@@ -257,7 +263,10 @@ pub async fn simulate_trade_replay_paged<F>(
     fetch_page: F,
 ) -> Result<(Vec<SimulatedTradeRecord>, TradeReplayStats)>
 where
-    F: FnMut(Option<(i64, i64)>, i64) -> std::pin::Pin<
+    F: FnMut(
+            Option<(i64, i64)>,
+            i64,
+        ) -> std::pin::Pin<
             Box<dyn std::future::Future<Output = Result<Vec<PersistedTradeRecord>>> + Send>,
         > + Send,
 {
@@ -835,7 +844,7 @@ mod tests {
     fn analysis_record() -> ResolvedAnalysisSettingsRecord {
         ResolvedAnalysisSettingsRecord {
             id: "analysis-1".to_string(),
-            pair_code: "BTCUSDT".to_string(),
+            symbol: "BTCUSDT".to_string(),
             timeframe_code: "1m".to_string(),
             strategy_name: "emaCross".to_string(),
             risk_profile_name: "default".to_string(),
@@ -922,7 +931,7 @@ mod tests {
 
     fn trade(id: i64, trade_time: i64, price: f64) -> PersistedTradeRecord {
         PersistedTradeRecord {
-            pair_code: "BTCUSDT".to_string(),
+            symbol: "BTCUSDT".to_string(),
             aggregate_trade_id: id,
             price: price.to_string(),
             trade_time,
@@ -935,7 +944,6 @@ mod tests {
         ask_price: f64,
     ) -> PersistedBookTickerRecord {
         PersistedBookTickerRecord {
-            pair_code: "BTCUSDT".to_string(),
             symbol: "BTCUSDT".to_string(),
             order_book_update_id: occurred_at_ms,
             bid_price: bid_price.to_string(),
