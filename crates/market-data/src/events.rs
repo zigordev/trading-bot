@@ -483,7 +483,7 @@ mod tests {
         .expect("rest trade should normalize");
         assert_eq!(rest_trade.aggregate_trade_id, 321);
         assert_eq!(rest_trade.ingestion_mode, "backfill");
-        assert_eq!(rest_trade.event_time, 1710000001000);
+        assert_eq!(rest_trade.trade_time, 1710000001000);
 
         let rest_book_ticker = normalize_rest_book_ticker(
             pair_by_stream

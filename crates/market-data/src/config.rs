@@ -1,4 +1,5 @@
 use anyhow::{Context, Result, bail};
+use std::collections::BTreeMap;
 use tracing::warn;
 
 #[derive(Clone, Debug)]
@@ -35,6 +36,10 @@ pub struct AppConfig {
     /// historical trade backfill. This allows combining multiple 1000-row
     /// Binance batches into a larger insert for better ClickHouse efficiency.
     pub historical_trade_backfill_insert_batch_rows: usize,
+    /// Optional ceiling for `HISTORICAL_BACKFILL_MAX_CONCURRENCY` ×
+    /// `HISTORICAL_TRADE_BACKFILL_INSERT_BATCH_ROWS`. When unset, concurrency is
+    /// not auto-reduced (large insert batches are honored as configured).
+    pub historical_backfill_max_in_flight_trade_rows: Option<usize>,
     /// Target chunk size for historical trade backfill, in milliseconds.
     /// Backfill windows are split into contiguous [start,end) chunks of this
     /// size per pair to allow some per-pair parallelism while keeping each
@@ -50,6 +55,28 @@ pub struct AppConfig {
     pub historical_store_compaction_enabled: bool,
     pub historical_store_compaction_interval_ms: u64,
     pub historical_store_compact_after_refresh: bool,
+    /// Periodically audits ClickHouse trade coverage and backfills any detected
+    /// gaps so backtests/replays keep working even if backfill missed some ranges.
+    pub trade_gap_repair_enabled: bool,
+    /// How often to run the periodic trade gap audit.
+    pub trade_gap_repair_interval_ms: u64,
+    /// How far behind "now" the audit window ends, to avoid trying to fill
+    /// trailing gaps for the still-incoming latest trades.
+    pub trade_gap_repair_end_grace_ms: u64,
+    /// Maximum time span (ms) for the startup deep audit window.
+    pub trade_gap_repair_startup_max_window_ms: u64,
+    /// Maximum time span (ms) for the periodic audit window.
+    pub trade_gap_repair_periodic_lookback_ms: u64,
+    /// Multiplier for `historical_trade_backfill_max_batches` used by the gap repair
+    /// backfill loops (the repair code further multiplies internally).
+    pub trade_gap_repair_max_batches_multiplier: usize,
+    /// If true, historical trade backfill flushes into ClickHouse using
+    /// `INSERT ... FORMAT RowBinary` (faster than JSONEachRow for large batches).
+    pub historical_trade_backfill_use_rowbinary_insert: bool,
+    pub live_trade_insert_batch_rows: usize,
+    pub live_trade_insert_flush_interval_ms: u64,
+    pub default_warmup_multiplier: usize,
+    pub backtesting_timerange_ms_by_timeframe: BTreeMap<String, i64>,
     pub market_event_dedup_capacity: usize,
     pub otel_exporter_otlp_endpoint: Option<String>,
 }
@@ -62,6 +89,10 @@ fn optional_env(key: &str) -> Option<String> {
     std::env::var(key)
         .ok()
         .and_then(|value| (!value.trim().is_empty()).then_some(value))
+}
+
+fn optional_positive_usize(key: &str) -> Option<usize> {
+    optional_env(key).and_then(|raw| raw.parse::<usize>().ok()).filter(|&n| n > 0)
 }
 
 fn parse_u16(key: &str, default: u16) -> Result<u16> {
@@ -106,6 +137,55 @@ fn parse_usize(key: &str, default: usize) -> Result<usize> {
 }
 
 pub fn load_config() -> Result<AppConfig> {
+    let default_backtesting_timerange_ms_by_timeframe = BTreeMap::from([
+        ("1m".to_string(), 600_000_000),
+        ("3m".to_string(), 1_800_000_000),
+        ("5m".to_string(), 3_000_000_000),
+    ]);
+
+    let parse_timerange_map = |raw: String| -> Result<BTreeMap<String, i64>> {
+        let mut map = BTreeMap::<String, i64>::new();
+        let raw = raw.trim();
+        if raw.is_empty() {
+            return Ok(default_backtesting_timerange_ms_by_timeframe.clone());
+        }
+
+        for entry in raw.split(',') {
+            let entry = entry.trim();
+            if entry.is_empty() {
+                continue;
+            }
+            let Some((k, v)) = entry.split_once('=') else {
+                bail!(
+                    "invalid BACKTEST_TIMERANGE_MS_BY_TIMEFRAME entry '{entry}', expected 'timeframeCode=durationMs'"
+                );
+            };
+            let key = k.trim().to_string();
+            let duration_ms: i64 = v.trim().parse().with_context(|| {
+                format!(
+                    "invalid durationMs for BACKTEST_TIMERANGE_MS_BY_TIMEFRAME entry '{entry}'"
+                )
+            })?;
+            if duration_ms <= 0 {
+                bail!(
+                    "invalid non-positive durationMs={duration_ms} for BACKTEST_TIMERANGE_MS_BY_TIMEFRAME entry '{entry}'"
+                );
+            }
+            map.insert(key, duration_ms);
+        }
+
+        if map.is_empty() {
+            Ok(default_backtesting_timerange_ms_by_timeframe)
+        } else {
+            Ok(map)
+        }
+    };
+
+    let backtesting_timerange_ms_by_timeframe = {
+        let raw = std::env::var("BACKTEST_TIMERANGE_MS_BY_TIMEFRAME").unwrap_or_default();
+        parse_timerange_map(raw)?
+    };
+
     let market_data_klines_topic = std::env::var("MARKET_DATA_KLINES_TOPIC")
         .or_else(|_| std::env::var("MARKET_DATA_EVENTS_TOPIC"))
         .unwrap_or_else(|_| "trading-bot.market-data.klines.v1".to_string());
@@ -170,6 +250,9 @@ pub fn load_config() -> Result<AppConfig> {
             "HISTORICAL_TRADE_BACKFILL_INSERT_BATCH_ROWS",
             50_000,
         )?,
+        historical_backfill_max_in_flight_trade_rows: optional_positive_usize(
+            "HISTORICAL_BACKFILL_MAX_IN_FLIGHT_TRADE_ROWS",
+        ),
         historical_trade_backfill_chunk_ms: parse_u64(
             "HISTORICAL_TRADE_BACKFILL_CHUNK_MS",
             24 * 60 * 60 * 1000,
@@ -197,39 +280,59 @@ pub fn load_config() -> Result<AppConfig> {
             "HISTORICAL_STORE_COMPACTION_AFTER_REFRESH",
             false,
         )?,
+        trade_gap_repair_enabled: parse_bool("TRADE_GAP_REPAIR_ENABLED", true)?,
+        trade_gap_repair_interval_ms: parse_u64(
+            "TRADE_GAP_REPAIR_INTERVAL_MS",
+            60 * 60 * 1000,
+        )?,
+        trade_gap_repair_end_grace_ms: parse_u64("TRADE_GAP_REPAIR_END_GRACE_MS", 5 * 60 * 1000)?,
+        trade_gap_repair_startup_max_window_ms: parse_u64(
+            "TRADE_GAP_REPAIR_STARTUP_MAX_WINDOW_MS",
+            180 * 24 * 60 * 60 * 1000,
+        )?,
+        trade_gap_repair_periodic_lookback_ms: parse_u64(
+            "TRADE_GAP_REPAIR_PERIODIC_LOOKBACK_MS",
+            7 * 24 * 60 * 60 * 1000,
+        )?,
+        trade_gap_repair_max_batches_multiplier: parse_usize(
+            "TRADE_GAP_REPAIR_MAX_BATCHES_MULTIPLIER",
+            1,
+        )?,
+        historical_trade_backfill_use_rowbinary_insert: parse_bool(
+            "HISTORICAL_TRADE_BACKFILL_USE_ROW_BINARY_INSERT",
+            true,
+        )?,
+        live_trade_insert_batch_rows: parse_usize("LIVE_TRADE_INSERT_BATCH_ROWS", 2_000)?,
+        live_trade_insert_flush_interval_ms: parse_u64(
+            "LIVE_TRADE_INSERT_FLUSH_INTERVAL_MS",
+            250,
+        )?,
+        default_warmup_multiplier: parse_usize("BACKTEST_WARMUP_MULTIPLIER", 5)?,
+        backtesting_timerange_ms_by_timeframe,
         market_event_dedup_capacity: parse_usize("MARKET_EVENT_DEDUP_CAPACITY", 10000)?,
         otel_exporter_otlp_endpoint: std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT").ok(),
     };
 
-    // Guardrail: extremely large (concurrency × insert_batch_rows) settings can easily OOM the
-    // market-data process because each in-flight chunk buffers rows before flushing to ClickHouse.
-    //
-    // We prefer to *reduce concurrency* automatically (with a clear log) rather than crash-looping
-    // the container and destabilizing the rest of the stack.
-    const MAX_IN_FLIGHT_TRADE_ROWS: usize = 500_000;
-    if config.historical_trade_backfill_insert_batch_rows > MAX_IN_FLIGHT_TRADE_ROWS {
-        warn!(
-            historical_trade_backfill_insert_batch_rows =
-                config.historical_trade_backfill_insert_batch_rows,
-            max_in_flight_trade_rows = MAX_IN_FLIGHT_TRADE_ROWS,
-            "HISTORICAL_TRADE_BACKFILL_INSERT_BATCH_ROWS is extremely large; consider lowering it to avoid OOM"
-        );
-    }
-    let in_flight_trade_rows = config
-        .historical_backfill_max_concurrency
-        .saturating_mul(config.historical_trade_backfill_insert_batch_rows);
-    if in_flight_trade_rows > MAX_IN_FLIGHT_TRADE_ROWS {
-        let effective = (MAX_IN_FLIGHT_TRADE_ROWS / config.historical_trade_backfill_insert_batch_rows)
-            .max(1);
-        warn!(
-            configured_historical_backfill_max_concurrency = config.historical_backfill_max_concurrency,
-            historical_trade_backfill_insert_batch_rows = config.historical_trade_backfill_insert_batch_rows,
-            in_flight_trade_rows = in_flight_trade_rows,
-            max_in_flight_trade_rows = MAX_IN_FLIGHT_TRADE_ROWS,
-            effective_historical_backfill_max_concurrency = effective,
-            "backfill settings risk OOM; lowering HISTORICAL_BACKFILL_MAX_CONCURRENCY"
-        );
-        config.historical_backfill_max_concurrency = effective;
+    // Optional guardrail: only when HISTORICAL_BACKFILL_MAX_IN_FLIGHT_TRADE_ROWS is set, reduce
+    // concurrency so (concurrency × insert_batch_rows) stays bounded. Omit the env var to honor
+    // full concurrency with large `HISTORICAL_TRADE_BACKFILL_INSERT_BATCH_ROWS` (higher OOM risk).
+    if let Some(max_in_flight) = config.historical_backfill_max_in_flight_trade_rows {
+        let in_flight_trade_rows = config
+            .historical_backfill_max_concurrency
+            .saturating_mul(config.historical_trade_backfill_insert_batch_rows);
+        if in_flight_trade_rows > max_in_flight {
+            let effective = (max_in_flight / config.historical_trade_backfill_insert_batch_rows)
+                .max(1);
+            warn!(
+                configured_historical_backfill_max_concurrency = config.historical_backfill_max_concurrency,
+                historical_trade_backfill_insert_batch_rows = config.historical_trade_backfill_insert_batch_rows,
+                in_flight_trade_rows = in_flight_trade_rows,
+                max_in_flight_trade_rows = max_in_flight,
+                effective_historical_backfill_max_concurrency = effective,
+                "backfill in-flight rows exceed HISTORICAL_BACKFILL_MAX_IN_FLIGHT_TRADE_ROWS; lowering HISTORICAL_BACKFILL_MAX_CONCURRENCY"
+            );
+            config.historical_backfill_max_concurrency = effective;
+        }
     }
 
     Ok(config)
@@ -254,6 +357,13 @@ mod tests {
             std::env::remove_var("HISTORICAL_STORE_COMPACTION_ENABLED");
             std::env::remove_var("HISTORICAL_STORE_COMPACTION_INTERVAL_MS");
             std::env::remove_var("HISTORICAL_STORE_COMPACTION_AFTER_REFRESH");
+            std::env::remove_var("TRADE_GAP_REPAIR_ENABLED");
+            std::env::remove_var("TRADE_GAP_REPAIR_INTERVAL_MS");
+            std::env::remove_var("TRADE_GAP_REPAIR_END_GRACE_MS");
+            std::env::remove_var("TRADE_GAP_REPAIR_STARTUP_MAX_WINDOW_MS");
+            std::env::remove_var("TRADE_GAP_REPAIR_PERIODIC_LOOKBACK_MS");
+            std::env::remove_var("TRADE_GAP_REPAIR_MAX_BATCHES_MULTIPLIER");
+            std::env::remove_var("HISTORICAL_TRADE_BACKFILL_USE_ROW_BINARY_INSERT");
             std::env::remove_var("MARKET_DATA_KLINES_TOPIC");
             std::env::remove_var("MARKET_DATA_EVENTS_TOPIC");
             std::env::remove_var("BINANCE_REST_MAX_RETRIES");
@@ -261,6 +371,7 @@ mod tests {
             std::env::remove_var("HISTORICAL_TRADE_BACKFILL_LIMIT");
             std::env::remove_var("HISTORICAL_TRADE_BACKFILL_MAX_BATCHES");
             std::env::remove_var("HISTORICAL_BOOK_TICKER_BACKFILL_INTERVAL_MS");
+            std::env::remove_var("HISTORICAL_BACKFILL_MAX_IN_FLIGHT_TRADE_ROWS");
         }
 
         let config = load_config().expect("config should load");

@@ -129,6 +129,13 @@ pub struct WindowCoverage {
     pub max_time: Option<i64>,
 }
 
+#[derive(Clone, Debug)]
+pub struct TimeGap {
+    pub start_time: i64,
+    pub end_time: i64,
+    pub gap_ms: i64,
+}
+
 #[derive(Serialize)]
 struct HistoricalKlineWriteRow<'a> {
     pair_code: &'a str,
@@ -430,8 +437,7 @@ impl Database {
         ))
         .await?;
         // Drop legacy/unneeded columns to minimize storage; backtesting only
-        // needs {pair_code, aggregate_trade_id, trade_time, price} plus
-        // `updated_at_ms` for ReplacingMergeTree.
+        // needs {pair_code, aggregate_trade_id, trade_time, price}.
         for col in [
             "symbol",
             "ingestion_mode",
@@ -733,7 +739,7 @@ impl Database {
             FROM
             (
               SELECT
-                argMax(trade_time, updated_at_ms) AS latest_trade_time
+                max(trade_time) AS latest_trade_time
               FROM {}.market_data_trades
               WHERE pair_code = '{}'
                 {}
@@ -749,6 +755,79 @@ impl Database {
         self.query_window_coverage(&sql).await
     }
 
+    pub async fn trade_time_gaps_in_range(
+        &self,
+        pair_code: &str,
+        start_time: i64,
+        end_time: i64,
+        min_gap_ms: i64,
+        limit: i64,
+    ) -> Result<Vec<TimeGap>> {
+        let safe_limit = limit.clamp(1, 10_000);
+        let safe_min_gap_ms = min_gap_ms.max(1);
+        let sql = format!(
+            r#"
+            SELECT
+              prev_trade_time,
+              trade_time,
+              (trade_time - prev_trade_time) AS gap_ms
+            FROM
+            (
+              SELECT
+                latest_trade_time AS trade_time,
+                lagInFrame(latest_trade_time) OVER (
+                  ORDER BY latest_trade_time ASC
+                  ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+                ) AS prev_trade_time
+              FROM
+              (
+                SELECT
+                  max(trade_time) AS latest_trade_time
+                FROM {}.market_data_trades
+                WHERE pair_code = '{}'
+                  AND trade_time >= {}
+                  AND trade_time < {}
+                GROUP BY aggregate_trade_id
+              )
+            )
+            WHERE prev_trade_time IS NOT NULL
+              AND (trade_time - prev_trade_time) > {}
+            ORDER BY gap_ms DESC
+            LIMIT {}
+            FORMAT JSONEachRow
+            "#,
+            sql_ident(&self.database),
+            sql_string(pair_code),
+            start_time,
+            end_time,
+            safe_min_gap_ms,
+            safe_limit
+        );
+
+        #[derive(Deserialize)]
+        struct TradeGapRow {
+            prev_trade_time: i64,
+            trade_time: i64,
+            gap_ms: i64,
+        }
+
+        let mut lines = self.query_lines(&sql).await?;
+        let mut gaps = Vec::new();
+        while let Some(line) = lines.next().await {
+            let line = line?;
+            if line.trim().is_empty() {
+                continue;
+            }
+            let row = serde_json::from_str::<TradeGapRow>(&line)?;
+            gaps.push(TimeGap {
+                start_time: row.prev_trade_time.saturating_add(1),
+                end_time: row.trade_time,
+                gap_ms: row.gap_ms,
+            });
+        }
+        Ok(gaps)
+    }
+
     pub async fn latest_trade_checkpoint(
         &self,
         pair_code: &str,
@@ -756,7 +835,7 @@ impl Database {
         let sql = format!(
             r#"
             SELECT
-              argMax(trade_time, updated_at_ms) AS latest_trade_time,
+              max(trade_time) AS latest_trade_time,
               aggregate_trade_id
             FROM {}.market_data_trades
             WHERE pair_code = '{}'
@@ -933,6 +1012,32 @@ impl Database {
         }
 
         self.insert_json_each_row("market_data_trades", &payload).await
+    }
+
+    /// Insert a batch of normalized trade events into ClickHouse using a
+    /// single `INSERT ... FORMAT RowBinary`.
+    ///
+    /// This is significantly faster than JSONEachRow for large backfills.
+    pub async fn upsert_trades_batch_rowbinary(
+        &self,
+        events: &[NormalizedTradeEvent],
+    ) -> Result<()> {
+        if events.is_empty() {
+            return Ok(());
+        }
+
+        // RowBinary schema is the table column order:
+        //   pair_code (String), aggregate_trade_id (Int64), price (String), trade_time (Int64)
+        // We encode using the same rules as our RowBinary SELECT parser.
+        let mut payload: Vec<u8> = Vec::with_capacity(events.len() * 64);
+        for event in events {
+            encode_row_binary_string(&event.pair_code, &mut payload);
+            encode_row_binary_i64(event.aggregate_trade_id, &mut payload);
+            encode_row_binary_string(&event.price, &mut payload);
+            encode_row_binary_i64(event.trade_time, &mut payload);
+        }
+
+        self.insert_row_binary("market_data_trades", &payload).await
     }
 
     pub async fn upsert_book_ticker(&self, event: &NormalizedBookTickerEvent) -> Result<()> {
@@ -1523,6 +1628,28 @@ impl Database {
         Ok(())
     }
 
+    async fn insert_row_binary(&self, table_name: &str, payload: &[u8]) -> Result<()> {
+        let sql = format!(
+            "INSERT INTO {}.{} FORMAT RowBinary",
+            sql_ident(&self.database),
+            sql_ident(table_name)
+        );
+
+        let response = self
+            .send_with_retries(|| {
+                self.request(
+                    self.client
+                        .post(format!("{}/", self.base_url))
+                        .query(&[("query", sql.as_str())])
+                        .body(payload.to_vec()),
+                )
+            })
+            .await?;
+
+        self.ensure_success(response).await?;
+        Ok(())
+    }
+
     async fn execute_sql(&self, sql: &str) -> Result<()> {
         let response = self
             .send_with_retries(|| {
@@ -1784,4 +1911,29 @@ fn parse_row_binary_i64(bytes: &[u8], offset: &mut usize) -> Result<i64> {
     buf.copy_from_slice(&bytes[*offset..end]);
     *offset = end;
     Ok(i64::from_le_bytes(buf))
+}
+
+fn encode_row_binary_uvarint(mut value: usize, out: &mut Vec<u8>) {
+    // Unsigned LEB128 / varint encoding (same layout as `parse_row_binary_uvarint` expects).
+    loop {
+        let mut byte = (value & 0x7f) as u8;
+        value >>= 7;
+        if value != 0 {
+            byte |= 0x80;
+        }
+        out.push(byte);
+        if value == 0 {
+            break;
+        }
+    }
+}
+
+fn encode_row_binary_string(value: &str, out: &mut Vec<u8>) {
+    let bytes = value.as_bytes();
+    encode_row_binary_uvarint(bytes.len(), out);
+    out.extend_from_slice(bytes);
+}
+
+fn encode_row_binary_i64(value: i64, out: &mut Vec<u8>) {
+    out.extend_from_slice(&value.to_le_bytes());
 }

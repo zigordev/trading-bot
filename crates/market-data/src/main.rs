@@ -176,6 +176,7 @@ async fn info(State(state): State<AppState>) -> Json<serde_json::Value> {
                 "normalized market-data publication into Redpanda",
                 "persisted kline, aggregate-trade, and book-ticker storage in ClickHouse historical store",
                 "startup backfill and tail-gap repair for klines, aggregate trades, and book-tickers",
+                "periodic trade gap audit/repair loop",
                 "historian inspection endpoints",
                 "replay-oriented historian query endpoints",
                 "ClickHouse historian reads for research-backtesting consumers"
