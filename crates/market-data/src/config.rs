@@ -45,6 +45,10 @@ pub struct AppConfig {
     /// size per pair to allow some per-pair parallelism while keeping each
     /// chunk self-contained. Defaults to 1 day.
     pub historical_trade_backfill_chunk_ms: u64,
+    /// Maximum number of historical trade chunks to backfill concurrently for
+    /// the same pair. This keeps one hot symbol from overwhelming Binance with
+    /// too many simultaneous pagers.
+    pub historical_trade_backfill_pair_max_concurrency: usize,
     /// Maximum number of klines to buffer per ClickHouse INSERT during
     /// historical kline backfill.
     pub historical_kline_backfill_insert_batch_rows: usize,
@@ -256,6 +260,10 @@ pub fn load_config() -> Result<AppConfig> {
         historical_trade_backfill_chunk_ms: parse_u64(
             "HISTORICAL_TRADE_BACKFILL_CHUNK_MS",
             24 * 60 * 60 * 1000,
+        )?,
+        historical_trade_backfill_pair_max_concurrency: parse_usize(
+            "HISTORICAL_TRADE_BACKFILL_PAIR_MAX_CONCURRENCY",
+            8,
         )?,
         historical_kline_backfill_insert_batch_rows: parse_usize(
             "HISTORICAL_KLINE_BACKFILL_INSERT_BATCH_ROWS",

@@ -1641,6 +1641,12 @@ impl MarketDataService {
             pair_code = %subscription.pair_code,
             window_start_ms = window_start,
             window_end_ms = window_end,
+            pair_chunk_concurrency = self
+                .inner
+                .config
+                .historical_backfill_max_concurrency
+                .min(self.inner.config.historical_trade_backfill_pair_max_concurrency)
+                .max(1),
             "planning trade backfill chunks for pair"
         );
 
@@ -1666,8 +1672,14 @@ impl MarketDataService {
             chunk_start = chunk_end;
         }
 
+        let pair_chunk_concurrency = self
+            .inner
+            .config
+            .historical_backfill_max_concurrency
+            .min(self.inner.config.historical_trade_backfill_pair_max_concurrency)
+            .max(1);
         let pair_semaphore =
-            std::sync::Arc::new(tokio::sync::Semaphore::new(self.inner.config.historical_backfill_max_concurrency));
+            std::sync::Arc::new(tokio::sync::Semaphore::new(pair_chunk_concurrency));
         let mut tasks = Vec::with_capacity(chunks.len());
         for (start_ms, end_ms) in chunks {
             let permit = pair_semaphore.clone().acquire_owned().await?;
@@ -1899,6 +1911,7 @@ impl MarketDataService {
         max_batches: usize,
     ) -> Result<()> {
         let mut next_start = chunk_start_ms.max(0);
+        let mut next_from_id: Option<i64> = None;
         let mut batches_used = 0usize;
         let mut buffered_events = Vec::new();
         let insert_batch_rows = self
@@ -1930,11 +1943,12 @@ impl MarketDataService {
             let rows = self
                 .fetch_binance_json::<Vec<Value>>(
                     "/api/v3/aggTrades",
-                    &[
-                        ("symbol", subscription.symbol.clone()),
-                        ("limit", max_batch_rows.to_string()),
-                        ("startTime", next_start.to_string()),
-                    ],
+                    &trade_backfill_params(
+                        &subscription.symbol,
+                        max_batch_rows,
+                        next_start,
+                        next_from_id,
+                    ),
                 )
                 .await?;
             if rows.is_empty() {
@@ -1957,10 +1971,14 @@ impl MarketDataService {
 
             let mut first_trade_time_ms: Option<i64> = None;
             let mut last_trade_time_ms: Option<i64> = None;
+            let mut last_trade_time_seen_in_page: Option<i64> = None;
+            let mut last_aggregate_trade_id_seen_in_page: Option<i64> = None;
             let mut accepted_this_page = 0usize;
             for row in rows {
                 let event =
                     normalize_rest_trade(&subscription, row, &self.inner.config.service_name)?;
+                last_trade_time_seen_in_page = Some(event.trade_time);
+                last_aggregate_trade_id_seen_in_page = Some(event.aggregate_trade_id);
                 if event.trade_time < chunk_start_ms || event.trade_time >= chunk_end_ms {
                     // Skip trades outside this chunk; they will be handled by
                     // neighboring chunks if needed.
@@ -2020,6 +2038,10 @@ impl MarketDataService {
             total_rows_accepted_in_chunk =
                 total_rows_accepted_in_chunk.saturating_add(accepted_this_page);
 
+            if let Some(last_aggregate_trade_id) = last_aggregate_trade_id_seen_in_page {
+                next_from_id = Some(last_aggregate_trade_id.saturating_add(1));
+            }
+
             let progressed_ms = last_trade_time_ms
                 .unwrap_or(next_start)
                 .saturating_sub(chunk_start_ms)
@@ -2055,7 +2077,11 @@ impl MarketDataService {
             }
 
             batches_used = batches_used.saturating_add(1);
-            if let Some(last_time) = last_trade_time_ms {
+            if let Some(last_time_seen) = last_trade_time_seen_in_page
+                && last_time_seen >= chunk_end_ms
+            {
+                break;
+            } else if let Some(last_time) = last_trade_time_ms {
                 // Advance to just after the last trade we saw, but never past
                 // the chunk end.
                 let advanced = last_time.saturating_add(1);
@@ -2068,6 +2094,7 @@ impl MarketDataService {
             } else {
                 // No trades within chunk in this batch; move forward by a small step.
                 next_start = next_start.saturating_add(60_000);
+                next_from_id = None;
             }
         }
 
@@ -2503,6 +2530,24 @@ fn json_usize(value: Option<&Value>) -> Option<usize> {
     value
         .and_then(Value::as_u64)
         .and_then(|value| usize::try_from(value).ok())
+}
+
+fn trade_backfill_params(
+    symbol: &str,
+    max_batch_rows: usize,
+    next_start: i64,
+    next_from_id: Option<i64>,
+) -> Vec<(&'static str, String)> {
+    let mut params = vec![
+        ("symbol", symbol.to_string()),
+        ("limit", max_batch_rows.to_string()),
+    ];
+    if let Some(from_id) = next_from_id {
+        params.push(("fromId", from_id.to_string()));
+    } else {
+        params.push(("startTime", next_start.to_string()));
+    }
+    params
 }
 
 fn build_stream_maps(
