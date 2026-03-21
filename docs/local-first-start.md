@@ -474,7 +474,7 @@ curl -fsS "http://localhost:3050/v1/backtests/${BACKTEST_ID}" | jq
 
 docker compose --env-file docker/.env.app.local -f docker/compose.app.local.yml exec -T historical-store \
   clickhouse-client --user trading_bot_market_data --password trading_bot_market_data \
-  --query "SELECT backtest_id, pair_code, timeframe_code, duration_ms, signal_count, trade_count FROM trading_bot_market_data.research_backtest_runs ORDER BY finished_at_ms DESC LIMIT 5"
+  --query "SELECT backtest_id, pair_code, timeframe_code, backtest_duration_ms, signal_count, trade_count FROM trading_bot_market_data.research_backtest_runs ORDER BY finished_at_ms DESC LIMIT 5"
 ```
 
 Retention rule for this implemented slice:

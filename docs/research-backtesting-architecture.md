@@ -61,7 +61,11 @@ Current surface on `http://localhost:3050`:
 - optional `startTime`
 - optional `endTime`
 - optional `warmupCandles`
-- optional `closeOpenPositionAtEnd`
+
+Current contract note:
+
+- `closeOpenPositionAtEnd` is not part of the request model
+- still-open positions are currently left open at the replay boundary rather than force-closed
 
 If `startTime` and `endTime` are omitted, the service uses the selected `research_settings`
 window for the analysis timeframe and applies the legacy-style default:

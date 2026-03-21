@@ -6,15 +6,13 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::models::{
-    KlineSubscription, NormalizedBookTickerEvent, NormalizedKlineEvent, NormalizedTradeEvent,
-    PairStreamSubscription,
+    KlineSubscription, NormalizedKlineEvent, NormalizedTradeEvent, PairStreamSubscription,
 };
 
 #[derive(Clone, Debug)]
 pub enum NormalizedWsEvent {
     Kline(NormalizedKlineEvent),
     Trade(NormalizedTradeEvent),
-    BookTicker(NormalizedBookTickerEvent),
 }
 
 #[derive(Debug, Deserialize)]
@@ -82,45 +80,11 @@ struct BinanceAggTradeRestRow {
     market_maker: bool,
 }
 
-#[derive(Debug, Deserialize)]
-struct BinanceBookTickerRestRow {
-    symbol: String,
-    #[serde(rename = "bidPrice")]
-    bid_price: String,
-    #[serde(rename = "bidQty")]
-    bid_quantity: String,
-    #[serde(rename = "askPrice")]
-    ask_price: String,
-    #[serde(rename = "askQty")]
-    ask_quantity: String,
-    #[serde(rename = "updateId")]
-    #[serde(default)]
-    update_id: Option<i64>,
-}
-
-#[derive(Debug, Deserialize)]
-struct BinanceBookTickerPayload {
-    #[serde(rename = "u")]
-    update_id: i64,
-    #[serde(rename = "b")]
-    bid_price: String,
-    #[serde(rename = "B")]
-    bid_quantity: String,
-    #[serde(rename = "a")]
-    ask_price: String,
-    #[serde(rename = "A")]
-    ask_quantity: String,
-}
-
 fn iso_timestamp(timestamp_ms: i64) -> String {
     Utc.timestamp_millis_opt(timestamp_ms)
         .single()
         .unwrap_or_else(Utc::now)
         .to_rfc3339()
-}
-
-fn now_iso_timestamp() -> String {
-    Utc::now().to_rfc3339()
 }
 
 pub fn normalize_ws_message(
@@ -193,70 +157,9 @@ pub fn normalize_ws_message(
                 strategy_names: subscription.strategy_names.clone(),
             })));
         }
-
-        if stream_name.ends_with("@bookticker") {
-            let payload: BinanceBookTickerPayload = serde_json::from_value(envelope.data)?;
-            return Ok(Some(NormalizedWsEvent::BookTicker(
-                NormalizedBookTickerEvent {
-                    event_id: format!("{}:book:{}", subscription.pair_code, payload.update_id),
-                    event_type: "trading-bot.market-data.book-ticker.v1".to_string(),
-                    source: source.to_string(),
-                    occurred_at: now_iso_timestamp(),
-                    exchange: "binance".to_string(),
-                    ingestion_mode: "live".to_string(),
-                    stream_name: subscription.book_ticker_stream_name.clone(),
-                    pair_code: subscription.pair_code.clone(),
-                    symbol: subscription.symbol.clone(),
-                    order_book_update_id: payload.update_id,
-                    bid_price: payload.bid_price,
-                    bid_quantity: payload.bid_quantity,
-                    ask_price: payload.ask_price,
-                    ask_quantity: payload.ask_quantity,
-                    analysis_setting_ids: subscription.analysis_setting_ids.clone(),
-                    strategy_names: subscription.strategy_names.clone(),
-                },
-            )));
-        }
     }
 
     Ok(None)
-}
-
-pub fn normalize_rest_book_ticker(
-    subscription: &PairStreamSubscription,
-    row: serde_json::Value,
-    source: &str,
-) -> Result<NormalizedBookTickerEvent> {
-    let row = serde_json::from_value::<BinanceBookTickerRestRow>(row)?;
-    let event_time = Utc::now().timestamp_millis();
-    let order_book_update_id = row.update_id.unwrap_or(event_time);
-    let event_id = if row.update_id.is_some() {
-        format!(
-            "{}:book-backfill:{}",
-            subscription.pair_code, order_book_update_id
-        )
-    } else {
-        format!("{}:book-backfill:{}", subscription.pair_code, event_time)
-    };
-
-    Ok(NormalizedBookTickerEvent {
-        event_id,
-        event_type: "trading-bot.market-data.book-ticker.v1".to_string(),
-        source: source.to_string(),
-        occurred_at: now_iso_timestamp(),
-        exchange: "binance".to_string(),
-        ingestion_mode: "backfill".to_string(),
-        stream_name: subscription.book_ticker_stream_name.clone(),
-        pair_code: subscription.pair_code.clone(),
-        symbol: row.symbol,
-        order_book_update_id,
-        bid_price: row.bid_price,
-        bid_quantity: row.bid_quantity,
-        ask_price: row.ask_price,
-        ask_quantity: row.ask_quantity,
-        analysis_setting_ids: subscription.analysis_setting_ids.clone(),
-        strategy_names: subscription.strategy_names.clone(),
-    })
 }
 
 pub fn normalize_rest_kline(
@@ -368,13 +271,11 @@ mod tests {
 
     use serde_json::json;
 
-    use super::{
-        NormalizedWsEvent, normalize_rest_book_ticker, normalize_rest_trade, normalize_ws_message,
-    };
+    use super::{NormalizedWsEvent, normalize_rest_trade, normalize_ws_message};
     use crate::models::{KlineSubscription, PairStreamSubscription};
 
     #[test]
-    fn normalizes_kline_trade_and_book_ticker_messages() {
+    fn normalizes_kline_and_trade_messages() {
         let mut kline_by_stream = HashMap::new();
         kline_by_stream.insert(
             "btcusdt@kline_1m".to_string(),
@@ -395,12 +296,10 @@ mod tests {
             pair_code: "BTCUSDT".to_string(),
             symbol: "BTCUSDT".to_string(),
             trade_stream_name: "btcusdt@aggTrade".to_string(),
-            book_ticker_stream_name: "btcusdt@bookTicker".to_string(),
             analysis_setting_ids: vec!["analysis-1".to_string()],
             strategy_names: vec!["ema".to_string()],
         };
         pair_by_stream.insert(pair.trade_stream_name.to_lowercase(), pair.clone());
-        pair_by_stream.insert(pair.book_ticker_stream_name.to_lowercase(), pair);
 
         let kline = normalize_ws_message(
             r#"{"stream":"btcusdt@kline_1m","data":{"E":1710000000000,"k":{"t":1710000000000,"T":1710000059999,"o":"100.0","h":"102.0","l":"99.0","c":"101.0","v":"42.0","q":"4242.0","n":17,"x":true}}}"#,
@@ -437,36 +336,6 @@ mod tests {
             _ => panic!("expected trade event"),
         }
 
-        let book = normalize_ws_message(
-            r#"{"stream":"btcusdt@bookTicker","data":{"u":99,"b":"100.0","B":"1.0","a":"100.5","A":"2.0"}}"#,
-            &kline_by_stream,
-            &pair_by_stream,
-            "test",
-        )
-        .expect("book should parse")
-        .expect("book event should exist");
-
-        match book {
-            NormalizedWsEvent::BookTicker(event) => {
-                assert_eq!(event.event_id, "BTCUSDT:book:99");
-                assert_eq!(event.event_type, "trading-bot.market-data.book-ticker.v1");
-                assert_eq!(event.source, "test");
-                assert_eq!(event.exchange, "binance");
-                assert!(!event.occurred_at.is_empty());
-                assert_eq!(event.stream_name, "btcusdt@bookTicker");
-                assert_eq!(event.pair_code, "BTCUSDT");
-                assert_eq!(event.symbol, "BTCUSDT");
-                assert_eq!(event.order_book_update_id, 99);
-                assert_eq!(event.bid_price, "100.0");
-                assert_eq!(event.bid_quantity, "1.0");
-                assert_eq!(event.ask_price, "100.5");
-                assert_eq!(event.ask_quantity, "2.0");
-                assert_eq!(event.analysis_setting_ids, vec!["analysis-1"]);
-                assert_eq!(event.strategy_names, vec!["ema"]);
-            }
-            _ => panic!("expected book ticker event"),
-        }
-
         let rest_trade = normalize_rest_trade(
             pair_by_stream
                 .get("btcusdt@aggtrade")
@@ -484,41 +353,5 @@ mod tests {
         assert_eq!(rest_trade.aggregate_trade_id, 321);
         assert_eq!(rest_trade.ingestion_mode, "backfill");
         assert_eq!(rest_trade.trade_time, 1710000001000);
-
-        let rest_book_ticker = normalize_rest_book_ticker(
-            pair_by_stream
-                .get("btcusdt@bookticker")
-                .expect("book ticker subscription should exist"),
-            json!({
-                "symbol": "BTCUSDT",
-                "bidPrice": "100.0",
-                "bidQty": "1.0",
-                "askPrice": "100.5",
-                "askQty": "2.0"
-            }),
-            "test",
-        )
-        .expect("rest book ticker should normalize");
-        assert_eq!(rest_book_ticker.pair_code, "BTCUSDT");
-        assert_eq!(rest_book_ticker.ingestion_mode, "backfill");
-        assert_eq!(rest_book_ticker.bid_price, "100.0");
-        assert_eq!(rest_book_ticker.ask_price, "100.5");
-
-        let rest_book_ticker_snapshot = normalize_rest_book_ticker(
-            pair_by_stream
-                .get("btcusdt@bookticker")
-                .expect("book ticker subscription should exist"),
-            json!({
-                "symbol": "BTCUSDT",
-                "updateId": 12345,
-                "bidPrice": "101.0",
-                "bidQty": "1.1",
-                "askPrice": "101.5",
-                "askQty": "2.1"
-            }),
-            "test",
-        )
-        .expect("snapshot rest book ticker should normalize");
-        assert_eq!(rest_book_ticker_snapshot.order_book_update_id, 12345);
     }
 }

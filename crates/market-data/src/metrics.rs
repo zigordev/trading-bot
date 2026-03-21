@@ -22,10 +22,8 @@ pub struct Metrics {
     pub binance_rest_limiter_wait_ms_total: IntCounter,
     pub kline_publish_total: IntCounter,
     pub trade_publish_total: IntCounter,
-    pub book_ticker_publish_total: IntCounter,
     pub kline_store_failures_total: IntCounter,
     pub trade_store_failures_total: IntCounter,
-    pub book_ticker_store_failures_total: IntCounter,
 }
 
 impl Metrics {
@@ -115,10 +113,6 @@ impl Metrics {
             "trading_bot_market_data_trade_publish_total",
             "Number of aggregate trade events published",
         )?;
-        let book_ticker_publish_total = IntCounter::new(
-            "trading_bot_market_data_book_ticker_publish_total",
-            "Number of book-ticker events published",
-        )?;
         let kline_store_failures_total = IntCounter::new(
             "trading_bot_market_data_kline_store_failures_total",
             "Number of kline persistence failures",
@@ -126,10 +120,6 @@ impl Metrics {
         let trade_store_failures_total = IntCounter::new(
             "trading_bot_market_data_trade_store_failures_total",
             "Number of aggregate trade persistence failures",
-        )?;
-        let book_ticker_store_failures_total = IntCounter::new(
-            "trading_bot_market_data_book_ticker_store_failures_total",
-            "Number of book-ticker persistence failures",
         )?;
 
         registry.register(Box::new(runtime_config_loaded.clone()))?;
@@ -150,10 +140,8 @@ impl Metrics {
         registry.register(Box::new(binance_rest_limiter_wait_ms_total.clone()))?;
         registry.register(Box::new(kline_publish_total.clone()))?;
         registry.register(Box::new(trade_publish_total.clone()))?;
-        registry.register(Box::new(book_ticker_publish_total.clone()))?;
         registry.register(Box::new(kline_store_failures_total.clone()))?;
         registry.register(Box::new(trade_store_failures_total.clone()))?;
-        registry.register(Box::new(book_ticker_store_failures_total.clone()))?;
 
         Ok(Self {
             registry,
@@ -175,10 +163,8 @@ impl Metrics {
             binance_rest_limiter_wait_ms_total,
             kline_publish_total,
             trade_publish_total,
-            book_ticker_publish_total,
             kline_store_failures_total,
             trade_store_failures_total,
-            book_ticker_store_failures_total,
         })
     }
 

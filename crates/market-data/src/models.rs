@@ -114,7 +114,6 @@ pub struct PairStreamSubscription {
     pub pair_code: String,
     pub symbol: String,
     pub trade_stream_name: String,
-    pub book_ticker_stream_name: String,
     pub analysis_setting_ids: Vec<String>,
     pub strategy_names: Vec<String>,
 }

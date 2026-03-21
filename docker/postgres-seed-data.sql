@@ -23,13 +23,20 @@ SET row_security = off;
 --
 
 INSERT INTO public.pairs VALUES ('6f686479-a001-4d72-89f3-f8a6a98f894f', 'BTCUSDT', true, 0.001, 10, '2026-03-16 10:42:15.044+00', '2026-03-16 10:42:15.044+00');
+INSERT INTO public.pairs VALUES ('0d7c2f49-63a0-4f37-9a9d-4cb2c8b4d901', 'ETHUSDT', true, 0.001, 10, '2026-03-20 16:32:00+00', '2026-03-20 16:32:00+00');
+INSERT INTO public.pairs VALUES ('b6d58aab-3c38-4f8b-9c43-09d2a0c2e902', 'BNBUSDT', true, 0.001, 10, '2026-03-20 16:32:00+00', '2026-03-20 16:32:00+00');
 
 
 --
 -- Data for Name: risk_profiles; Type: TABLE DATA; Schema: public; Owner: -
 --
 
-INSERT INTO public.risk_profiles VALUES ('7463d67a-b54e-4291-b803-6fff5ceed8e5', 'default', 'Default risk profile', 3, 1, 1, 2, true, '2026-03-16 10:42:15.143+00', '2026-03-16 10:42:15.143+00');
+INSERT INTO public.risk_profiles VALUES ('7463d67a-b54e-4291-b803-6fff5ceed8e5', 'default', 'Default balanced risk profile', 3, 1, 1, 2, true, '2026-03-16 10:42:15.143+00', '2026-03-16 10:42:15.143+00');
+INSERT INTO public.risk_profiles VALUES ('1e1d1a3d-6f97-4c89-9ff0-9f5d7dfd6a01', 'tight-scalp', 'Tighter stop profile for fast mean-reversion or scalp-style entries', 1.2, 0.4, 0.6, 1.5, true, '2026-03-20 16:25:00+00', '2026-03-20 16:25:00+00');
+INSERT INTO public.risk_profiles VALUES ('7a2c8f11-b247-4db3-a4f1-1c3d8e8c2d02', 'conservative', 'Conservative profile with tighter capped risk and modest reward target', 2, 0.75, 0.9, 1.8, true, '2026-03-20 16:25:00+00', '2026-03-20 16:25:00+00');
+INSERT INTO public.risk_profiles VALUES ('d3a44a66-6d6c-4c7f-b6a9-6d9f0f9b7e03', 'balanced-plus', 'Balanced swing profile with slightly wider stops and stronger reward target', 3.5, 1.25, 1.5, 2.5, true, '2026-03-20 16:25:00+00', '2026-03-20 16:25:00+00');
+INSERT INTO public.risk_profiles VALUES ('b4f6c7f2-93c8-4a34-a5c0-7d1c44d27c04', 'trend-following', 'Wider stop profile intended for trend continuation setups', 4.5, 1.5, 2.0, 3, true, '2026-03-20 16:25:00+00', '2026-03-20 16:25:00+00');
+INSERT INTO public.risk_profiles VALUES ('e8f5a1b9-2b6e-42e8-8df8-3fd4c0c77f05', 'aggressive', 'Aggressive profile with wider allowable stop and high reward multiple', 6, 2, 2.5, 3.5, true, '2026-03-20 16:25:00+00', '2026-03-20 16:25:00+00');
 
 
 --
@@ -80,4 +87,3 @@ INSERT INTO public.analysis_settings VALUES ('0b48fa1b-2eb8-464d-bca9-c3253162bf
 --
 
 \unrestrict tRrFYEsl4EyLe2agNf1Fp8SchH6H57Nhpsi6rnSCFjEXR1iuTunvIdOA1fsgu7r
-

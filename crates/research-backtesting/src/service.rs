@@ -4,11 +4,10 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
 
 use anyhow::{Context, Result, bail};
-use chrono::{DateTime, Datelike, Duration, TimeZone, Utc};
+use chrono::{DateTime, Datelike, TimeZone, Utc};
 use serde::Serialize;
 use std::time::Duration as StdDuration;
 use trading_bot_market_data::db::{Database, StoredBacktestRunSummary, StoredBacktestRunWrite};
-use trading_bot_market_data::models::PersistedBookTickerRecord as HistoricalBookTickerRecord;
 use trading_bot_market_data::models::PersistedKlineRecord as HistoricalKlineRecord;
 use trading_bot_market_data::models::PersistedTradeRecord as HistoricalTradeRecord;
 use trading_bot_strategy_engine::{
@@ -174,12 +173,6 @@ impl ResearchBacktestingService {
         }
 
         if service.inner.config.auto_backtest_enabled {
-            if let Err(error) = service
-                .run_enabled_analysis_backtests_if_ready("startup")
-                .await
-            {
-                warn!(error = %error, "startup backtest batch failed");
-            }
             service.start_auto_backtest_scheduler();
         }
 
@@ -191,6 +184,10 @@ impl ResearchBacktestingService {
         let interval = StdDuration::from_secs(service.inner.config.auto_backtest_interval_seconds);
 
         tokio::spawn(async move {
+            if let Err(error) = service.run_enabled_analysis_backtests_if_ready("startup").await {
+                warn!(error = %error, "startup backtest batch failed");
+            }
+
             tokio::time::sleep(interval).await;
             loop {
                 if let Err(error) = service
@@ -516,55 +513,30 @@ impl ResearchBacktestingService {
             &self.inner.config.backtesting_timerange_ms_by_timeframe,
         )?;
 
-        let required_klines = exact_candle_count_inclusive(
+        if let Some(blocker) = kline_coverage_blocker_from_store(
+            &self.inner.historical_store,
+            &analysis.symbol,
+            &analysis.timeframe_code,
             time_window.effective_warmup_start_time,
             time_window.requested_end_time,
             analysis.timeframe.period_ms,
-        )?;
-        let kline_coverage = self
-            .inner
-            .historical_store
-            .kline_window_coverage_in_range(
-                &analysis.symbol,
-                &analysis.timeframe_code,
-                time_window.effective_warmup_start_time,
-                time_window.requested_end_time,
-            )
-            .await?;
-        if kline_coverage.row_count < required_klines as u64 {
-            return Ok(Some(format!(
-                "kline coverage incomplete (have {}, need {})",
-                kline_coverage.row_count, required_klines
-            )));
+        )
+        .await?
+        {
+            return Ok(Some(blocker));
         }
 
-        let trade_coverage = self
-            .inner
-            .historical_store
-            .trade_window_coverage_in_range(
-                &analysis.symbol,
-                time_window.requested_start_time,
-                time_window.requested_end_time,
-            )
-            .await?;
         let tolerance = self.inner.config.trade_coverage_tolerance_ms as i64;
-        let trade_ready = match (trade_coverage.min_time, trade_coverage.max_time) {
-            (Some(min_t), Some(max_t)) => {
-                let latest_acceptable_min =
-                    time_window.requested_start_time.saturating_add(tolerance);
-                let earliest_acceptable_max = time_window
-                    .requested_end_time
-                    .saturating_sub(1)
-                    .saturating_sub(tolerance);
-                min_t <= latest_acceptable_min && max_t >= earliest_acceptable_max
-            }
-            _ => false,
-        };
-        if !trade_ready {
-            return Ok(Some(format!(
-                "trade coverage incomplete (row_count={}, min_time={:?}, max_time={:?})",
-                trade_coverage.row_count, trade_coverage.min_time, trade_coverage.max_time
-            )));
+        if let Some(blocker) = trade_coverage_blocker_from_store(
+            &self.inner.historical_store,
+            &analysis.symbol,
+            time_window.requested_start_time,
+            time_window.requested_end_time,
+            tolerance,
+        )
+        .await?
+        {
+            return Ok(Some(blocker));
         }
 
         Ok(None)
@@ -722,11 +694,36 @@ impl ResearchBacktestingService {
         }
         // Use all available trades up to the configured hard cap.
         let expected_trades = self.inner.config.max_backtest_trades;
-        let expected_book_tickers = self
-            .inner
-            .config
-            .max_backtest_book_tickers
-            .min((expected_candles.saturating_mul(2_000)).max(50_000));
+
+        if let Some(blocker) = kline_coverage_blocker_from_store(
+            &self.inner.historical_store,
+            &analysis.symbol,
+            &analysis.timeframe_code,
+            time_window.effective_warmup_start_time,
+            time_window.requested_end_time,
+            analysis.timeframe.period_ms,
+        )
+        .await?
+        {
+            warn!(
+                symbol = %analysis.symbol,
+                timeframe_code = %analysis.timeframe_code,
+                requested_start_time = time_window.requested_start_time,
+                requested_end_time = time_window.requested_end_time,
+                effective_warmup_start_time = time_window.effective_warmup_start_time,
+                blocker = %blocker,
+                "backtest window does not have full historical kline coverage"
+            );
+
+            bail!(
+                "insufficient historical klines in ClickHouse for {} {} within {}..{}; backtesting requires exact market_data_klines coverage ({})",
+                analysis.symbol,
+                analysis.timeframe_code,
+                time_window.effective_warmup_start_time,
+                time_window.requested_end_time,
+                blocker
+            );
+        }
 
         let rows = self
             .inner
@@ -742,19 +739,6 @@ impl ResearchBacktestingService {
             .into_iter()
             .map(map_historical_kline_row)
             .filter(|row| row.closed)
-            .collect::<Vec<_>>();
-        let replay_book_tickers = self
-            .inner
-            .historical_store
-            .replay_book_tickers(
-                &analysis.symbol,
-                Some(time_window.requested_start_time),
-                Some(time_window.requested_end_time),
-                expected_book_tickers as i64,
-            )
-            .await?
-            .into_iter()
-            .map(map_historical_book_ticker_row)
             .collect::<Vec<_>>();
 
         let mut warmup_rows = Vec::new();
@@ -781,70 +765,43 @@ impl ResearchBacktestingService {
 
         // Enforce sufficient trade coverage for the entire requested window,
         // not just the presence of at least one trade somewhere inside it.
-        let trade_coverage = self
-            .inner
-            .historical_store
-            .trade_window_coverage_in_range(
-                &analysis.symbol,
-                time_window.requested_start_time,
-                time_window.requested_end_time,
-            )
-            .await
-            .unwrap_or_else(|error| {
-                warn!(
-                    error = %error,
-                    symbol = %analysis.symbol,
-                    requested_start_time = time_window.requested_start_time,
-                    requested_end_time = time_window.requested_end_time,
-                    "failed to compute trade window coverage for backtest window"
-                );
-                trading_bot_market_data::db::WindowCoverage {
-                    row_count: 0,
-                    min_time: None,
-                    max_time: None,
-                }
-            });
+        let tolerance = self.inner.config.trade_coverage_tolerance_ms as i64;
+        let trade_coverage_blocker = trade_coverage_blocker_from_store(
+            &self.inner.historical_store,
+            &analysis.symbol,
+            time_window.requested_start_time,
+            time_window.requested_end_time,
+            tolerance,
+        )
+        .await
+        .unwrap_or_else(|error| {
+            warn!(
+                error = %error,
+                symbol = %analysis.symbol,
+                requested_start_time = time_window.requested_start_time,
+                requested_end_time = time_window.requested_end_time,
+                "failed to validate trade coverage for backtest window"
+            );
+            Some("trade coverage validation failed".to_string())
+        });
 
-        let has_full_trade_coverage = match (trade_coverage.min_time, trade_coverage.max_time) {
-            (Some(min_t), Some(max_t)) => {
-                let tolerance = self.inner.config.trade_coverage_tolerance_ms as i64;
-                // Allow small slack at the edges: the first trade can occur
-                // slightly after the requested start, and the last trade can
-                // occur slightly before the requested end, as long as the gap
-                // is within the configured tolerance.
-                let latest_acceptable_min =
-                    time_window.requested_start_time.saturating_add(tolerance);
-                let earliest_acceptable_max = time_window
-                    .requested_end_time
-                    .saturating_sub(1)
-                    .saturating_sub(tolerance);
-
-                min_t <= latest_acceptable_min && max_t >= earliest_acceptable_max
-            }
-            _ => false,
-        };
-
-        if !has_full_trade_coverage {
+        if let Some(blocker) = trade_coverage_blocker {
             warn!(
                 symbol = %analysis.symbol,
                 timeframe_code = %analysis.timeframe_code,
                 requested_start_time = time_window.requested_start_time,
                 requested_end_time = time_window.requested_end_time,
                 trade_coverage_tolerance_ms = self.inner.config.trade_coverage_tolerance_ms,
-                trade_row_count = trade_coverage.row_count,
-                trade_min_time = ?trade_coverage.min_time,
-                trade_max_time = ?trade_coverage.max_time,
+                blocker = %blocker,
                 "backtest window does not have full historical aggregate trade coverage"
             );
 
             bail!(
-                "insufficient historical aggregate trades in ClickHouse for {} within {}..{}; fill-aware backtesting requires full market_data_trades coverage (trade_row_count={}, trade_min_time={:?}, trade_max_time={:?})",
+                "insufficient historical aggregate trades in ClickHouse for {} within {}..{}; fill-aware backtesting requires full market_data_trades coverage ({})",
                 analysis.symbol,
                 time_window.requested_start_time,
                 time_window.requested_end_time,
-                trade_coverage.row_count,
-                trade_coverage.min_time,
-                trade_coverage.max_time
+                blocker
             );
         }
 
@@ -856,7 +813,6 @@ impl ResearchBacktestingService {
             replay_trade_start_time,
             replay_trade_end_time,
             replay_trade_max_rows: expected_trades,
-            replay_book_tickers,
         })
     }
 
@@ -977,17 +933,12 @@ fn map_historical_kline_row(row: HistoricalKlineRecord) -> PersistedKlineRecord 
     }
 }
 
-fn map_historical_book_ticker_row(row: HistoricalBookTickerRecord) -> HistoricalBookTickerRecord {
-    row
-}
-
 fn persisted_backtest_run(response: &BacktestResponse) -> Result<StoredBacktestRunWrite> {
     Ok(StoredBacktestRunWrite {
         backtest_id: response.backtest_id.clone(),
         finished_at_ms: DateTime::parse_from_rfc3339(&response.finished_at)
             .with_context(|| format!("invalid finishedAt timestamp: {}", response.finished_at))?
             .timestamp_millis(),
-        duration_ms: response.backtest_duration_ms,
         backtest_duration_ms: response.backtest_duration_ms,
         data_retrieval_duration_ms: response.data_retrieval_duration_ms,
         analysis_setting_id: response.analysis_setting_id.clone(),
@@ -1015,7 +966,6 @@ fn persisted_run_summary(run: &StoredBacktestRunWrite) -> StoredBacktestRunSumma
     StoredBacktestRunSummary {
         backtest_id: run.backtest_id.clone(),
         finished_at_ms: run.finished_at_ms,
-        duration_ms: run.duration_ms,
         backtest_duration_ms: run.backtest_duration_ms,
         data_retrieval_duration_ms: run.data_retrieval_duration_ms,
         analysis_setting_id: run.analysis_setting_id.clone(),
@@ -1175,18 +1125,16 @@ fn validate_time_window(start_time: i64, end_time: i64) -> Result<()> {
 }
 
 fn previous_midnight_utc(reference_time: DateTime<Utc>) -> DateTime<Utc> {
-    let midnight_today = Utc
-        .with_ymd_and_hms(
-            reference_time.year(),
-            reference_time.month(),
-            reference_time.day(),
-            0,
-            0,
-            0,
-        )
-        .single()
-        .expect("valid midnight");
-    midnight_today - Duration::days(1)
+    Utc.with_ymd_and_hms(
+        reference_time.year(),
+        reference_time.month(),
+        reference_time.day(),
+        0,
+        0,
+        0,
+    )
+    .single()
+    .expect("valid midnight")
 }
 
 fn expected_candle_count(start_time: i64, end_time: i64, period_ms: i64) -> Result<usize> {
@@ -1200,15 +1148,113 @@ fn expected_candle_count(start_time: i64, end_time: i64, period_ms: i64) -> Resu
     Ok(count.max(1) as usize)
 }
 
-fn exact_candle_count_inclusive(start_time: i64, end_time: i64, period_ms: i64) -> Result<usize> {
+fn exact_candle_count_exclusive(start_time: i64, end_time: i64, period_ms: i64) -> Result<usize> {
     if period_ms <= 0 {
         bail!("periodMs must be greater than zero");
     }
     let span_ms = end_time
         .checked_sub(start_time)
         .context("replay span overflowed i64")?;
-    let count = (span_ms / period_ms) + 1;
+    let count = span_ms / period_ms;
     Ok(count.max(1) as usize)
+}
+
+fn kline_coverage_blocker(
+    required_klines: usize,
+    coverage: &trading_bot_market_data::db::WindowCoverage,
+) -> Option<String> {
+    if coverage.row_count < required_klines as u64 {
+        return Some(format!(
+            "kline coverage incomplete (have {}, need {})",
+            coverage.row_count, required_klines
+        ));
+    }
+
+    None
+}
+
+async fn kline_coverage_blocker_from_store(
+    historical_store: &Database,
+    pair_code: &str,
+    timeframe_code: &str,
+    start_time: i64,
+    end_time: i64,
+    period_ms: i64,
+) -> Result<Option<String>> {
+    let required_klines = exact_candle_count_exclusive(start_time, end_time, period_ms)?;
+    let coverage = historical_store
+        .kline_window_coverage_in_range(
+            pair_code,
+            timeframe_code,
+            start_time,
+            end_time.saturating_sub(1),
+        )
+        .await?;
+    Ok(kline_coverage_blocker(required_klines, &coverage))
+}
+
+fn trade_coverage_blocker(
+    requested_start_time: i64,
+    requested_end_time: i64,
+    tolerance_ms: i64,
+    coverage: &trading_bot_market_data::db::WindowCoverage,
+    gaps: &[trading_bot_market_data::db::TimeGap],
+) -> Option<String> {
+    let edge_ready = match (coverage.min_time, coverage.max_time) {
+        (Some(min_t), Some(max_t)) => {
+            let latest_acceptable_min = requested_start_time.saturating_add(tolerance_ms);
+            let earliest_acceptable_max = requested_end_time
+                .saturating_sub(1)
+                .saturating_sub(tolerance_ms);
+            min_t <= latest_acceptable_min && max_t >= earliest_acceptable_max
+        }
+        _ => false,
+    };
+
+    if !edge_ready {
+        return Some(format!(
+            "trade coverage incomplete (row_count={}, min_time={:?}, max_time={:?})",
+            coverage.row_count, coverage.min_time, coverage.max_time
+        ));
+    }
+
+    if let Some(gap) = gaps.first() {
+        return Some(format!(
+            "trade coverage contains internal gap (gap_start={}, gap_end={}, gap_ms={})",
+            gap.start_time, gap.end_time, gap.gap_ms
+        ));
+    }
+
+    None
+}
+
+async fn trade_coverage_blocker_from_store(
+    historical_store: &Database,
+    pair_code: &str,
+    requested_start_time: i64,
+    requested_end_time: i64,
+    tolerance_ms: i64,
+) -> Result<Option<String>> {
+    let coverage = historical_store
+        .trade_window_coverage_in_range(pair_code, requested_start_time, requested_end_time)
+        .await?;
+    let gaps = historical_store
+        .trade_time_gaps_in_range(
+            pair_code,
+            requested_start_time,
+            requested_end_time,
+            tolerance_ms.max(1),
+            1,
+        )
+        .await?;
+
+    Ok(trade_coverage_blocker(
+        requested_start_time,
+        requested_end_time,
+        tolerance_ms,
+        &coverage,
+        &gaps,
+    ))
 }
 
 async fn fetch_trade_window_cache(
@@ -1443,7 +1489,6 @@ async fn execute_backtest(
 
     let (trades, trade_stats) = simulate_trade_replay_paged(
         &signals,
-        &input.replay_book_tickers,
         &input.analysis,
         SimulationConfig {
             fee_bps,
@@ -1465,22 +1510,10 @@ async fn execute_backtest(
         replay_kline_count: input.replay_rows.len(),
         fetched_trade_count: trade_stats.fetched_trade_count,
         replay_trade_count: trade_stats.fetched_trade_count,
-        fetched_book_ticker_count: input.replay_book_tickers.len(),
-        replay_book_ticker_count: input.replay_book_tickers.len(),
         first_replay_open_time: input.replay_rows.first().map(|row| row.open_time),
         last_replay_close_time: input.replay_rows.last().map(|row| row.close_time),
         first_replay_trade_time: trade_stats.first_trade_time,
         last_replay_trade_time: trade_stats.last_trade_time,
-        first_replay_book_ticker_time: input
-            .replay_book_tickers
-            .first()
-            .and_then(|row| chrono::DateTime::parse_from_rfc3339(&row.occurred_at).ok())
-            .map(|timestamp| timestamp.timestamp_millis()),
-        last_replay_book_ticker_time: input
-            .replay_book_tickers
-            .last()
-            .and_then(|row| chrono::DateTime::parse_from_rfc3339(&row.occurred_at).ok())
-            .map(|timestamp| timestamp.timestamp_millis()),
     };
 
     Ok(CompletedBacktest {
@@ -1495,19 +1528,14 @@ async fn execute_backtest(
             analysis: input.analysis,
             dataset,
             execution_assumptions: BacktestExecutionAssumptions {
-                fill_source: if input.replay_book_tickers.is_empty() {
-                    "aggregateTrades".to_string()
-                } else {
-                    "bookTickersWithAggregateTradeFallback".to_string()
-                },
+                fill_source: "aggregateTrades".to_string(),
                 fee_bps,
                 slippage_bps,
                 stop_loss_source:
-                    "bestBidAskQuotesWithAggregateTradeFallbackAndRiskProfileSwingGapClampedBetweenMinimumAndMaximum"
+                    "aggregateTradesWithRiskProfileSwingGapClampedBetweenMinimumAndMaximum"
                         .to_string(),
                 take_profit_source:
-                    "bestBidAskQuotesWithAggregateTradeFallbackAndRiskProfileRrrAppliedToStopLossDistance"
-                        .to_string(),
+                    "aggregateTradesWithRiskProfileRrrAppliedToStopLossDistance".to_string(),
             },
             summary,
             signals,
@@ -1623,6 +1651,8 @@ fn summarize_backtest(
 
 #[cfg(test)]
 mod tests {
+    use std::{future::Future, pin::Pin, sync::{Arc, Mutex}};
+
     use serde_json::json;
     use trading_bot_market_data::models::PersistedTradeRecord;
     use trading_bot_strategy_engine::models::{
@@ -1631,6 +1661,10 @@ mod tests {
 
     use super::*;
     use crate::models::BacktestRequest;
+    use crate::{
+        execution_simulation::{SimulationConfig, simulate_trade_replay_paged},
+        models::BacktestSignalRecord,
+    };
 
     fn analysis_record() -> ResolvedAnalysisSettingsRecord {
         ResolvedAnalysisSettingsRecord {
@@ -1735,6 +1769,23 @@ mod tests {
         }
     }
 
+    fn signal(
+        sequence: usize,
+        direction: &str,
+        close_time: i64,
+        close_price: f64,
+    ) -> BacktestSignalRecord {
+        BacktestSignalRecord {
+            sequence,
+            signal_direction: direction.to_string(),
+            close_time,
+            close_price,
+            fast_ema: 1.0,
+            slow_ema: 0.5,
+            kline_event_id: format!("signal-{sequence}"),
+        }
+    }
+
     #[test]
     fn resolve_time_window_uses_backtesting_timerange_ms() {
         let analysis = analysis_record();
@@ -1768,11 +1819,112 @@ mod tests {
     }
 
     #[test]
-    fn execute_backtest_reuses_strategy_logic_offline() {
-        // NOTE: `execute_backtest` uses async, paged trade fetching and a real
-        // `historical_store` client. The previous offline unit test was based on
-        // an in-memory `replay_trades` tape, which no longer matches the
-        // current paging-based replay architecture.
-        assert!(true);
+    fn trade_coverage_blocker_rejects_internal_gap() {
+        let coverage = trading_bot_market_data::db::WindowCoverage {
+            row_count: 10,
+            min_time: Some(1_001),
+            max_time: Some(1_999),
+        };
+        let gaps = vec![trading_bot_market_data::db::TimeGap {
+            start_time: 1_400,
+            end_time: 1_500,
+            gap_ms: 100,
+        }];
+
+        let blocker = trade_coverage_blocker(1_000, 2_000, 5, &coverage, &gaps);
+
+        assert_eq!(
+            blocker,
+            Some(
+                "trade coverage contains internal gap (gap_start=1400, gap_end=1500, gap_ms=100)"
+                    .to_string()
+            )
+        );
+    }
+
+    #[test]
+    fn kline_coverage_blocker_rejects_incomplete_window() {
+        let coverage = trading_bot_market_data::db::WindowCoverage {
+            row_count: 9,
+            min_time: Some(1_000),
+            max_time: Some(1_540_000),
+        };
+
+        let blocker = kline_coverage_blocker(10, &coverage);
+
+        assert_eq!(
+            blocker,
+            Some("kline coverage incomplete (have 9, need 10)".to_string())
+        );
+    }
+
+    #[test]
+    fn exact_candle_count_exclusive_uses_end_exclusive_window() {
+        let count = exact_candle_count_exclusive(1_000, 1_000 + (10 * 60_000), 60_000)
+            .expect("count should compute");
+
+        assert_eq!(count, 10);
+    }
+
+    #[test]
+    fn previous_midnight_utc_matches_market_data_boundary() {
+        let reference = Utc
+            .with_ymd_and_hms(2026, 3, 20, 19, 2, 0)
+            .single()
+            .expect("valid timestamp");
+
+        let midnight = previous_midnight_utc(reference);
+
+        assert_eq!(midnight.to_rfc3339(), "2026-03-20T00:00:00+00:00");
+    }
+
+    #[tokio::test]
+    async fn execute_backtest_reuses_strategy_logic_offline() {
+        let analysis = analysis_record();
+        let signals = vec![
+            signal(1, "long", 1_000, 100.0),
+            signal(2, "short", 5_000, 102.0),
+        ];
+        let pages = Arc::new(Mutex::new(vec![
+            vec![trade(1, 1_001, 100.0), trade(2, 2_000, 100.5)],
+            vec![trade(3, 2_500, 102.5)],
+            vec![trade(4, 5_001, 101.5), trade(5, 6_000, 100.0)],
+            Vec::new(),
+        ]));
+
+        let (trades, stats) = simulate_trade_replay_paged(
+            &signals,
+            &analysis,
+            SimulationConfig {
+                fee_bps: 0.0,
+                slippage_bps: 0.0,
+            },
+            7_000,
+            10,
+            {
+                let pages = Arc::clone(&pages);
+                move |_after, _limit| {
+                    let page = pages
+                        .lock()
+                        .expect("pages mutex poisoned")
+                        .remove(0);
+                    let fut = async move { Ok(page) };
+                    Box::pin(fut)
+                        as Pin<Box<dyn Future<Output = Result<Vec<PersistedTradeRecord>>> + Send>>
+                }
+            },
+        )
+        .await
+        .expect("paged simulation should succeed");
+
+        assert_eq!(trades.len(), 1);
+        assert_eq!(trades[0].exit_reason, "takeProfit");
+        assert_eq!(trades[0].entry_fill_source, "aggTrade");
+        assert_eq!(trades[0].exit_fill_source, "aggTrade");
+        assert_eq!(trades[0].entry_time, 1_001);
+        assert_eq!(trades[0].exit_time, 2_500);
+        assert_eq!(stats.fetched_trade_count, 5);
+        assert_eq!(stats.first_trade_time, Some(1_001));
+        assert_eq!(stats.last_trade_time, Some(6_000));
     }
 }

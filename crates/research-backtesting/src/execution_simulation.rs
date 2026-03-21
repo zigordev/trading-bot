@@ -1,6 +1,5 @@
-use anyhow::{Context, Result};
-use chrono::DateTime;
-use trading_bot_market_data::models::{PersistedBookTickerRecord, PersistedTradeRecord};
+use anyhow::Result;
+use trading_bot_market_data::models::PersistedTradeRecord;
 use trading_bot_strategy_engine::models::{PersistedKlineRecord, ResolvedAnalysisSettingsRecord};
 
 use crate::models::{BacktestSignalRecord, PositionDirection, SimulatedTradeRecord};
@@ -46,13 +45,6 @@ struct TradeThresholds {
 }
 
 #[derive(Clone, Debug)]
-struct BookTickerPoint {
-    occurred_at_ms: i64,
-    bid_price: f64,
-    ask_price: f64,
-}
-
-#[derive(Clone, Debug)]
 enum PositionResolution {
     Closed(SimulatedTradeRecord),
     StillOpen(OpenPosition, Option<Fill>),
@@ -61,28 +53,20 @@ enum PositionResolution {
 pub fn simulate_trade_replay(
     signals: &[BacktestSignalRecord],
     replay_trades: &[PersistedTradeRecord],
-    replay_book_tickers: &[PersistedBookTickerRecord],
     analysis: &ResolvedAnalysisSettingsRecord,
     last_kline: Option<&PersistedKlineRecord>,
     config: SimulationConfig,
 ) -> Result<Vec<SimulatedTradeRecord>> {
-    let replay_book_tickers = replay_book_tickers
-        .iter()
-        .map(parse_book_ticker)
-        .collect::<Result<Vec<_>>>()?;
     let mut trades = Vec::new();
     let mut open_position: Option<OpenPosition> = None;
     let mut trade_cursor = 0usize;
-    let mut book_ticker_cursor = 0usize;
 
     for signal in signals {
         if let Some(position) = open_position.take() {
             match resolve_until_time(
                 &position,
                 replay_trades,
-                &replay_book_tickers,
                 &mut trade_cursor,
-                &mut book_ticker_cursor,
                 signal.close_time,
                 config,
             )? {
@@ -102,9 +86,7 @@ pub fn simulate_trade_replay(
                     signal,
                     next_direction,
                     replay_trades,
-                    &replay_book_tickers,
                     &mut trade_cursor,
-                    &mut book_ticker_cursor,
                     analysis,
                     config,
                 )?;
@@ -113,9 +95,7 @@ pub fn simulate_trade_replay(
             Some(position) => {
                 let exit_fill = fill_at_or_after(
                     replay_trades,
-                    &replay_book_tickers,
                     &mut trade_cursor,
-                    &mut book_ticker_cursor,
                     signal.close_time,
                     signal.close_price,
                     next_direction,
@@ -136,9 +116,7 @@ pub fn simulate_trade_replay(
                     signal,
                     next_direction,
                     replay_trades,
-                    &replay_book_tickers,
                     &mut trade_cursor,
-                    &mut book_ticker_cursor,
                     analysis,
                     config,
                 )?;
@@ -150,9 +128,7 @@ pub fn simulate_trade_replay(
         match resolve_until_time(
             &position,
             replay_trades,
-            &replay_book_tickers,
             &mut trade_cursor,
-            &mut book_ticker_cursor,
             i64::MAX,
             config,
         )? {
@@ -255,7 +231,6 @@ where
 
 pub async fn simulate_trade_replay_paged<F>(
     signals: &[BacktestSignalRecord],
-    replay_book_tickers: &[PersistedBookTickerRecord],
     analysis: &ResolvedAnalysisSettingsRecord,
     config: SimulationConfig,
     requested_end_time: i64,
@@ -270,15 +245,9 @@ where
             Box<dyn std::future::Future<Output = Result<Vec<PersistedTradeRecord>>> + Send>,
         > + Send,
 {
-    let replay_book_tickers = replay_book_tickers
-        .iter()
-        .map(parse_book_ticker)
-        .collect::<Result<Vec<_>>>()?;
-
     let mut trades = Vec::new();
     let mut open_position: Option<OpenPosition> = None;
     let mut trade_cursor = 0usize;
-    let mut book_ticker_cursor = 0usize;
 
     let mut pager = TradePager::new(fetch_page, max_total_trades);
 
@@ -289,9 +258,7 @@ where
             match resolve_until_time(
                 &position,
                 &pager.buf,
-                &replay_book_tickers,
                 &mut trade_cursor,
-                &mut book_ticker_cursor,
                 signal.close_time,
                 config,
             )? {
@@ -310,9 +277,7 @@ where
                     signal,
                     next_direction,
                     &pager.buf,
-                    &replay_book_tickers,
                     &mut trade_cursor,
-                    &mut book_ticker_cursor,
                     analysis,
                     config,
                 )?;
@@ -322,9 +287,7 @@ where
                 pager.ensure_until(signal.close_time).await?;
                 let exit_fill = fill_at_or_after(
                     &pager.buf,
-                    &replay_book_tickers,
                     &mut trade_cursor,
-                    &mut book_ticker_cursor,
                     signal.close_time,
                     signal.close_price,
                     next_direction,
@@ -344,9 +307,7 @@ where
                     signal,
                     next_direction,
                     &pager.buf,
-                    &replay_book_tickers,
                     &mut trade_cursor,
-                    &mut book_ticker_cursor,
                     analysis,
                     config,
                 )?;
@@ -362,9 +323,7 @@ where
         match resolve_until_time(
             &position,
             &pager.buf,
-            &replay_book_tickers,
             &mut trade_cursor,
-            &mut book_ticker_cursor,
             end_time.saturating_add(1),
             config,
         )? {
@@ -379,76 +338,18 @@ where
 fn resolve_until_time(
     position: &OpenPosition,
     replay_trades: &[PersistedTradeRecord],
-    replay_book_tickers: &[BookTickerPoint],
     trade_cursor: &mut usize,
-    book_ticker_cursor: &mut usize,
     end_time_exclusive: i64,
     config: SimulationConfig,
 ) -> Result<PositionResolution> {
     let mut last_fill_before_end = None;
 
     loop {
-        let next_trade_time = replay_trades
-            .get(*trade_cursor)
-            .map(|record| record.trade_time);
-        let next_book_ticker_time = replay_book_tickers
-            .get(*book_ticker_cursor)
-            .map(|record| record.occurred_at_ms);
-        let next_event_time = earliest_time(next_trade_time, next_book_ticker_time);
-
-        let Some(next_event_time) = next_event_time else {
+        let Some(next_event_time) = replay_trades.get(*trade_cursor).map(|record| record.trade_time) else {
             break;
         };
         if next_event_time >= end_time_exclusive {
             break;
-        }
-
-        let use_book_ticker = match (next_trade_time, next_book_ticker_time) {
-            (Some(trade_time), Some(book_time)) => book_time <= trade_time,
-            (None, Some(_)) => true,
-            _ => false,
-        };
-
-        if use_book_ticker {
-            let record = &replay_book_tickers[*book_ticker_cursor];
-            *book_ticker_cursor += 1;
-            let fill =
-                fill_from_book_ticker(record, position.direction, false, config.slippage_bps);
-            let hit_stop = match position.direction {
-                PositionDirection::Long => record.bid_price <= position.stop_loss_price,
-                PositionDirection::Short => record.ask_price >= position.stop_loss_price,
-            };
-            let hit_take_profit = match position.direction {
-                PositionDirection::Long => record.bid_price >= position.take_profit_price,
-                PositionDirection::Short => record.ask_price <= position.take_profit_price,
-            };
-            last_fill_before_end = Some(fill.clone());
-
-            if hit_stop {
-                return Ok(PositionResolution::Closed(close_position(
-                    0,
-                    position,
-                    fill.time,
-                    None,
-                    Some(fill),
-                    "stopLoss",
-                    config.fee_bps,
-                )));
-            }
-
-            if hit_take_profit {
-                return Ok(PositionResolution::Closed(close_position(
-                    0,
-                    position,
-                    fill.time,
-                    None,
-                    Some(fill),
-                    "takeProfit",
-                    config.fee_bps,
-                )));
-            }
-
-            continue;
         }
 
         let record = &replay_trades[*trade_cursor];
@@ -510,17 +411,13 @@ fn open_position_from_signal(
     signal: &BacktestSignalRecord,
     direction: PositionDirection,
     replay_trades: &[PersistedTradeRecord],
-    replay_book_tickers: &[BookTickerPoint],
     trade_cursor: &mut usize,
-    book_ticker_cursor: &mut usize,
     analysis: &ResolvedAnalysisSettingsRecord,
     config: SimulationConfig,
 ) -> Result<Option<OpenPosition>> {
     let fill = fill_at_or_after(
         replay_trades,
-        replay_book_tickers,
         trade_cursor,
-        book_ticker_cursor,
         signal.close_time,
         signal.close_price,
         direction,
@@ -639,9 +536,7 @@ fn close_position(
 
 fn fill_at_or_after(
     replay_trades: &[PersistedTradeRecord],
-    replay_book_tickers: &[BookTickerPoint],
     trade_cursor: &mut usize,
-    book_ticker_cursor: &mut usize,
     signal_time: i64,
     fallback_price: f64,
     direction: PositionDirection,
@@ -649,57 +544,17 @@ fn fill_at_or_after(
     slippage_bps: f64,
 ) -> Option<Fill> {
     advance_trade_cursor_to_time(replay_trades, trade_cursor, signal_time);
-    advance_book_ticker_cursor_to_time(replay_book_tickers, book_ticker_cursor, signal_time);
 
-    let next_trade_time = replay_trades
-        .get(*trade_cursor)
-        .map(|record| record.trade_time);
-    let next_book_ticker_time = replay_book_tickers
-        .get(*book_ticker_cursor)
-        .map(|record| record.occurred_at_ms);
-
-    match (next_trade_time, next_book_ticker_time) {
-        (Some(trade_time), Some(book_time)) if book_time <= trade_time => {
-            let record = replay_book_tickers.get(*book_ticker_cursor)?;
-            let fill = fill_from_book_ticker(record, direction, is_entry, slippage_bps);
-            *book_ticker_cursor += 1;
-            advance_trade_cursor_to_time(replay_trades, trade_cursor, fill.time);
-            Some(fill)
-        }
-        (Some(_), Some(book_time)) => {
-            let record = replay_trades.get(*trade_cursor)?;
-            let raw_price = record.price.parse::<f64>().ok()?;
-            let fill = Fill {
-                time: record.trade_time,
-                effective_price: apply_slippage(raw_price, direction, is_entry, slippage_bps),
-                source: "aggTrade",
-            };
-            *trade_cursor += 1;
-            advance_book_ticker_cursor_to_time(
-                replay_book_tickers,
-                book_ticker_cursor,
-                book_time.min(fill.time),
-            );
-            Some(fill)
-        }
-        (Some(_), None) => {
-            let record = replay_trades.get(*trade_cursor)?;
-            let raw_price = record.price.parse::<f64>().ok()?;
-            let fill = Fill {
-                time: record.trade_time,
-                effective_price: apply_slippage(raw_price, direction, is_entry, slippage_bps),
-                source: "aggTrade",
-            };
-            *trade_cursor += 1;
-            Some(fill)
-        }
-        (None, Some(_)) => {
-            let record = replay_book_tickers.get(*book_ticker_cursor)?;
-            let fill = fill_from_book_ticker(record, direction, is_entry, slippage_bps);
-            *book_ticker_cursor += 1;
-            Some(fill)
-        }
-        (None, None) => (fallback_price > 0.0).then(|| {
+    replay_trades.get(*trade_cursor).and_then(|record| {
+        let raw_price = record.price.parse::<f64>().ok()?;
+        *trade_cursor += 1;
+        Some(Fill {
+            time: record.trade_time,
+            effective_price: apply_slippage(raw_price, direction, is_entry, slippage_bps),
+            source: "aggTrade",
+        })
+    }).or_else(|| {
+        (fallback_price > 0.0).then(|| {
             fallback_fill(
                 signal_time,
                 fallback_price,
@@ -708,8 +563,8 @@ fn fill_at_or_after(
                 slippage_bps,
                 "klineFallback",
             )
-        }),
-    }
+        })
+    })
 }
 
 fn advance_trade_cursor_to_time(
@@ -724,69 +579,6 @@ fn advance_trade_cursor_to_time(
         }
         *trade_cursor += 1;
     }
-}
-
-fn advance_book_ticker_cursor_to_time(
-    replay_book_tickers: &[BookTickerPoint],
-    book_ticker_cursor: &mut usize,
-    signal_time: i64,
-) {
-    while *book_ticker_cursor < replay_book_tickers.len() {
-        let record = &replay_book_tickers[*book_ticker_cursor];
-        if record.occurred_at_ms >= signal_time {
-            break;
-        }
-        *book_ticker_cursor += 1;
-    }
-}
-
-fn earliest_time(first: Option<i64>, second: Option<i64>) -> Option<i64> {
-    match (first, second) {
-        (Some(left), Some(right)) => Some(left.min(right)),
-        (Some(value), None) | (None, Some(value)) => Some(value),
-        (None, None) => None,
-    }
-}
-
-fn fill_from_book_ticker(
-    record: &BookTickerPoint,
-    direction: PositionDirection,
-    is_entry: bool,
-    slippage_bps: f64,
-) -> Fill {
-    let raw_price = match (direction, is_entry) {
-        (PositionDirection::Long, true) => record.ask_price,
-        (PositionDirection::Long, false) => record.bid_price,
-        (PositionDirection::Short, true) => record.bid_price,
-        (PositionDirection::Short, false) => record.ask_price,
-    };
-
-    Fill {
-        time: record.occurred_at_ms,
-        effective_price: apply_slippage(raw_price, direction, is_entry, slippage_bps),
-        source: "bookTicker",
-    }
-}
-
-fn parse_book_ticker(record: &PersistedBookTickerRecord) -> Result<BookTickerPoint> {
-    Ok(BookTickerPoint {
-        occurred_at_ms: DateTime::parse_from_rfc3339(&record.occurred_at)
-            .with_context(|| {
-                format!(
-                    "invalid book ticker occurredAt timestamp: {}",
-                    record.occurred_at
-                )
-            })?
-            .timestamp_millis(),
-        bid_price: record
-            .bid_price
-            .parse::<f64>()
-            .with_context(|| format!("invalid book ticker bidPrice: {}", record.bid_price))?,
-        ask_price: record
-            .ask_price
-            .parse::<f64>()
-            .with_context(|| format!("invalid book ticker askPrice: {}", record.ask_price))?,
-    })
 }
 
 fn fallback_fill(
@@ -938,27 +730,6 @@ mod tests {
         }
     }
 
-    fn book_ticker(
-        occurred_at_ms: i64,
-        bid_price: f64,
-        ask_price: f64,
-    ) -> PersistedBookTickerRecord {
-        PersistedBookTickerRecord {
-            symbol: "BTCUSDT".to_string(),
-            order_book_update_id: occurred_at_ms,
-            bid_price: bid_price.to_string(),
-            bid_quantity: "1.0".to_string(),
-            ask_price: ask_price.to_string(),
-            ask_quantity: "1.0".to_string(),
-            occurred_at: chrono::DateTime::from_timestamp_millis(occurred_at_ms)
-                .expect("valid timestamp")
-                .to_rfc3339(),
-            updated_at: chrono::DateTime::from_timestamp_millis(occurred_at_ms)
-                .expect("valid timestamp")
-                .to_rfc3339(),
-        }
-    }
-
     #[test]
     fn simulate_trade_replay_uses_trade_tape_for_take_profit_and_reversal() {
         let analysis = analysis_record();
@@ -977,7 +748,6 @@ mod tests {
         let result = simulate_trade_replay(
             &signals,
             &replay_trades,
-            &[],
             &analysis,
             None,
             SimulationConfig {
@@ -992,43 +762,4 @@ mod tests {
         assert_eq!(result[0].exit_fill_source, "aggTrade");
     }
 
-    #[test]
-    fn simulate_trade_replay_prefers_book_ticker_quotes_when_available() {
-        let analysis = analysis_record();
-        let signals = vec![
-            signal(1, "long", 1000, 100.0),
-            signal(2, "short", 5000, 102.0),
-        ];
-        let replay_trades = vec![
-            trade(1, 1100, 100.0),
-            trade(2, 2500, 101.0),
-            trade(3, 5005, 101.9),
-            trade(4, 6000, 100.0),
-        ];
-        let replay_book_tickers = vec![
-            book_ticker(1005, 99.9, 100.1),
-            book_ticker(2500, 102.2, 102.3),
-            book_ticker(5001, 101.8, 101.9),
-            book_ticker(6000, 99.7, 99.8),
-        ];
-
-        let result = simulate_trade_replay(
-            &signals,
-            &replay_trades,
-            &replay_book_tickers,
-            &analysis,
-            None,
-            SimulationConfig {
-                fee_bps: 0.0,
-                slippage_bps: 0.0,
-            },
-        )
-        .expect("simulation should succeed");
-
-        assert_eq!(result.len(), 1);
-        assert_eq!(result[0].entry_fill_source, "bookTicker");
-        assert_eq!(result[0].exit_fill_source, "bookTicker");
-        assert_eq!(result[0].entry_price, 100.1);
-        assert_eq!(result[0].exit_reason, "takeProfit");
-    }
 }

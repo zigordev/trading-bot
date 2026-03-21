@@ -23,7 +23,6 @@ pub struct AppConfig {
     /// gigantic HTTP responses that can be dropped by the client/server/network.
     pub backtest_trade_replay_page_ms: u64,
     pub backtest_trade_replay_page_rows: usize,
-    pub max_backtest_book_tickers: usize,
     pub backtest_result_retention_days: u64,
     pub default_fee_bps: f64,
     pub default_slippage_bps: f64,
@@ -178,11 +177,10 @@ pub fn load_config() -> Result<AppConfig> {
         max_backtest_trades: parse_usize("BACKTEST_MAX_TRADES", 1000000)?,
         backtest_trade_replay_page_ms: parse_u64("BACKTEST_TRADE_REPLAY_PAGE_MS", 3_600_000)?,
         backtest_trade_replay_page_rows: parse_usize("BACKTEST_TRADE_REPLAY_PAGE_ROWS", 200_000)?,
-        max_backtest_book_tickers: parse_usize("BACKTEST_MAX_BOOK_TICKERS", 1000000)?,
         backtest_result_retention_days: parse_u64("BACKTEST_RESULT_RETENTION_DAYS", 365)?,
         default_fee_bps: parse_f64("BACKTEST_FEE_BPS", 0.0)?,
         default_slippage_bps: parse_f64("BACKTEST_SLIPPAGE_BPS", 0.0)?,
-        trade_coverage_tolerance_ms: parse_u64("BACKTEST_TRADE_COVERAGE_TOLERANCE_MS", 5_000)?,
+        trade_coverage_tolerance_ms: parse_u64("BACKTEST_TRADE_COVERAGE_TOLERANCE_MS", 15_000)?,
         auto_backtest_enabled: parse_bool("AUTO_BACKTEST_ENABLED", false)?,
         auto_backtest_interval_seconds: parse_u64("AUTO_BACKTEST_INTERVAL_SECONDS", 3600)?,
         backtesting_timerange_ms_by_timeframe,
@@ -209,7 +207,6 @@ mod tests {
         assert_eq!(config.auto_backtest_interval_seconds, 3600);
         assert_eq!(config.default_warmup_multiplier, 5);
         assert_eq!(config.max_backtest_trades, 1_000_000);
-        assert_eq!(config.max_backtest_book_tickers, 1_000_000);
         assert_eq!(config.backtest_result_retention_days, 365);
         assert_eq!(config.default_fee_bps, 0.0);
         assert_eq!(config.default_slippage_bps, 0.0);

@@ -70,16 +70,11 @@ async fn main() -> Result<()> {
             get(recent_klines),
         )
         .route("/v1/trades/{pair_code}", get(recent_trades))
-        .route("/v1/book-tickers/{pair_code}", get(recent_book_tickers))
         .route(
             "/v1/replay/klines/{pair_code}/{timeframe_code}",
             get(replay_klines),
         )
         .route("/v1/replay/trades/{pair_code}", get(replay_trades))
-        .route(
-            "/v1/replay/book-tickers/{pair_code}",
-            get(replay_book_tickers),
-        )
         .with_state(state.clone());
 
     let address = SocketAddr::from(([0, 0, 0, 0], config.port));
@@ -172,10 +167,10 @@ async fn info(State(state): State<AppState>) -> Json<serde_json::Value> {
                 "config-change driven subscription refresh",
                 "periodic runtime-config reconciliation",
                 "Kafka topic provisioning for consumed and published contracts",
-                "Binance combined websocket streams for klines, aggregate trades, and book tickers",
+                "Binance combined websocket streams for klines and aggregate trades",
                 "normalized market-data publication into Redpanda",
-                "persisted kline, aggregate-trade, and book-ticker storage in ClickHouse historical store",
-                "startup backfill and tail-gap repair for klines, aggregate trades, and book-tickers",
+                "persisted kline and aggregate-trade storage in ClickHouse historical store",
+                "startup backfill and tail-gap repair for klines and aggregate trades",
                 "periodic trade gap audit/repair loop",
                 "historian inspection endpoints",
                 "replay-oriented historian query endpoints",
@@ -190,8 +185,7 @@ async fn info(State(state): State<AppState>) -> Json<serde_json::Value> {
             "consumes": [config.config_change_events_topic],
             "publishes": [
                 config.market_data_klines_topic,
-                config.market_data_trades_topic,
-                config.market_data_book_tickers_topic
+                config.market_data_trades_topic
             ]
         },
         "status": status
@@ -249,25 +243,6 @@ async fn recent_trades(
     }
 }
 
-async fn recent_book_tickers(
-    State(state): State<AppState>,
-    Path(pair_code): Path<String>,
-    Query(query): Query<RecentPairQuery>,
-) -> Response {
-    match state
-        .service
-        .recent_book_tickers(&pair_code, query.limit.unwrap_or(100).clamp(1, 1_000))
-        .await
-    {
-        Ok(rows) => Json(rows).into_response(),
-        Err(error) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({ "message": error.to_string() })),
-        )
-            .into_response(),
-    }
-}
-
 async fn replay_klines(
     State(state): State<AppState>,
     Path((pair_code, timeframe_code)): Path<(String, String)>,
@@ -301,30 +276,6 @@ async fn replay_trades(
     match state
         .service
         .replay_trades(
-            &pair_code,
-            query.start_time,
-            query.end_time,
-            query.limit.unwrap_or(1_000).clamp(1, 5_000),
-        )
-        .await
-    {
-        Ok(rows) => Json(rows).into_response(),
-        Err(error) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({ "message": error.to_string() })),
-        )
-            .into_response(),
-    }
-}
-
-async fn replay_book_tickers(
-    State(state): State<AppState>,
-    Path(pair_code): Path<String>,
-    Query(query): Query<ReplayQuery>,
-) -> Response {
-    match state
-        .service
-        .replay_book_tickers(
             &pair_code,
             query.start_time,
             query.end_time,

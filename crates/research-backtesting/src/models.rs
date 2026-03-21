@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use trading_bot_market_data::models::PersistedBookTickerRecord;
 use trading_bot_strategy_engine::models::{PersistedKlineRecord, ResolvedAnalysisSettingsRecord};
 
 #[derive(Clone, Debug, Deserialize)]
@@ -34,18 +33,10 @@ pub struct BacktestDatasetSummary {
     pub replay_kline_count: usize,
     pub fetched_trade_count: usize,
     pub replay_trade_count: usize,
-    #[serde(default)]
-    pub fetched_book_ticker_count: usize,
-    #[serde(default)]
-    pub replay_book_ticker_count: usize,
     pub first_replay_open_time: Option<i64>,
     pub last_replay_close_time: Option<i64>,
     pub first_replay_trade_time: Option<i64>,
     pub last_replay_trade_time: Option<i64>,
-    #[serde(default)]
-    pub first_replay_book_ticker_time: Option<i64>,
-    #[serde(default)]
-    pub last_replay_book_ticker_time: Option<i64>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -185,5 +176,4 @@ pub struct ResolvedBacktestInput {
     pub replay_trade_start_time: i64,
     pub replay_trade_end_time: i64,
     pub replay_trade_max_rows: usize,
-    pub replay_book_tickers: Vec<PersistedBookTickerRecord>,
 }
