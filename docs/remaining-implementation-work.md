@@ -64,6 +64,44 @@ After the current replay path is verified, the main missing work is:
 - partial-fill modeling
 - extraction of execution simulation into a crate shared directly with future live execution
 
+The current replay path is materially better than a candle-close backtest, but it is not yet a
+state-of-the-art execution simulator.
+
+What is already good:
+
+- fills are driven by historical aggregate trades and best bid/ask book-ticker quotes rather than
+  candle closes
+- stop-loss and take-profit checks use replayed quote/trade events instead of OHLC inference
+- fee and slippage assumptions are explicit and returned in the backtest response
+- the service refuses fill-aware backtests when aggregate-trade coverage is missing for the
+  requested window
+
+What still limits accuracy:
+
+- slippage is still a fixed basis-points adjustment, not a market-state-dependent execution model
+- fills assume the next eligible quote or aggregate trade is executable for the whole order
+- no latency is modeled between signal generation, order placement, and exchange execution
+- no queue position is modeled for limit-style behavior
+- no partial fills are modeled
+- no depth-of-book replay exists, only top-of-book bid/ask snapshots
+- historical trade storage intentionally drops `quantity` and `market_maker`, which limits how far
+  replay realism can be improved without a schema change
+- open positions at the end of the replay window should be mark-to-market or explicitly closed
+  under a configurable rule so run-to-run comparisons stay fair
+- default `BACKTEST_FEE_BPS=0.0` and `BACKTEST_SLIPPAGE_BPS=0.0` are convenient for smoke tests but
+  should not be treated as realistic research defaults
+
+Recommended future execution-accuracy improvements, in order:
+
+- keep historical trade `quantity` and `market_maker` fields in ClickHouse replay storage
+- use book-ticker size and trade size to support partial-fill logic
+- add configurable latency modeling for signal-to-order and order-to-fill delays
+- replace fixed slippage with a state-based model using spread, short-horizon volatility, and
+  order size relative to available liquidity
+- add explicit end-of-window mark-to-market or forced-close behavior for still-open positions
+- add optional deeper order-book or L2 replay so larger orders can walk the book instead of always
+  assuming top-of-book execution
+
 ### 3. Live execution later
 
 Real execution should be implemented only after replay behavior is trusted.
@@ -365,8 +403,7 @@ curl -fsS -X POST http://localhost:3050/v1/backtests \
     \"researchSettingsName\": \"smoke\",
     \"windowKind\": \"backtesting\",
     \"startTime\": ${START_1M_MS},
-    \"endTime\": ${END_TIME_MS},
-    \"closeOpenPositionAtEnd\": true
+    \"endTime\": ${END_TIME_MS}
   }" | jq
 
 curl -fsS -X POST http://localhost:3050/v1/backtests \
@@ -376,8 +413,7 @@ curl -fsS -X POST http://localhost:3050/v1/backtests \
     \"researchSettingsName\": \"smoke\",
     \"windowKind\": \"backtesting\",
     \"startTime\": ${START_3M_MS},
-    \"endTime\": ${END_TIME_MS},
-    \"closeOpenPositionAtEnd\": true
+    \"endTime\": ${END_TIME_MS}
   }" | jq
 
 curl -fsS -X POST http://localhost:3050/v1/backtests \
@@ -387,10 +423,15 @@ curl -fsS -X POST http://localhost:3050/v1/backtests \
     \"researchSettingsName\": \"smoke\",
     \"windowKind\": \"backtesting\",
     \"startTime\": ${START_5M_MS},
-    \"endTime\": ${END_TIME_MS},
-    \"closeOpenPositionAtEnd\": true
+    \"endTime\": ${END_TIME_MS}
   }" | jq
 ```
+
+Important current behavior:
+
+- `POST /v1/backtests` does not accept `closeOpenPositionAtEnd`
+- still-open positions at the end of the replay window are not force-closed by the simulator today
+- end-of-window forced close or mark-to-market remains future work
 
 ## Where To See Backtest Results
 
@@ -434,7 +475,6 @@ Useful follow-up checks:
   - inspect `research_backtest_runs`
   - inspect `market_data_klines`
   - inspect `market_data_trades`
-  - inspect `market_data_book_tickers`
 
 ## Still Missing After Backtesting Verification
 
@@ -445,6 +485,8 @@ Once the current matrix is behaving correctly, this is still missing:
   - stronger Binance REST rate-limit handling for bulk history
   - wider retained history for arbitrary replay windows
 - replay realism
+  - reintroduce quote-aware replay only after the trade-only path is stable
+  - restore book-ticker capture and storage later if execution modeling needs top-of-book context again
   - full order-book-aware fill matching
   - partial fills
   - richer portfolio accounting

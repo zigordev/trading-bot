@@ -25,7 +25,6 @@ pub struct Database {
     password: Option<String>,
     historical_kline_retention_days: u64,
     historical_trade_retention_days: u64,
-    historical_book_ticker_retention_days: u64,
 }
 
 type LineStream = futures_util::stream::BoxStream<'static, Result<String>>;
@@ -71,8 +70,6 @@ struct HistoricalBookTickerRow {
 struct StoredBacktestRunRow {
     backtest_id: String,
     finished_at_ms: i64,
-    #[serde(default)]
-    duration_ms: i64,
     #[serde(default)]
     backtest_duration_ms: i64,
     #[serde(default)]
@@ -141,7 +138,7 @@ pub struct WindowCoverage {
     pub max_time: Option<i64>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TimeGap {
     pub start_time: i64,
     pub end_time: i64,
@@ -194,7 +191,6 @@ pub struct TradeCheckpoint {
 pub struct StoredBacktestRunWrite {
     pub backtest_id: String,
     pub finished_at_ms: i64,
-    pub duration_ms: i64,
     pub backtest_duration_ms: i64,
     pub data_retrieval_duration_ms: i64,
     pub analysis_setting_id: String,
@@ -220,7 +216,6 @@ pub struct StoredBacktestRunWrite {
 pub struct StoredBacktestRunSummary {
     pub backtest_id: String,
     pub finished_at_ms: i64,
-    pub duration_ms: i64,
     pub backtest_duration_ms: i64,
     pub data_retrieval_duration_ms: i64,
     pub analysis_setting_id: String,
@@ -273,7 +268,6 @@ struct TradeCoverageStateRow {
 struct StoredBacktestRunWriteRow<'a> {
     backtest_id: &'a str,
     finished_at_ms: i64,
-    duration_ms: i64,
     backtest_duration_ms: i64,
     data_retrieval_duration_ms: i64,
     analysis_setting_id: &'a str,
@@ -301,7 +295,6 @@ struct LatestBacktestRunWriteRow<'a> {
     window_kind: &'a str,
     backtest_id: &'a str,
     finished_at_ms: i64,
-    duration_ms: i64,
     pair_code: &'a str,
     timeframe_code: &'a str,
     strategy_name: &'a str,
@@ -349,7 +342,6 @@ impl Database {
             password,
             historical_kline_retention_days: 1,
             historical_trade_retention_days: 1,
-            historical_book_ticker_retention_days: 1,
         })
     }
 
@@ -366,7 +358,6 @@ impl Database {
         .map(|database| Self {
             historical_kline_retention_days: config.historical_kline_retention_days,
             historical_trade_retention_days: config.historical_trade_retention_days,
-            historical_book_ticker_retention_days: config.historical_book_ticker_retention_days,
             ..database
         })
     }
@@ -434,31 +425,6 @@ impl Database {
 
         self.execute_sql(&format!(
             r#"
-            CREATE TABLE IF NOT EXISTS {}.market_data_book_tickers
-            (
-              pair_code LowCardinality(String),
-              symbol LowCardinality(String),
-              order_book_update_id Int64,
-              bid_price String,
-              bid_quantity String,
-              ask_price String,
-              ask_quantity String,
-              occurred_at_ms Int64,
-              updated_at_ms Int64
-            )
-            ENGINE = ReplacingMergeTree(updated_at_ms)
-            PARTITION BY toYYYYMMDD(toDateTime(intDiv(occurred_at_ms, 1000)))
-            ORDER BY (pair_code, occurred_at_ms, order_book_update_id)
-            TTL toDateTime(intDiv(occurred_at_ms, 1000)) + INTERVAL {} DAY DELETE
-            SETTINGS index_granularity = 8192
-            "#,
-            sql_ident(&self.database),
-            self.historical_book_ticker_retention_days
-        ))
-        .await?;
-
-        self.execute_sql(&format!(
-            r#"
             CREATE TABLE IF NOT EXISTS {}.market_data_trade_coverage_state
             (
               pair_code LowCardinality(String),
@@ -491,6 +457,11 @@ impl Database {
             sql_ident(&self.database)
         ))
         .await?;
+        self.execute_sql(&format!(
+            "DROP TABLE IF EXISTS {}.market_data_book_tickers",
+            sql_ident(&self.database)
+        ))
+        .await?;
         // Drop legacy/unneeded columns to minimize storage; backtesting only
         // needs {pair_code, aggregate_trade_id, trade_time, price}.
         for col in [
@@ -508,13 +479,6 @@ impl Database {
             .await?;
         }
 
-        self.ensure_ttl(
-            "market_data_book_tickers",
-            "toDateTime(intDiv(occurred_at_ms, 1000))",
-            self.historical_book_ticker_retention_days,
-        )
-        .await?;
-
         Ok(())
     }
 
@@ -525,7 +489,6 @@ impl Database {
             (
               backtest_id String,
               finished_at_ms Int64,
-              duration_ms Int64,
               backtest_duration_ms Int64,
               data_retrieval_duration_ms Int64,
               analysis_setting_id String,
@@ -579,12 +542,12 @@ impl Database {
         ))
         .await?;
         self.execute_sql(&format!(
-            "ALTER TABLE {}.research_backtest_runs ADD COLUMN IF NOT EXISTS duration_ms Int64 DEFAULT 0",
+            "ALTER TABLE {}.research_backtest_runs DROP COLUMN IF EXISTS duration_ms",
             sql_ident(&self.database)
         ))
         .await?;
         self.execute_sql(&format!(
-            "ALTER TABLE {}.research_backtest_runs ADD COLUMN IF NOT EXISTS backtest_duration_ms Int64 DEFAULT duration_ms",
+            "ALTER TABLE {}.research_backtest_runs ADD COLUMN IF NOT EXISTS backtest_duration_ms Int64 DEFAULT 0",
             sql_ident(&self.database)
         ))
         .await?;
@@ -1415,7 +1378,6 @@ impl Database {
         let row = StoredBacktestRunWriteRow {
             backtest_id: &run.backtest_id,
             finished_at_ms: run.finished_at_ms,
-            duration_ms: run.duration_ms,
             backtest_duration_ms: run.backtest_duration_ms,
             data_retrieval_duration_ms: run.data_retrieval_duration_ms,
             analysis_setting_id: &run.analysis_setting_id,
@@ -1553,7 +1515,6 @@ impl Database {
             SELECT
               backtest_id,
               finished_at_ms,
-              duration_ms,
               backtest_duration_ms,
               data_retrieval_duration_ms,
               analysis_setting_id,
@@ -1592,7 +1553,6 @@ impl Database {
             SELECT
               backtest_id,
               finished_at_ms,
-              duration_ms,
               backtest_duration_ms,
               data_retrieval_duration_ms,
               analysis_setting_id,
@@ -1964,11 +1924,7 @@ impl Database {
     }
 
     pub async fn compact_market_data_tables(&self) -> Result<()> {
-        for table_name in [
-            "market_data_klines",
-            "market_data_trades",
-            "market_data_book_tickers",
-        ] {
+        for table_name in ["market_data_klines", "market_data_trades"] {
             self.execute_sql(&format!(
                 "OPTIMIZE TABLE {}.{} FINAL",
                 sql_ident(&self.database),
@@ -2024,12 +1980,7 @@ impl Database {
                 summary: StoredBacktestRunSummary {
                     backtest_id: row.backtest_id,
                     finished_at_ms: row.finished_at_ms,
-                    duration_ms: row.duration_ms,
-                    backtest_duration_ms: if row.backtest_duration_ms > 0 {
-                        row.backtest_duration_ms
-                    } else {
-                        row.duration_ms
-                    },
+                    backtest_duration_ms: row.backtest_duration_ms,
                     data_retrieval_duration_ms: row.data_retrieval_duration_ms,
                     analysis_setting_id: row.analysis_setting_id,
                     risk_profile_name: row.risk_profile_name,
@@ -2230,8 +2181,16 @@ impl Database {
         let row = serde_json::from_str::<WindowCoverageRow>(trimmed)?;
         Ok(WindowCoverage {
             row_count: row.row_count,
-            min_time: if row.row_count == 0 { None } else { row.min_time },
-            max_time: if row.row_count == 0 { None } else { row.max_time },
+            min_time: if row.row_count == 0 {
+                None
+            } else {
+                row.min_time
+            },
+            max_time: if row.row_count == 0 {
+                None
+            } else {
+                row.max_time
+            },
         })
     }
 

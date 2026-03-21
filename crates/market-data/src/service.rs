@@ -27,16 +27,13 @@ use tokio_tungstenite::{connect_async, tungstenite::protocol::Message as WsMessa
 use crate::{
     config::AppConfig,
     db::{Database, TimeGap, TimeInterval},
-    events::{
-        NormalizedWsEvent, normalize_rest_book_ticker, normalize_rest_kline, normalize_rest_trade,
-        normalize_ws_message,
-    },
+    events::{NormalizedWsEvent, normalize_rest_kline, normalize_rest_trade, normalize_ws_message},
     kafka_topics::ensure_topics,
     metrics::Metrics,
     models::{
-        ActiveSubscriptions, KlineSubscription, NormalizedBookTickerEvent, NormalizedKlineEvent,
-        NormalizedTradeEvent, PairStreamSubscription, PersistedBookTickerRecord,
-        PersistedKlineRecord, PersistedTradeRecord, ResolvedAnalysisSettingsRecord,
+        ActiveSubscriptions, KlineSubscription, NormalizedKlineEvent, NormalizedTradeEvent,
+        PairStreamSubscription, PersistedKlineRecord, PersistedTradeRecord,
+        ResolvedAnalysisSettingsRecord,
     },
     subscriptions::{
         build_combined_stream_url, derive_active_subscriptions, should_refresh_for_config_resource,
@@ -46,14 +43,6 @@ use crate::{
 #[derive(Clone)]
 pub struct MarketDataService {
     inner: Arc<Inner>,
-}
-
-#[derive(Debug, Deserialize)]
-struct BinanceDepthBookTickerRestRow {
-    #[serde(rename = "lastUpdateId")]
-    last_update_id: i64,
-    bids: Vec<[String; 2]>,
-    asks: Vec<[String; 2]>,
 }
 
 struct Inner {
@@ -159,7 +148,6 @@ enum TradeGapRepairMode {
 struct RequiredHistoryPlan {
     kline_by_subscription_id: HashMap<String, i64>,
     trade_by_pair_code: HashMap<String, i64>,
-    book_ticker_by_pair_code: HashMap<String, i64>,
     trade_gap_threshold_by_pair_code: HashMap<String, i64>,
 }
 
@@ -355,7 +343,6 @@ impl MarketDataService {
                 &config.config_change_events_topic,
                 &config.market_data_klines_topic,
                 &config.market_data_trades_topic,
-                &config.market_data_book_tickers_topic,
             ],
         )
         .await?;
@@ -655,30 +642,6 @@ impl MarketDataService {
         self.inner
             .database
             .replay_trades(pair_code, start_time, end_time, limit)
-            .await
-    }
-
-    pub async fn recent_book_tickers(
-        &self,
-        pair_code: &str,
-        limit: i64,
-    ) -> Result<Vec<PersistedBookTickerRecord>> {
-        self.inner
-            .database
-            .list_recent_book_tickers(pair_code, limit)
-            .await
-    }
-
-    pub async fn replay_book_tickers(
-        &self,
-        pair_code: &str,
-        start_time: Option<i64>,
-        end_time: Option<i64>,
-        limit: i64,
-    ) -> Result<Vec<PersistedBookTickerRecord>> {
-        self.inner
-            .database
-            .replay_book_tickers(pair_code, start_time, end_time, limit)
             .await
     }
 
@@ -1023,9 +986,6 @@ impl MarketDataService {
             Some(NormalizedWsEvent::Trade(event)) => {
                 self.process_trade_event(event).await?;
             }
-            Some(NormalizedWsEvent::BookTicker(event)) => {
-                self.process_book_ticker_event(event).await?;
-            }
             None => {}
         }
 
@@ -1034,8 +994,10 @@ impl MarketDataService {
 
     async fn perform_refresh(&self, reason: &str) -> Result<()> {
         let _maintenance = self.inner.maintenance_gate.lock().await;
+        let pairs = self.fetch_pairs().await?;
+        let timeframes = self.fetch_timeframes().await?;
         let records = self.fetch_resolved_analysis_settings().await?;
-        let active = derive_active_subscriptions(&records)?;
+        let active = derive_active_subscriptions(&pairs, &timeframes, &records)?;
         let required_history_plan = self.build_required_history_plan(&records, &active);
         let (kline_by_stream, pair_by_stream) = build_stream_maps(&active);
 
@@ -1111,12 +1073,29 @@ impl MarketDataService {
     async fn fetch_resolved_analysis_settings(
         &self,
     ) -> Result<Vec<ResolvedAnalysisSettingsRecord>> {
+        self.fetch_control_plane_records("/v1/runtime-config/analysis-settings")
+            .await
+    }
+
+    async fn fetch_pairs(&self) -> Result<Vec<crate::models::PairRecord>> {
+        self.fetch_control_plane_records("/v1/pairs").await
+    }
+
+    async fn fetch_timeframes(&self) -> Result<Vec<crate::models::TimeframeRecord>> {
+        self.fetch_control_plane_records("/v1/timeframes").await
+    }
+
+    async fn fetch_control_plane_records<T>(&self, path: &str) -> Result<Vec<T>>
+    where
+        T: serde::de::DeserializeOwned,
+    {
         let url = format!(
-            "{}/v1/runtime-config/analysis-settings",
+            "{}{}",
             self.inner
                 .config
                 .control_plane_base_url
-                .trim_end_matches('/')
+                .trim_end_matches('/'),
+            path
         );
         let response = self
             .inner
@@ -1125,10 +1104,7 @@ impl MarketDataService {
             .send()
             .await?
             .error_for_status()?;
-        let payload = response
-            .json::<Vec<ResolvedAnalysisSettingsRecord>>()
-            .await?;
-        Ok(payload)
+        Ok(response.json::<Vec<T>>().await?)
     }
 
     fn build_required_history_plan(
@@ -1138,8 +1114,41 @@ impl MarketDataService {
     ) -> RequiredHistoryPlan {
         let mut kline_by_key: HashMap<(String, String), i64> = HashMap::new();
         let mut trade_by_pair_code: HashMap<String, i64> = HashMap::new();
-        let mut book_ticker_by_pair_code: HashMap<String, i64> = HashMap::new();
         let mut trade_gap_threshold_by_pair_code: HashMap<String, i64> = HashMap::new();
+
+        for subscription in &active.kline_subscriptions {
+            let configured_duration_ms = self
+                .inner
+                .config
+                .backtesting_timerange_ms_by_timeframe
+                .get(&subscription.timeframe_code)
+                .copied()
+                .unwrap_or_else(|| {
+                    (self.inner.config.historical_backfill_limit as i64)
+                        .saturating_mul(subscription.period_ms.max(1))
+                })
+                .max(subscription.period_ms.max(1));
+            let kline_headroom_ms = (self.inner.config.backtest_kline_headroom_candles as i64)
+                .saturating_mul(subscription.period_ms.max(1));
+            let headroom_ms = self.inner.config.scheduled_backtest_history_headroom_ms as i64;
+            let required_kline_history_ms =
+                configured_duration_ms.saturating_add(kline_headroom_ms);
+            let required_trade_history_ms = configured_duration_ms.saturating_add(headroom_ms);
+
+            let key = (
+                subscription.pair_code.clone(),
+                subscription.timeframe_code.clone(),
+            );
+            kline_by_key
+                .entry(key)
+                .and_modify(|current| *current = (*current).max(required_kline_history_ms))
+                .or_insert(required_kline_history_ms);
+
+            trade_by_pair_code
+                .entry(subscription.pair_code.clone())
+                .and_modify(|current| *current = (*current).max(required_trade_history_ms))
+                .or_insert(required_trade_history_ms);
+        }
 
         for record in records.iter().filter(|record| record.enabled) {
             let configured_duration_ms = self
@@ -1176,11 +1185,6 @@ impl MarketDataService {
                 .entry(record.symbol.clone())
                 .and_modify(|current| *current = (*current).max(required_trade_history_ms))
                 .or_insert(required_trade_history_ms);
-
-            book_ticker_by_pair_code
-                .entry(record.symbol.clone())
-                .and_modify(|current| *current = (*current).max(required_trade_history_ms))
-                .or_insert(required_trade_history_ms);
         }
 
         let mut kline_by_subscription_id = HashMap::new();
@@ -1195,14 +1199,15 @@ impl MarketDataService {
             kline_by_subscription_id.insert(subscription.subscription_id.clone(), required_ms);
             trade_gap_threshold_by_pair_code
                 .entry(subscription.pair_code.clone())
-                .and_modify(|current| *current = (*current).max(subscription.period_ms.max(1)))
-                .or_insert(subscription.period_ms.max(1));
+                .and_modify(|current| {
+                    *current = (*current).min(self.inner.config.trade_gap_repair_min_gap_ms as i64)
+                })
+                .or_insert(self.inner.config.trade_gap_repair_min_gap_ms as i64);
         }
 
         RequiredHistoryPlan {
             kline_by_subscription_id,
             trade_by_pair_code,
-            book_ticker_by_pair_code,
             trade_gap_threshold_by_pair_code,
         }
     }
@@ -1222,11 +1227,6 @@ impl MarketDataService {
                 &active.pair_subscriptions,
                 &required_history_plan.trade_by_pair_code,
                 &required_history_plan.trade_gap_threshold_by_pair_code,
-            )
-            .await?;
-            self.run_book_ticker_backfill_and_gap_repair(
-                &active.pair_subscriptions,
-                &required_history_plan.book_ticker_by_pair_code,
             )
             .await
         }
@@ -1515,54 +1515,6 @@ impl MarketDataService {
             return Err(anyhow::anyhow!(error));
         }
 
-        Ok(())
-    }
-
-    async fn run_book_ticker_backfill_and_gap_repair(
-        &self,
-        subscriptions: &[PairStreamSubscription],
-        required_history_by_pair_code: &HashMap<String, i64>,
-    ) -> Result<()> {
-        let max_concurrency = self.inner.config.historical_backfill_max_concurrency;
-        let semaphore = Arc::new(tokio::sync::Semaphore::new(max_concurrency));
-        let mut tasks = Vec::with_capacity(subscriptions.len());
-
-        for subscription in subscriptions.iter().cloned() {
-            let service = self.clone();
-            let permit = semaphore.clone().acquire_owned().await?;
-            let required_history_ms = required_history_by_pair_code
-                .get(&subscription.pair_code)
-                .copied()
-                .unwrap_or(
-                    self.inner
-                        .config
-                        .historical_book_ticker_backfill_interval_ms as i64,
-                )
-                .max(
-                    self.inner
-                        .config
-                        .historical_book_ticker_backfill_interval_ms as i64,
-                );
-            tasks.push(tokio::spawn(async move {
-                let _permit = permit;
-                service
-                    .backfill_pair_book_ticker(subscription, required_history_ms)
-                    .await
-            }));
-        }
-
-        let mut had_error = None;
-        for task in tasks {
-            match task.await {
-                Ok(Ok(())) => {}
-                Ok(Err(error)) => had_error = Some(error.to_string()),
-                Err(error) => had_error = Some(error.to_string()),
-            }
-        }
-
-        if let Some(error) = had_error {
-            return Err(anyhow::anyhow!(error));
-        }
         Ok(())
     }
 
@@ -1863,27 +1815,6 @@ impl MarketDataService {
         min_gap_ms: i64,
         limit: i64,
     ) -> Result<Vec<TimeGap>> {
-        let coverage_intervals = self
-            .inner
-            .database
-            .trade_coverage_intervals(pair_code)
-            .await?;
-        if !coverage_intervals.is_empty() {
-            let merged_intervals = Self::merge_time_intervals(coverage_intervals);
-            let missing_ranges =
-                Self::subtract_covered_intervals(window_start, window_end, &merged_intervals);
-            tracing::info!(
-                table = "market_data_trades",
-                pair_code,
-                window_start_ms = window_start,
-                window_end_ms = window_end,
-                covered_interval_count = merged_intervals.len(),
-                missing_interval_count = missing_ranges.len(),
-                "trade backfill planning used persisted coverage state"
-            );
-            return Ok(missing_ranges);
-        }
-
         let missing_ranges = self
             .detect_trade_gaps_from_db_for_pair(
                 pair_code,
@@ -1906,7 +1837,7 @@ impl MarketDataService {
             window_end_ms = window_end,
             covered_interval_count = covered_intervals.len(),
             missing_interval_count = missing_ranges.len(),
-            "trade backfill planning bootstrapped persisted coverage state from raw trade scan"
+            "trade backfill planning refreshed persisted coverage state from raw trade scan"
         );
         Ok(missing_ranges)
     }
@@ -1928,20 +1859,22 @@ impl MarketDataService {
         let mut gaps = Vec::<TimeGap>::new();
         match (coverage.min_time, coverage.max_time) {
             (Some(min_t), Some(max_t)) => {
-                if min_t > window_start {
+                let leading_gap_ms = min_t.saturating_sub(window_start);
+                if leading_gap_ms > min_gap_ms {
                     gaps.push(TimeGap {
                         start_time: window_start,
                         end_time: min_t,
-                        gap_ms: min_t.saturating_sub(window_start),
+                        gap_ms: leading_gap_ms,
                     });
                 }
 
                 let expected_max = window_end.saturating_sub(1);
-                if max_t < expected_max {
+                let trailing_gap_ms = expected_max.saturating_sub(max_t);
+                if max_t < expected_max && trailing_gap_ms > min_gap_ms {
                     gaps.push(TimeGap {
                         start_time: max_t.saturating_add(1),
                         end_time: window_end,
-                        gap_ms: expected_max.saturating_sub(max_t),
+                        gap_ms: trailing_gap_ms,
                     });
                 }
             }
@@ -2023,58 +1956,6 @@ impl MarketDataService {
                 period_ms,
                 limit,
             )
-            .await?;
-        gaps.extend(internal_gaps);
-        Ok(Self::merge_time_gaps(gaps))
-    }
-
-    async fn detect_book_ticker_gaps_for_pair(
-        &self,
-        pair_code: &str,
-        window_start: i64,
-        window_end: i64,
-        min_gap_ms: i64,
-        limit: i64,
-    ) -> Result<Vec<TimeGap>> {
-        let coverage = self
-            .inner
-            .database
-            .book_ticker_window_coverage_in_range(pair_code, window_start, window_end)
-            .await?;
-
-        let mut gaps = Vec::<TimeGap>::new();
-        match (coverage.min_time, coverage.max_time) {
-            (Some(min_t), Some(max_t)) => {
-                if min_t > window_start {
-                    gaps.push(TimeGap {
-                        start_time: window_start,
-                        end_time: min_t,
-                        gap_ms: min_t.saturating_sub(window_start),
-                    });
-                }
-                let expected_max = window_end.saturating_sub(1);
-                if max_t < expected_max {
-                    gaps.push(TimeGap {
-                        start_time: max_t.saturating_add(1),
-                        end_time: window_end,
-                        gap_ms: expected_max.saturating_sub(max_t),
-                    });
-                }
-            }
-            _ => {
-                gaps.push(TimeGap {
-                    start_time: window_start,
-                    end_time: window_end,
-                    gap_ms: window_end.saturating_sub(window_start),
-                });
-                return Ok(gaps);
-            }
-        }
-
-        let internal_gaps = self
-            .inner
-            .database
-            .book_ticker_time_gaps_in_range(pair_code, window_start, window_end, min_gap_ms, limit)
             .await?;
         gaps.extend(internal_gaps);
         Ok(Self::merge_time_gaps(gaps))
@@ -2580,7 +2461,7 @@ impl MarketDataService {
         const MAX_REPAIR_ROUNDS: usize = 3;
 
         for round in 1..=MAX_REPAIR_ROUNDS {
-            let min_gap_ms = required_period_ms.max(60_000);
+            let min_gap_ms = required_period_ms.max(1);
             let gaps = self
                 .detect_trade_gaps_from_db_for_pair(
                     &subscription.pair_code,
@@ -2942,103 +2823,6 @@ impl MarketDataService {
         Ok(())
     }
 
-    async fn backfill_pair_book_ticker(
-        &self,
-        subscription: PairStreamSubscription,
-        required_history_ms: i64,
-    ) -> Result<()> {
-        let now_ms = Utc::now().timestamp_millis();
-        let snapshot_interval_ms = self
-            .inner
-            .config
-            .historical_book_ticker_backfill_interval_ms as i64;
-        let window_start_ms = now_ms.saturating_sub(required_history_ms.max(snapshot_interval_ms));
-        let gaps = self
-            .detect_book_ticker_gaps_for_pair(
-                &subscription.pair_code,
-                window_start_ms,
-                now_ms,
-                snapshot_interval_ms,
-                500,
-            )
-            .await?;
-
-        let should_fetch = !gaps.is_empty();
-        if should_fetch {
-            tracing::info!(
-                table = "market_data_book_tickers",
-                pair_code = %subscription.pair_code,
-                window_start_ms,
-                window_end_ms = now_ms,
-                snapshot_interval_ms,
-                missing_interval_count = gaps.len(),
-                "book-ticker backfill planned only uncovered intervals"
-            );
-            for (gap_index, gap) in gaps.iter().enumerate() {
-                tracing::warn!(
-                    table = "market_data_book_tickers",
-                    pair_code = %subscription.pair_code,
-                    gap_index = gap_index + 1,
-                    gap_start_ms = gap.start_time,
-                    gap_end_ms = gap.end_time,
-                    gap_ms = gap.gap_ms,
-                    "book-ticker gap detected; refreshing with Binance snapshot"
-                );
-            }
-        }
-
-        if !should_fetch {
-            tracing::info!(
-                table = "market_data_book_tickers",
-                pair_code = %subscription.pair_code,
-                window_start_ms,
-                window_end_ms = now_ms,
-                "book-ticker backfill skipped because required window is already covered"
-            );
-            return Ok(());
-        }
-
-        let row = self
-            .fetch_binance_json::<BinanceDepthBookTickerRestRow>(
-                "/api/v3/depth",
-                &[
-                    ("symbol", subscription.symbol.clone()),
-                    ("limit", "5".to_string()),
-                ],
-            )
-            .await?;
-
-        let top_bid = row
-            .bids
-            .first()
-            .context("depth response returned empty bids")?;
-        let top_ask = row
-            .asks
-            .first()
-            .context("depth response returned empty asks")?;
-        let row = serde_json::json!({
-            "symbol": &subscription.symbol,
-            "bidPrice": top_bid[0],
-            "bidQty": top_bid[1],
-            "askPrice": top_ask[0],
-            "askQty": top_ask[1],
-            "updateId": row.last_update_id,
-        });
-
-        let event =
-            normalize_rest_book_ticker(&subscription, row, &self.inner.config.service_name)?;
-        self.process_book_ticker_event(event).await?;
-        tracing::info!(
-            table = "market_data_book_tickers",
-            pair_code = %subscription.pair_code,
-            inserted_rows = 1,
-            window_start_ms,
-            window_end_ms = now_ms,
-            "inserted book-ticker backfill snapshot into ClickHouse"
-        );
-        Ok(())
-    }
-
     async fn process_kline_event(&self, event: NormalizedKlineEvent) -> Result<()> {
         if self.dedup(&event.event_id).await {
             return Ok(());
@@ -3130,44 +2914,6 @@ impl MarketDataService {
             ingestion_mode = %event.ingestion_mode,
             inserted_rows = 1,
             "stored trade row in ClickHouse"
-        );
-        Ok(())
-    }
-
-    async fn process_book_ticker_event(&self, event: NormalizedBookTickerEvent) -> Result<()> {
-        if self.dedup(&event.event_id).await {
-            return Ok(());
-        }
-
-        if let Err(error) = self.inner.database.upsert_book_ticker(&event).await {
-            self.inner.metrics.book_ticker_store_failures_total.inc();
-            self.inner.metrics.database_connected.set(0);
-            {
-                let mut status = self.inner.runtime_status.write().await;
-                status.database.connected = false;
-                status.database.last_backfill_error = Some(error.to_string());
-            }
-            return Err(error);
-        }
-
-        self.inner.metrics.database_connected.set(1);
-
-        if event.ingestion_mode == "live" {
-            self.publish_json(
-                &self.inner.config.market_data_book_tickers_topic,
-                format!("{}:{}", event.pair_code, event.order_book_update_id),
-                &event,
-            )
-            .await?;
-            self.inner.metrics.book_ticker_publish_total.inc();
-            self.mark_kafka_producer(true, None).await;
-        }
-        tracing::debug!(
-            table = "market_data_book_tickers",
-            pair_code = %event.pair_code,
-            ingestion_mode = %event.ingestion_mode,
-            inserted_rows = 1,
-            "stored book-ticker row in ClickHouse"
         );
         Ok(())
     }
@@ -3445,11 +3191,124 @@ fn build_stream_maps(
             subscription.trade_stream_name.to_lowercase(),
             subscription.clone(),
         );
-        pair_by_stream.insert(
-            subscription.book_ticker_stream_name.to_lowercase(),
-            subscription.clone(),
-        );
     }
 
     (kline_by_stream, pair_by_stream)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::MarketDataService;
+    use crate::db::{TimeGap, TimeInterval};
+
+    #[test]
+    fn subtract_covered_intervals_returns_only_missing_ranges() {
+        let covered = vec![
+            TimeInterval {
+                start_time: 100,
+                end_time: 200,
+            },
+            TimeInterval {
+                start_time: 300,
+                end_time: 400,
+            },
+        ];
+
+        let gaps = MarketDataService::subtract_covered_intervals(50, 450, &covered);
+
+        assert_eq!(
+            gaps,
+            vec![
+                TimeGap {
+                    start_time: 50,
+                    end_time: 100,
+                    gap_ms: 50,
+                },
+                TimeGap {
+                    start_time: 200,
+                    end_time: 300,
+                    gap_ms: 100,
+                },
+                TimeGap {
+                    start_time: 400,
+                    end_time: 450,
+                    gap_ms: 50,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn covered_intervals_from_missing_ranges_inverts_gaps() {
+        let gaps = vec![
+            TimeGap {
+                start_time: 100,
+                end_time: 105,
+                gap_ms: 5,
+            },
+            TimeGap {
+                start_time: 200,
+                end_time: 250,
+                gap_ms: 50,
+            },
+        ];
+
+        let covered = MarketDataService::covered_intervals_from_missing_ranges(0, 300, &gaps);
+
+        assert_eq!(
+            covered,
+            vec![
+                TimeInterval {
+                    start_time: 0,
+                    end_time: 100,
+                },
+                TimeInterval {
+                    start_time: 105,
+                    end_time: 200,
+                },
+                TimeInterval {
+                    start_time: 250,
+                    end_time: 300,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn replace_coverage_window_replaces_only_requested_slice() {
+        let existing = vec![
+            TimeInterval {
+                start_time: 0,
+                end_time: 100,
+            },
+            TimeInterval {
+                start_time: 200,
+                end_time: 300,
+            },
+        ];
+        let replacement = vec![TimeInterval {
+            start_time: 120,
+            end_time: 180,
+        }];
+
+        let merged = MarketDataService::replace_coverage_window(existing, 50, 250, replacement);
+
+        assert_eq!(
+            merged,
+            vec![
+                TimeInterval {
+                    start_time: 0,
+                    end_time: 50,
+                },
+                TimeInterval {
+                    start_time: 120,
+                    end_time: 180,
+                },
+                TimeInterval {
+                    start_time: 250,
+                    end_time: 300,
+                },
+            ]
+        );
+    }
 }

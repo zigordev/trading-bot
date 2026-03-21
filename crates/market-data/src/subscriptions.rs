@@ -3,7 +3,8 @@ use std::collections::BTreeMap;
 use anyhow::{Result, bail};
 
 use crate::models::{
-    ActiveSubscriptions, KlineSubscription, PairStreamSubscription, ResolvedAnalysisSettingsRecord,
+    ActiveSubscriptions, KlineSubscription, PairRecord, PairStreamSubscription,
+    ResolvedAnalysisSettingsRecord, TimeframeRecord,
 };
 
 pub fn should_refresh_for_config_resource(resource_type: &str) -> bool {
@@ -40,56 +41,67 @@ pub fn build_trade_stream_name(symbol: &str) -> String {
     format!("{}@aggTrade", symbol.to_lowercase())
 }
 
-pub fn build_book_ticker_stream_name(symbol: &str) -> String {
-    format!("{}@bookTicker", symbol.to_lowercase())
-}
-
 pub fn derive_active_subscriptions(
+    pairs: &[PairRecord],
+    timeframes: &[TimeframeRecord],
     records: &[ResolvedAnalysisSettingsRecord],
 ) -> Result<ActiveSubscriptions> {
     let mut kline_groups = BTreeMap::<String, KlineSubscription>::new();
     let mut pair_groups = BTreeMap::<String, PairStreamSubscription>::new();
+    let enabled_records = records.iter().filter(|record| record.enabled).collect::<Vec<_>>();
 
-    for record in records {
-        let symbol = to_binance_symbol(&record.symbol)?;
-        let interval = record.timeframe_code.trim().to_string();
-        if interval.is_empty() {
-            bail!("Timeframe code cannot be empty");
-        }
-
-        let kline_subscription_id = format!("{}:{}", record.symbol, record.timeframe_code);
-        let kline_stream_name = build_kline_stream_name(&symbol, &interval);
-        let kline_entry = kline_groups
-            .entry(kline_subscription_id.clone())
-            .or_insert_with(|| KlineSubscription {
-                subscription_id: kline_subscription_id.clone(),
-                pair_code: record.symbol.clone(),
+    for pair in pairs.iter().filter(|pair| pair.operable) {
+        let symbol = to_binance_symbol(&pair.code)?;
+        pair_groups.insert(
+            pair.code.clone(),
+            PairStreamSubscription {
+                pair_code: pair.code.clone(),
                 symbol: symbol.clone(),
-                timeframe_code: record.timeframe_code.clone(),
-                binance_interval: interval.clone(),
-                period_ms: record.timeframe.period_ms,
-                stream_name: kline_stream_name.clone(),
+                trade_stream_name: build_trade_stream_name(&symbol),
                 analysis_setting_ids: Vec::new(),
                 strategy_names: Vec::new(),
-            });
+            },
+        );
+
+        for timeframe in timeframes.iter().filter(|timeframe| timeframe.operable) {
+            let interval = timeframe.code.trim().to_string();
+            if interval.is_empty() {
+                bail!("Timeframe code cannot be empty");
+            }
+
+            let kline_subscription_id = format!("{}:{}", pair.code, timeframe.code);
+            let kline_stream_name = build_kline_stream_name(&symbol, &interval);
+            kline_groups.insert(
+                kline_subscription_id.clone(),
+                KlineSubscription {
+                    subscription_id: kline_subscription_id,
+                    pair_code: pair.code.clone(),
+                    symbol: symbol.clone(),
+                    timeframe_code: timeframe.code.clone(),
+                    binance_interval: interval,
+                    period_ms: timeframe.period_ms,
+                    stream_name: kline_stream_name,
+                    analysis_setting_ids: Vec::new(),
+                    strategy_names: Vec::new(),
+                },
+            );
+        }
+    }
+
+    for record in enabled_records {
+        let kline_subscription_id = format!("{}:{}", record.symbol, record.timeframe_code);
+        let Some(kline_entry) = kline_groups.get_mut(&kline_subscription_id) else {
+            continue;
+        };
         kline_entry.analysis_setting_ids.push(record.id.clone());
         kline_entry
             .strategy_names
             .push(record.strategy_name.clone());
 
-        let pair_entry =
-            pair_groups
-                .entry(record.symbol.clone())
-                .or_insert_with(|| PairStreamSubscription {
-                    pair_code: record.symbol.clone(),
-                    symbol: symbol.clone(),
-                    trade_stream_name: build_trade_stream_name(&symbol),
-                    book_ticker_stream_name: build_book_ticker_stream_name(&symbol),
-                    analysis_setting_ids: Vec::new(),
-                    strategy_names: Vec::new(),
-                });
-        pair_entry.analysis_setting_ids.push(record.id.clone());
-        pair_entry.strategy_names.push(record.strategy_name.clone());
+        if let Some(pair_entry) = pair_groups.get_mut(&record.symbol) {
+            pair_entry.analysis_setting_ids.push(record.id.clone());
+            pair_entry.strategy_names.push(record.strategy_name.clone());
+        }
     }
 
     let mut kline_subscriptions = kline_groups.into_values().collect::<Vec<_>>();
@@ -109,8 +121,7 @@ pub fn derive_active_subscriptions(
         subscription.strategy_names.dedup();
     }
 
-    let mut stream_names =
-        Vec::with_capacity(kline_subscriptions.len() + pair_subscriptions.len() * 2);
+    let mut stream_names = Vec::with_capacity(kline_subscriptions.len() + pair_subscriptions.len());
     stream_names.extend(
         kline_subscriptions
             .iter()
@@ -121,12 +132,6 @@ pub fn derive_active_subscriptions(
             .iter()
             .map(|subscription| subscription.trade_stream_name.clone()),
     );
-    stream_names.extend(
-        pair_subscriptions
-            .iter()
-            .map(|subscription| subscription.book_ticker_stream_name.clone()),
-    );
-
     Ok(ActiveSubscriptions {
         kline_subscriptions,
         pair_subscriptions,
@@ -218,12 +223,38 @@ mod tests {
         }
     }
 
+    fn pair(code: &str) -> PairRecord {
+        PairRecord {
+            id: format!("pair-{code}"),
+            code: code.to_string(),
+            operable: true,
+            origin_asset_needed_funds: None,
+            destination_asset_needed_funds: None,
+            created_at: "2026-03-12T18:00:00Z".to_string(),
+            updated_at: "2026-03-12T18:00:00Z".to_string(),
+        }
+    }
+
+    fn timeframe(code: &str, period_ms: i64) -> TimeframeRecord {
+        TimeframeRecord {
+            id: format!("timeframe-{code}"),
+            code: code.to_string(),
+            longer_timeframe_code: "5m".to_string(),
+            longer_timeframe_multiplier: 5,
+            period_ms,
+            operable: true,
+            created_at: "2026-03-12T18:00:00Z".to_string(),
+            updated_at: "2026-03-12T18:00:00Z".to_string(),
+        }
+    }
+
     #[test]
     fn derives_kline_and_pair_subscriptions() {
-        let active = derive_active_subscriptions(&[
-            resolved("analysis-1", "ema"),
-            resolved("analysis-2", "breakout"),
-        ])
+        let active = derive_active_subscriptions(
+            &[pair("BTC/USDT")],
+            &[timeframe("1m", 60_000)],
+            &[resolved("analysis-1", "ema"), resolved("analysis-2", "breakout")],
+        )
         .expect("subscriptions should derive");
 
         assert_eq!(active.kline_subscriptions.len(), 1);
@@ -247,19 +278,45 @@ mod tests {
                 .stream_names
                 .contains(&"btcusdt@aggTrade".to_string())
         );
-        assert!(
-            active
-                .stream_names
-                .contains(&"btcusdt@bookTicker".to_string())
-        );
     }
 
     #[test]
     fn builds_combined_stream_url() {
-        let active = derive_active_subscriptions(&[resolved("analysis-1", "ema")]).unwrap();
+        let active = derive_active_subscriptions(
+            &[pair("BTC/USDT")],
+            &[timeframe("1m", 60_000)],
+            &[resolved("analysis-1", "ema")],
+        )
+        .unwrap();
         let url = build_combined_stream_url("wss://stream.binance.com:9443/stream", &active)
             .expect("url should build");
         assert!(url.contains("streams="));
         assert!(url.contains("btcusdt%40kline_1m"));
+    }
+
+    #[test]
+    fn derives_operable_subscriptions_without_analysis_settings() {
+        let active = derive_active_subscriptions(
+            &[pair("BTCUSDT"), pair("ETHUSDT")],
+            &[timeframe("1m", 60_000), timeframe("5m", 300_000)],
+            &[],
+        )
+        .expect("subscriptions should derive");
+
+        assert_eq!(active.pair_subscriptions.len(), 2);
+        assert_eq!(active.kline_subscriptions.len(), 4);
+        assert!(
+            active
+                .pair_subscriptions
+                .iter()
+                .any(|subscription| subscription.pair_code == "ETHUSDT")
+        );
+        assert!(
+            active
+                .kline_subscriptions
+                .iter()
+                .any(|subscription| subscription.pair_code == "ETHUSDT"
+                    && subscription.timeframe_code == "5m")
+        );
     }
 }

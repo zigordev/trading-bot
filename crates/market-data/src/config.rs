@@ -19,7 +19,6 @@ pub struct AppConfig {
     pub config_change_events_topic: String,
     pub market_data_klines_topic: String,
     pub market_data_trades_topic: String,
-    pub market_data_book_tickers_topic: String,
     pub runtime_config_refresh_interval_ms: u64,
     pub config_refresh_debounce_ms: u64,
     pub readiness_max_config_age_ms: u64,
@@ -61,10 +60,8 @@ pub struct AppConfig {
     /// Maximum number of klines to buffer per ClickHouse INSERT during
     /// historical kline backfill.
     pub historical_kline_backfill_insert_batch_rows: usize,
-    pub historical_book_ticker_backfill_interval_ms: u64,
     pub historical_kline_retention_days: u64,
     pub historical_trade_retention_days: u64,
-    pub historical_book_ticker_retention_days: u64,
     pub historical_store_compaction_enabled: bool,
     pub historical_store_compaction_interval_ms: u64,
     pub historical_store_compact_after_refresh: bool,
@@ -83,6 +80,9 @@ pub struct AppConfig {
     /// Multiplier for `historical_trade_backfill_max_batches` used by the gap repair
     /// backfill loops (the repair code further multiplies internally).
     pub trade_gap_repair_max_batches_multiplier: usize,
+    /// Smallest aggregate-trade gap that should be treated as missing
+    /// historical coverage during repair/planning.
+    pub trade_gap_repair_min_gap_ms: u64,
     /// If true, historical trade backfill flushes into ClickHouse using
     /// `INSERT ... FORMAT RowBinary` (faster than JSONEachRow for large batches).
     pub historical_trade_backfill_use_rowbinary_insert: bool,
@@ -253,10 +253,6 @@ pub fn load_config() -> Result<AppConfig> {
             "MARKET_DATA_TRADES_TOPIC",
             "trading-bot.market-data.trades.v1",
         ),
-        market_data_book_tickers_topic: env_or_default(
-            "MARKET_DATA_BOOK_TICKERS_TOPIC",
-            "trading-bot.market-data.book-tickers.v1",
-        ),
         runtime_config_refresh_interval_ms: parse_u64("RUNTIME_CONFIG_REFRESH_INTERVAL_MS", 30000)?,
         config_refresh_debounce_ms: parse_u64("CONFIG_REFRESH_DEBOUNCE_MS", 500)?,
         readiness_max_config_age_ms: parse_u64("READINESS_MAX_CONFIG_AGE_MS", 120000)?,
@@ -306,16 +302,8 @@ pub fn load_config() -> Result<AppConfig> {
             "HISTORICAL_KLINE_BACKFILL_INSERT_BATCH_ROWS",
             50_000,
         )?,
-        historical_book_ticker_backfill_interval_ms: parse_u64(
-            "HISTORICAL_BOOK_TICKER_BACKFILL_INTERVAL_MS",
-            60_000,
-        )?,
         historical_kline_retention_days: parse_u64("HISTORICAL_KLINE_RETENTION_DAYS", 365)?,
         historical_trade_retention_days: parse_u64("HISTORICAL_TRADE_RETENTION_DAYS", 90)?,
-        historical_book_ticker_retention_days: parse_u64(
-            "HISTORICAL_BOOK_TICKER_RETENTION_DAYS",
-            30,
-        )?,
         historical_store_compaction_enabled: parse_bool(
             "HISTORICAL_STORE_COMPACTION_ENABLED",
             false,
@@ -343,6 +331,7 @@ pub fn load_config() -> Result<AppConfig> {
             "TRADE_GAP_REPAIR_MAX_BATCHES_MULTIPLIER",
             1,
         )?,
+        trade_gap_repair_min_gap_ms: parse_u64("TRADE_GAP_REPAIR_MIN_GAP_MS", 15_000)?,
         historical_trade_backfill_use_rowbinary_insert: parse_bool(
             "HISTORICAL_TRADE_BACKFILL_USE_ROW_BINARY_INSERT",
             true,
@@ -402,7 +391,6 @@ mod tests {
             std::env::remove_var("HISTORICAL_STORE_PASSWORD");
             std::env::remove_var("HISTORICAL_KLINE_RETENTION_DAYS");
             std::env::remove_var("HISTORICAL_TRADE_RETENTION_DAYS");
-            std::env::remove_var("HISTORICAL_BOOK_TICKER_RETENTION_DAYS");
             std::env::remove_var("HISTORICAL_STORE_COMPACTION_ENABLED");
             std::env::remove_var("HISTORICAL_STORE_COMPACTION_INTERVAL_MS");
             std::env::remove_var("HISTORICAL_STORE_COMPACTION_AFTER_REFRESH");
@@ -419,7 +407,6 @@ mod tests {
             std::env::remove_var("BINANCE_REST_RETRY_BACKOFF_MS");
             std::env::remove_var("HISTORICAL_TRADE_BACKFILL_LIMIT");
             std::env::remove_var("HISTORICAL_TRADE_BACKFILL_MAX_BATCHES");
-            std::env::remove_var("HISTORICAL_BOOK_TICKER_BACKFILL_INTERVAL_MS");
             std::env::remove_var("HISTORICAL_BACKFILL_MAX_IN_FLIGHT_TRADE_ROWS");
             std::env::remove_var("BACKTEST_KLINE_HEADROOM_CANDLES");
             std::env::remove_var("SCHEDULED_BACKTEST_HISTORY_HEADROOM_MS");
@@ -435,7 +422,6 @@ mod tests {
         assert_eq!(config.historical_store_password, None);
         assert_eq!(config.historical_kline_retention_days, 365);
         assert_eq!(config.historical_trade_retention_days, 90);
-        assert_eq!(config.historical_book_ticker_retention_days, 30);
         assert_eq!(config.historical_store_compaction_enabled, false);
         assert_eq!(config.historical_store_compaction_interval_ms, 180000);
         assert_eq!(config.historical_store_compact_after_refresh, false);
@@ -448,7 +434,6 @@ mod tests {
         assert_eq!(config.binance_rest_request_weight_limit_per_minute, 6000);
         assert_eq!(config.binance_rest_target_utilization_percent, 90);
         assert_eq!(config.binance_rest_warn_utilization_percent, 85);
-        assert_eq!(config.historical_book_ticker_backfill_interval_ms, 60_000);
         assert_eq!(config.historical_trade_backfill_limit, 1000);
         assert_eq!(config.historical_trade_backfill_max_batches, 100);
         assert_eq!(config.backtest_kline_headroom_candles, 4);
