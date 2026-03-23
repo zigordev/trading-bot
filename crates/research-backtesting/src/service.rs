@@ -1198,7 +1198,7 @@ fn trade_coverage_blocker(
     requested_end_time: i64,
     tolerance_ms: i64,
     coverage: &trading_bot_market_data::db::WindowCoverage,
-    gaps: &[trading_bot_market_data::db::TimeGap],
+    gaps: &[trading_bot_market_data::db::AggregateTradeIdGap],
 ) -> Option<String> {
     let edge_ready = match (coverage.min_time, coverage.max_time) {
         (Some(min_t), Some(max_t)) => {
@@ -1220,8 +1220,13 @@ fn trade_coverage_blocker(
 
     if let Some(gap) = gaps.first() {
         return Some(format!(
-            "trade coverage contains internal gap (gap_start={}, gap_end={}, gap_ms={})",
-            gap.start_time, gap.end_time, gap.gap_ms
+            "trade coverage contains aggregate trade id hole (prev_id={}, next_id={}, missing_count={}, gap_start={}, gap_end={}, gap_ms={})",
+            gap.previous_aggregate_trade_id,
+            gap.next_aggregate_trade_id,
+            gap.missing_aggregate_trade_count,
+            gap.start_time,
+            gap.end_time,
+            gap.gap_ms
         ));
     }
 
@@ -1239,11 +1244,10 @@ async fn trade_coverage_blocker_from_store(
         .trade_window_coverage_in_range(pair_code, requested_start_time, requested_end_time)
         .await?;
     let gaps = historical_store
-        .trade_time_gaps_in_range(
+        .aggregate_trade_id_gaps_in_range(
             pair_code,
             requested_start_time,
             requested_end_time,
-            tolerance_ms.max(1),
             1,
         )
         .await?;
@@ -1819,16 +1823,19 @@ mod tests {
     }
 
     #[test]
-    fn trade_coverage_blocker_rejects_internal_gap() {
+    fn trade_coverage_blocker_rejects_internal_aggregate_trade_hole() {
         let coverage = trading_bot_market_data::db::WindowCoverage {
             row_count: 10,
             min_time: Some(1_001),
             max_time: Some(1_999),
         };
-        let gaps = vec![trading_bot_market_data::db::TimeGap {
+        let gaps = vec![trading_bot_market_data::db::AggregateTradeIdGap {
             start_time: 1_400,
             end_time: 1_500,
             gap_ms: 100,
+            previous_aggregate_trade_id: 41,
+            next_aggregate_trade_id: 45,
+            missing_aggregate_trade_count: 3,
         }];
 
         let blocker = trade_coverage_blocker(1_000, 2_000, 5, &coverage, &gaps);
@@ -1836,7 +1843,7 @@ mod tests {
         assert_eq!(
             blocker,
             Some(
-                "trade coverage contains internal gap (gap_start=1400, gap_end=1500, gap_ms=100)"
+                "trade coverage contains aggregate trade id hole (prev_id=41, next_id=45, missing_count=3, gap_start=1400, gap_end=1500, gap_ms=100)"
                     .to_string()
             )
         );

@@ -145,6 +145,16 @@ pub struct TimeGap {
     pub gap_ms: i64,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AggregateTradeIdGap {
+    pub start_time: i64,
+    pub end_time: i64,
+    pub gap_ms: i64,
+    pub previous_aggregate_trade_id: i64,
+    pub next_aggregate_trade_id: i64,
+    pub missing_aggregate_trade_count: i64,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct TimeInterval {
     pub start_time: i64,
@@ -939,6 +949,97 @@ impl Database {
                 start_time: row.prev_trade_time.saturating_add(1),
                 end_time: row.trade_time,
                 gap_ms: row.gap_ms,
+            });
+        }
+        Ok(gaps)
+    }
+
+    pub async fn aggregate_trade_id_gaps_in_range(
+        &self,
+        pair_code: &str,
+        start_time: i64,
+        end_time: i64,
+        limit: i64,
+    ) -> Result<Vec<AggregateTradeIdGap>> {
+        let safe_limit = limit.clamp(1, 10_000);
+        let sql = format!(
+            r#"
+            SELECT
+              prev_aggregate_trade_id,
+              aggregate_trade_id,
+              prev_trade_time,
+              trade_time
+            FROM
+            (
+              SELECT
+                aggregate_trade_id,
+                latest_trade_time AS trade_time,
+                nullIf(
+                  lagInFrame(aggregate_trade_id) OVER (
+                    ORDER BY aggregate_trade_id ASC
+                    ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+                  ),
+                  0
+                ) AS prev_aggregate_trade_id,
+                nullIf(
+                  lagInFrame(latest_trade_time) OVER (
+                    ORDER BY aggregate_trade_id ASC
+                    ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+                  ),
+                  0
+                ) AS prev_trade_time
+              FROM
+              (
+                SELECT
+                  aggregate_trade_id,
+                  max(trade_time) AS latest_trade_time
+                FROM {}.market_data_trades
+                WHERE pair_code = '{}'
+                  AND trade_time >= {}
+                  AND trade_time < {}
+                GROUP BY aggregate_trade_id
+              )
+            )
+            WHERE prev_aggregate_trade_id IS NOT NULL
+              AND prev_trade_time IS NOT NULL
+              AND (aggregate_trade_id - prev_aggregate_trade_id) > 1
+            ORDER BY (aggregate_trade_id - prev_aggregate_trade_id) DESC, aggregate_trade_id ASC
+            LIMIT {}
+            FORMAT JSONEachRow
+            "#,
+            sql_ident(&self.database),
+            sql_string(pair_code),
+            start_time,
+            end_time,
+            safe_limit
+        );
+
+        #[derive(Deserialize)]
+        struct AggregateTradeIdGapRow {
+            prev_aggregate_trade_id: i64,
+            aggregate_trade_id: i64,
+            prev_trade_time: i64,
+            trade_time: i64,
+        }
+
+        let mut lines = self.query_lines(&sql).await?;
+        let mut gaps = Vec::new();
+        while let Some(line) = lines.next().await {
+            let line = line?;
+            if line.trim().is_empty() {
+                continue;
+            }
+            let row = serde_json::from_str::<AggregateTradeIdGapRow>(&line)?;
+            gaps.push(AggregateTradeIdGap {
+                start_time: row.prev_trade_time.saturating_add(1),
+                end_time: row.trade_time,
+                gap_ms: row.trade_time.saturating_sub(row.prev_trade_time),
+                previous_aggregate_trade_id: row.prev_aggregate_trade_id,
+                next_aggregate_trade_id: row.aggregate_trade_id,
+                missing_aggregate_trade_count: row
+                    .aggregate_trade_id
+                    .saturating_sub(row.prev_aggregate_trade_id)
+                    .saturating_sub(1),
             });
         }
         Ok(gaps)
