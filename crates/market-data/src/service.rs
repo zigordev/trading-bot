@@ -1891,9 +1891,13 @@ impl MarketDataService {
         let internal_gaps = self
             .inner
             .database
-            .trade_time_gaps_in_range(pair_code, window_start, window_end, min_gap_ms, limit)
+            .aggregate_trade_id_gaps_in_range(pair_code, window_start, window_end, limit)
             .await?;
-        gaps.extend(internal_gaps);
+        gaps.extend(internal_gaps.into_iter().map(|gap| TimeGap {
+            start_time: gap.start_time,
+            end_time: gap.end_time,
+            gap_ms: gap.gap_ms,
+        }));
         Ok(Self::merge_time_gaps(gaps))
     }
 
