@@ -27,7 +27,7 @@ const createStores = (
   overrides: Partial<ConfigStores> = {},
 ): ConfigStores =>
   ({
-    pairs: createStore(),
+    symbols: createStore(),
     timeframes: createStore(),
     strategies: createStore(),
     riskProfiles: createStore(),
@@ -50,7 +50,7 @@ test("POST /v1/analysis-settings maps foreign-key violations to 409", async (t) 
         create: async () => {
           throw createPgError("23503");
         },
-        uniqueFieldName: "pairCode/timeframeCode/strategyName",
+        uniqueFieldName: "symbolCode/timeframeCode/strategyName",
         getUniqueFieldValue: () => "BTCUSDT/1m/ema",
       }),
     }),
@@ -60,7 +60,7 @@ test("POST /v1/analysis-settings maps foreign-key violations to 409", async (t) 
     method: "POST",
     url: "/v1/analysis-settings",
     payload: {
-      pairCode: "BTCUSDT",
+      symbolCode: "BTCUSDT",
       timeframeCode: "1m",
       strategyName: "ema",
       riskProfileName: "default",
@@ -117,7 +117,7 @@ test("POST /v1/timeframes rejects bodies without periodMs", async (t) => {
       code: "1m",
       longerTimeframeCode: "5m",
       longerTimeframeMultiplier: 5,
-      operable: true,
+      active: true,
     },
   });
 

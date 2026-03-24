@@ -7,14 +7,16 @@ import {
   type ConfigChangeEventPublisher,
 } from "../infrastructure/config-change-events.js";
 
-export type PairInput = {
+export type SymbolInput = {
   code: string;
-  operable: boolean;
+  active: boolean;
+  baseAsset: string;
+  destinationAsset: string;
   originAssetNeededFunds?: number;
   destinationAssetNeededFunds?: number;
 };
 
-export type PairRecord = PairInput & {
+export type SymbolRecord = SymbolInput & {
   id: string;
   createdAt: string;
   updatedAt: string;
@@ -25,7 +27,7 @@ export type TimeframeInput = {
   longerTimeframeCode: string;
   longerTimeframeMultiplier: number;
   periodMs: number;
-  operable: boolean;
+  active: boolean;
 };
 
 export type TimeframeRecord = TimeframeInput & {
@@ -77,7 +79,7 @@ export type TradingDefaultsRecord = TradingDefaultsInput & {
 };
 
 export type AnalysisSettingsInput = {
-  pairCode: string;
+  symbolCode: string;
   timeframeCode: string;
   strategyName: string;
   riskProfileName: string;
@@ -99,7 +101,7 @@ export type AnalysisSettingsRecord = Omit<
 
 export type ResolvedAnalysisSettingsRecord = {
   id: string;
-  pairCode: string;
+  symbolCode: string;
   timeframeCode: string;
   strategyName: string;
   riskProfileName: string;
@@ -108,7 +110,7 @@ export type ResolvedAnalysisSettingsRecord = {
   enabled: boolean;
   createdAt: string;
   updatedAt: string;
-  pair: PairRecord;
+  symbol: SymbolRecord;
   timeframe: TimeframeRecord;
   strategy: StrategyRecord;
   riskProfile: RiskProfileRecord;
@@ -166,6 +168,39 @@ const toPositiveInteger = (value: unknown): number => {
   return Number.isInteger(parsed) && parsed > 0 ? parsed : 0;
 };
 
+const deriveAssetsFromSymbolCode = (
+  code: string,
+): { baseAsset: string; destinationAsset: string } | null => {
+  const normalized = code.trim().toUpperCase();
+  const knownQuoteAssets = [
+    "USDT",
+    "FDUSD",
+    "USDC",
+    "BUSD",
+    "TUSD",
+    "DAI",
+    "BTC",
+    "ETH",
+    "BNB",
+    "EUR",
+    "GBP",
+    "AUD",
+    "BRL",
+    "TRY",
+  ];
+
+  for (const quoteAsset of knownQuoteAssets) {
+    if (normalized.endsWith(quoteAsset) && normalized.length > quoteAsset.length) {
+      return {
+        baseAsset: normalized.slice(0, -quoteAsset.length),
+        destinationAsset: quoteAsset,
+      };
+    }
+  }
+
+  return null;
+};
+
 const deriveTimeframePeriodMs = (code: string): number | null => {
   const match = code.trim().match(/^(\d+)([smhdw])$/i);
 
@@ -190,10 +225,12 @@ const deriveTimeframePeriodMs = (code: string): number | null => {
   return magnitude * unitMultiplier[match[2].toLowerCase() as keyof typeof unitMultiplier];
 };
 
-const mapPairRow = (row: QueryResultRow): PairRecord => ({
+const mapSymbolRow = (row: QueryResultRow): SymbolRecord => ({
   id: String(row.id),
   code: String(row.code),
-  operable: Boolean(row.operable),
+  active: Boolean(row.active),
+  baseAsset: String(row.base_asset),
+  destinationAsset: String(row.destination_asset),
   originAssetNeededFunds:
     row.origin_asset_needed_funds === null
       ? undefined
@@ -212,7 +249,7 @@ const mapTimeframeRow = (row: QueryResultRow): TimeframeRecord => ({
   longerTimeframeCode: String(row.longer_timeframe_code),
   longerTimeframeMultiplier: Number(row.longer_timeframe_multiplier),
   periodMs: Number(row.period_ms),
-  operable: Boolean(row.operable),
+  active: Boolean(row.active),
   createdAt: toIsoString(row.created_at),
   updatedAt: toIsoString(row.updated_at),
 });
@@ -252,7 +289,7 @@ const mapTradingDefaultsRow = (row: QueryResultRow): TradingDefaultsRecord => ({
 
 const mapAnalysisSettingsRow = (row: QueryResultRow): AnalysisSettingsRecord => ({
   id: String(row.id),
-  pairCode: String(row.pair_code),
+  symbolCode: String(row.symbol_code),
   timeframeCode: String(row.timeframe_code),
   strategyName: String(row.strategy_name),
   riskProfileName: String(row.risk_profile_name),
@@ -268,7 +305,7 @@ const mapResolvedAnalysisSettingsRow = (
   row: QueryResultRow,
 ): ResolvedAnalysisSettingsRecord => ({
   id: String(row.analysis_id),
-  pairCode: String(row.analysis_pair_code),
+  symbolCode: String(row.analysis_symbol_code),
   timeframeCode: String(row.analysis_timeframe_code),
   strategyName: String(row.analysis_strategy_name),
   riskProfileName: String(row.analysis_risk_profile_name),
@@ -279,14 +316,14 @@ const mapResolvedAnalysisSettingsRow = (
   enabled: Boolean(row.analysis_enabled),
   createdAt: toIsoString(row.analysis_created_at),
   updatedAt: toIsoString(row.analysis_updated_at),
-  pair: mapPairRow({
-    id: row.pair_id,
-    code: row.pair_entity_code,
-    operable: row.pair_operable,
-    origin_asset_needed_funds: row.pair_origin_asset_needed_funds,
-    destination_asset_needed_funds: row.pair_destination_asset_needed_funds,
-    created_at: row.pair_created_at,
-    updated_at: row.pair_updated_at,
+  symbol: mapSymbolRow({
+    id: row.symbol_id,
+    code: row.symbol_entity_code,
+    active: row.symbol_active,
+    origin_asset_needed_funds: row.symbol_origin_asset_needed_funds,
+    destination_asset_needed_funds: row.symbol_destination_asset_needed_funds,
+    created_at: row.symbol_created_at,
+    updated_at: row.symbol_updated_at,
   } as QueryResultRow),
   timeframe: mapTimeframeRow({
     id: row.timeframe_id,
@@ -294,7 +331,7 @@ const mapResolvedAnalysisSettingsRow = (
     longer_timeframe_code: row.timeframe_longer_timeframe_code,
     longer_timeframe_multiplier: row.timeframe_longer_timeframe_multiplier,
     period_ms: row.timeframe_period_ms,
-    operable: row.timeframe_operable,
+    active: row.timeframe_active,
     created_at: row.timeframe_created_at,
     updated_at: row.timeframe_updated_at,
   } as QueryResultRow),
@@ -519,21 +556,23 @@ class PostgresCrudStore<TInput, TRecord> implements CrudStore<TInput, TRecord> {
   }
 }
 
-const pairDefinition: ResourceDefinition<PairInput, PairRecord> = {
-  tableName: "pairs",
-  resourceType: "pairs",
+const symbolDefinition: ResourceDefinition<SymbolInput, SymbolRecord> = {
+  tableName: "symbols",
+  resourceType: "symbols",
   createTableSql: `
-    CREATE TABLE IF NOT EXISTS pairs (
+    CREATE TABLE IF NOT EXISTS symbols (
       id TEXT PRIMARY KEY,
       code TEXT NOT NULL UNIQUE,
-      operable BOOLEAN NOT NULL DEFAULT FALSE,
+      active BOOLEAN NOT NULL DEFAULT FALSE,
+      base_asset TEXT NOT NULL,
+      destination_asset TEXT NOT NULL,
       origin_asset_needed_funds DOUBLE PRECISION,
       destination_asset_needed_funds DOUBLE PRECISION,
       created_at TIMESTAMPTZ NOT NULL,
       updated_at TIMESTAMPTZ NOT NULL,
-      CONSTRAINT pairs_origin_asset_needed_funds_nonnegative
+      CONSTRAINT symbols_origin_asset_needed_funds_nonnegative
         CHECK (origin_asset_needed_funds IS NULL OR origin_asset_needed_funds >= 0),
-      CONSTRAINT pairs_destination_asset_needed_funds_nonnegative
+      CONSTRAINT symbols_destination_asset_needed_funds_nonnegative
         CHECK (
           destination_asset_needed_funds IS NULL
           OR destination_asset_needed_funds >= 0
@@ -544,7 +583,9 @@ const pairDefinition: ResourceDefinition<PairInput, PairRecord> = {
   selectColumns: [
     "id",
     "code",
-    "operable",
+    "active",
+    "base_asset",
+    "destination_asset",
     "origin_asset_needed_funds",
     "destination_asset_needed_funds",
     "created_at",
@@ -552,7 +593,9 @@ const pairDefinition: ResourceDefinition<PairInput, PairRecord> = {
   ],
   insertColumns: [
     "code",
-    "operable",
+    "active",
+    "base_asset",
+    "destination_asset",
     "origin_asset_needed_funds",
     "destination_asset_needed_funds",
   ],
@@ -560,11 +603,13 @@ const pairDefinition: ResourceDefinition<PairInput, PairRecord> = {
   uniqueFieldValue: (input) => input.code,
   toInsertValues: (input) => [
     input.code,
-    input.operable,
+    input.active,
+    input.baseAsset,
+    input.destinationAsset,
     input.originAssetNeededFunds ?? null,
     input.destinationAssetNeededFunds ?? null,
   ],
-  toRecord: mapPairRow,
+  toRecord: mapSymbolRow,
 };
 
 const timeframeDefinition: ResourceDefinition<TimeframeInput, TimeframeRecord> = {
@@ -577,7 +622,7 @@ const timeframeDefinition: ResourceDefinition<TimeframeInput, TimeframeRecord> =
       longer_timeframe_code TEXT NOT NULL,
       longer_timeframe_multiplier INTEGER NOT NULL,
       period_ms INTEGER NOT NULL,
-      operable BOOLEAN NOT NULL DEFAULT FALSE,
+      active BOOLEAN NOT NULL DEFAULT FALSE,
       created_at TIMESTAMPTZ NOT NULL,
       updated_at TIMESTAMPTZ NOT NULL,
       CONSTRAINT timeframes_longer_timeframe_multiplier_positive
@@ -593,7 +638,7 @@ const timeframeDefinition: ResourceDefinition<TimeframeInput, TimeframeRecord> =
     "longer_timeframe_code",
     "longer_timeframe_multiplier",
     "period_ms",
-    "operable",
+    "active",
     "created_at",
     "updated_at",
   ],
@@ -602,7 +647,7 @@ const timeframeDefinition: ResourceDefinition<TimeframeInput, TimeframeRecord> =
     "longer_timeframe_code",
     "longer_timeframe_multiplier",
     "period_ms",
-    "operable",
+    "active",
   ],
   uniqueFieldName: "code",
   uniqueFieldValue: (input) => input.code,
@@ -611,7 +656,7 @@ const timeframeDefinition: ResourceDefinition<TimeframeInput, TimeframeRecord> =
     input.longerTimeframeCode,
     input.longerTimeframeMultiplier,
     input.periodMs,
-    input.operable,
+    input.active,
   ],
   toRecord: mapTimeframeRow,
 };
@@ -760,17 +805,14 @@ const tradingDefaultsDefinition: ResourceDefinition<
   toRecord: mapTradingDefaultsRow,
 };
 
-const analysisSettingsDefinition: ResourceDefinition<
-  AnalysisSettingsInput,
-  AnalysisSettingsRecord
-> = {
+const analysisSettingsDefinition: ResourceDefinition<AnalysisSettingsInput, AnalysisSettingsRecord> = {
   tableName: "analysis_settings",
   resourceType: "analysis_settings",
   createTableSql: `
     CREATE TABLE IF NOT EXISTS analysis_settings (
       id TEXT PRIMARY KEY,
-      pair_code TEXT NOT NULL
-        REFERENCES pairs(code)
+      symbol_code TEXT NOT NULL
+        REFERENCES symbols(code)
         ON UPDATE CASCADE
         ON DELETE RESTRICT,
       timeframe_code TEXT NOT NULL
@@ -795,7 +837,7 @@ const analysisSettingsDefinition: ResourceDefinition<
       updated_at TIMESTAMPTZ NOT NULL,
       CONSTRAINT analysis_settings_binding_unique
         UNIQUE (
-          pair_code,
+          symbol_code,
           timeframe_code,
           strategy_name,
           risk_profile_name,
@@ -804,10 +846,10 @@ const analysisSettingsDefinition: ResourceDefinition<
         )
     );
   `,
-  listOrderBy: "pair_code ASC, timeframe_code ASC, strategy_name ASC",
+  listOrderBy: "symbol_code ASC, timeframe_code ASC, strategy_name ASC",
   selectColumns: [
     "id",
-    "pair_code",
+    "symbol_code",
     "timeframe_code",
     "strategy_name",
     "risk_profile_name",
@@ -818,7 +860,7 @@ const analysisSettingsDefinition: ResourceDefinition<
     "updated_at",
   ],
   insertColumns: [
-    "pair_code",
+    "symbol_code",
     "timeframe_code",
     "strategy_name",
     "risk_profile_name",
@@ -827,11 +869,11 @@ const analysisSettingsDefinition: ResourceDefinition<
     "enabled",
   ],
   uniqueFieldName:
-    "pairCode/timeframeCode/strategyName/riskProfileName/tradingDefaultsName/technicalAnalysisSettings",
+    "symbolCode/timeframeCode/strategyName/riskProfileName/tradingDefaultsName/technicalAnalysisSettings",
   uniqueFieldValue: (input) =>
-    `${input.pairCode}/${input.timeframeCode}/${input.strategyName}/${input.riskProfileName}/${input.tradingDefaultsName}/${JSON.stringify(input.technicalAnalysisSettings)}`,
+    `${input.symbolCode}/${input.timeframeCode}/${input.strategyName}/${input.riskProfileName}/${input.tradingDefaultsName}/${JSON.stringify(input.technicalAnalysisSettings)}`,
   toInsertValues: (input) => [
-    input.pairCode,
+    input.symbolCode,
     input.timeframeCode,
     input.strategyName,
     input.riskProfileName,
@@ -843,7 +885,7 @@ const analysisSettingsDefinition: ResourceDefinition<
 };
 
 const resourceDefinitions = [
-  pairDefinition,
+  symbolDefinition,
   timeframeDefinition,
   strategyDefinition,
   riskProfileDefinition,
@@ -852,7 +894,110 @@ const resourceDefinitions = [
 ] as const;
 
 export const ensureControlPlaneSchema = async (pool: Pool): Promise<void> => {
-  for (const definition of resourceDefinitions) {
+  await pool.query(`
+    DO $$
+    BEGIN
+      IF EXISTS (
+        SELECT 1 FROM information_schema.tables
+        WHERE table_schema = 'public' AND table_name = 'pairs'
+      ) AND NOT EXISTS (
+        SELECT 1 FROM information_schema.tables
+        WHERE table_schema = 'public' AND table_name = 'symbols'
+      ) THEN
+        ALTER TABLE pairs RENAME TO symbols;
+      END IF;
+    END $$;
+  `);
+
+  await pool.query(symbolDefinition.createTableSql);
+  await pool.query(timeframeDefinition.createTableSql);
+
+  await pool.query(
+    "ALTER TABLE symbols ADD COLUMN IF NOT EXISTS base_asset TEXT",
+  );
+  await pool.query(
+    "ALTER TABLE symbols ADD COLUMN IF NOT EXISTS destination_asset TEXT",
+  );
+
+  const symbolsMissingAssets = await pool.query<{
+    id: string;
+    code: string;
+  }>(
+    `SELECT id, code
+       FROM symbols
+      WHERE base_asset IS NULL
+         OR destination_asset IS NULL`,
+  );
+
+  for (const symbol of symbolsMissingAssets.rows) {
+    const derivedAssets = deriveAssetsFromSymbolCode(symbol.code);
+
+    if (!derivedAssets) {
+      throw new Error(
+        `Unable to derive base/destination assets for existing symbol code "${symbol.code}"`,
+      );
+    }
+
+    await pool.query(
+      `UPDATE symbols
+          SET base_asset = COALESCE(base_asset, $1),
+              destination_asset = COALESCE(destination_asset, $2)
+        WHERE id = $3`,
+      [derivedAssets.baseAsset, derivedAssets.destinationAsset, symbol.id],
+    );
+  }
+
+  await pool.query("ALTER TABLE symbols ALTER COLUMN base_asset SET NOT NULL");
+  await pool.query(
+    "ALTER TABLE symbols ALTER COLUMN destination_asset SET NOT NULL",
+  );
+
+  await pool.query(`
+    DO $$
+    BEGIN
+      IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'symbols' AND column_name = 'operable'
+      ) AND NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'symbols' AND column_name = 'active'
+      ) THEN
+        ALTER TABLE symbols RENAME COLUMN operable TO active;
+      END IF;
+    END $$;
+  `);
+
+  await pool.query(`
+    DO $$
+    BEGIN
+      IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'timeframes' AND column_name = 'operable'
+      ) AND NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'timeframes' AND column_name = 'active'
+      ) THEN
+        ALTER TABLE timeframes RENAME COLUMN operable TO active;
+      END IF;
+    END $$;
+  `);
+
+  await pool.query(`
+    DO $$
+    BEGIN
+      IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'analysis_settings' AND column_name = 'pair_code'
+      ) AND NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'analysis_settings' AND column_name = 'symbol_code'
+      ) THEN
+        ALTER TABLE analysis_settings RENAME COLUMN pair_code TO symbol_code;
+      END IF;
+    END $$;
+  `);
+
+  for (const definition of resourceDefinitions.slice(2)) {
     await pool.query(definition.createTableSql);
   }
 
@@ -964,7 +1109,7 @@ export const ensureControlPlaneSchema = async (pool: Pool): Promise<void> => {
         ALTER TABLE analysis_settings
           ADD CONSTRAINT analysis_settings_binding_unique
           UNIQUE (
-            pair_code,
+            symbol_code,
             timeframe_code,
             strategy_name,
             risk_profile_name,
@@ -991,7 +1136,7 @@ export const createConfigStores = (
   pool: Pool,
   eventPublisher: ConfigChangeEventPublisher,
 ) => ({
-  pairs: new PostgresCrudStore(pool, pairDefinition, eventPublisher),
+  symbols: new PostgresCrudStore(pool, symbolDefinition, eventPublisher),
   timeframes: new PostgresCrudStore(pool, timeframeDefinition, eventPublisher),
   strategies: new PostgresCrudStore(pool, strategyDefinition, eventPublisher),
   riskProfiles: new PostgresCrudStore(pool, riskProfileDefinition, eventPublisher),
@@ -1010,30 +1155,42 @@ export type ConfigStore<TInput, TRecord> = CrudStore<TInput, TRecord> & {
   getUniqueFieldValue(input: TInput): string;
 };
 
-export const pairBodySchema = {
+export const symbolBodySchema = {
   type: "object",
   additionalProperties: false,
   properties: {
     code: { type: "string", minLength: 1 },
-    operable: { type: "boolean" },
+    active: { type: "boolean" },
+    baseAsset: { type: "string", minLength: 1 },
+    destinationAsset: { type: "string", minLength: 1 },
     originAssetNeededFunds: { type: "number" },
     destinationAssetNeededFunds: { type: "number" },
   },
-  required: ["code", "operable"],
+  required: ["code", "active", "baseAsset", "destinationAsset"],
 } as const;
 
-export const pairRecordSchema = {
+export const symbolRecordSchema = {
   type: "object",
   properties: {
     id: { type: "string" },
     code: { type: "string" },
-    operable: { type: "boolean" },
+    active: { type: "boolean" },
+    baseAsset: { type: "string" },
+    destinationAsset: { type: "string" },
     originAssetNeededFunds: { type: "number", nullable: true },
     destinationAssetNeededFunds: { type: "number", nullable: true },
     createdAt: { type: "string", format: "date-time" },
     updatedAt: { type: "string", format: "date-time" },
   },
-  required: ["id", "code", "operable", "createdAt", "updatedAt"],
+  required: [
+    "id",
+    "code",
+    "active",
+    "baseAsset",
+    "destinationAsset",
+    "createdAt",
+    "updatedAt",
+  ],
 } as const;
 
 export const timeframeBodySchema = {
@@ -1044,14 +1201,14 @@ export const timeframeBodySchema = {
     longerTimeframeCode: { type: "string", minLength: 1 },
     longerTimeframeMultiplier: { type: "integer", minimum: 1 },
     periodMs: { type: "integer", minimum: 1 },
-    operable: { type: "boolean" },
+    active: { type: "boolean" },
   },
   required: [
     "code",
     "longerTimeframeCode",
     "longerTimeframeMultiplier",
     "periodMs",
-    "operable",
+    "active",
   ],
 } as const;
 
@@ -1063,7 +1220,7 @@ export const timeframeRecordSchema = {
     longerTimeframeCode: { type: "string" },
     longerTimeframeMultiplier: { type: "integer" },
     periodMs: { type: "integer" },
-    operable: { type: "boolean" },
+    active: { type: "boolean" },
     createdAt: { type: "string", format: "date-time" },
     updatedAt: { type: "string", format: "date-time" },
   },
@@ -1073,7 +1230,7 @@ export const timeframeRecordSchema = {
     "longerTimeframeCode",
     "longerTimeframeMultiplier",
     "periodMs",
-    "operable",
+    "active",
     "createdAt",
     "updatedAt",
   ],
@@ -1213,7 +1370,7 @@ export const analysisSettingsBodySchema = {
   type: "object",
   additionalProperties: false,
   properties: {
-    pairCode: { type: "string", minLength: 1 },
+    symbolCode: { type: "string", minLength: 1 },
     timeframeCode: { type: "string", minLength: 1 },
     strategyName: { type: "string", minLength: 1 },
     riskProfileName: { type: "string", minLength: 1 },
@@ -1225,7 +1382,7 @@ export const analysisSettingsBodySchema = {
     enabled: { type: "boolean" },
   },
   required: [
-    "pairCode",
+    "symbolCode",
     "timeframeCode",
     "strategyName",
     "riskProfileName",
@@ -1239,7 +1396,7 @@ export const analysisSettingsRecordSchema = {
   type: "object",
   properties: {
     id: { type: "string" },
-    pairCode: { type: "string" },
+    symbolCode: { type: "string" },
     timeframeCode: { type: "string" },
     strategyName: { type: "string" },
     riskProfileName: { type: "string" },
@@ -1254,7 +1411,7 @@ export const analysisSettingsRecordSchema = {
   },
   required: [
     "id",
-    "pairCode",
+    "symbolCode",
     "timeframeCode",
     "strategyName",
     "riskProfileName",
@@ -1270,7 +1427,7 @@ export const resolvedAnalysisSettingsRecordSchema = {
   type: "object",
   properties: {
     id: { type: "string" },
-    pairCode: { type: "string" },
+    symbolCode: { type: "string" },
     timeframeCode: { type: "string" },
     strategyName: { type: "string" },
     riskProfileName: { type: "string" },
@@ -1282,7 +1439,7 @@ export const resolvedAnalysisSettingsRecordSchema = {
     enabled: { type: "boolean" },
     createdAt: { type: "string", format: "date-time" },
     updatedAt: { type: "string", format: "date-time" },
-    pair: pairRecordSchema,
+    symbol: symbolRecordSchema,
     timeframe: timeframeRecordSchema,
     strategy: strategyRecordSchema,
     riskProfile: riskProfileRecordSchema,
@@ -1290,7 +1447,7 @@ export const resolvedAnalysisSettingsRecordSchema = {
   },
   required: [
     "id",
-    "pairCode",
+    "symbolCode",
     "timeframeCode",
     "strategyName",
     "riskProfileName",
@@ -1299,7 +1456,7 @@ export const resolvedAnalysisSettingsRecordSchema = {
     "enabled",
     "createdAt",
     "updatedAt",
-    "pair",
+    "symbol",
     "timeframe",
     "strategy",
     "riskProfile",
@@ -1313,7 +1470,7 @@ export const listResolvedAnalysisSettings = async (
   const result = await pool.query(`
     SELECT
       a.id AS analysis_id,
-      a.pair_code AS analysis_pair_code,
+      a.symbol_code AS analysis_symbol_code,
       a.timeframe_code AS analysis_timeframe_code,
       a.strategy_name AS analysis_strategy_name,
       a.risk_profile_name AS analysis_risk_profile_name,
@@ -1322,19 +1479,19 @@ export const listResolvedAnalysisSettings = async (
       a.enabled AS analysis_enabled,
       a.created_at AS analysis_created_at,
       a.updated_at AS analysis_updated_at,
-      p.id AS pair_id,
-      p.code AS pair_entity_code,
-      p.operable AS pair_operable,
-      p.origin_asset_needed_funds AS pair_origin_asset_needed_funds,
-      p.destination_asset_needed_funds AS pair_destination_asset_needed_funds,
-      p.created_at AS pair_created_at,
-      p.updated_at AS pair_updated_at,
+      s2.id AS symbol_id,
+      s2.code AS symbol_entity_code,
+      s2.active AS symbol_active,
+      s2.origin_asset_needed_funds AS symbol_origin_asset_needed_funds,
+      s2.destination_asset_needed_funds AS symbol_destination_asset_needed_funds,
+      s2.created_at AS symbol_created_at,
+      s2.updated_at AS symbol_updated_at,
       t.id AS timeframe_id,
       t.code AS timeframe_entity_code,
       t.longer_timeframe_code AS timeframe_longer_timeframe_code,
       t.longer_timeframe_multiplier AS timeframe_longer_timeframe_multiplier,
       t.period_ms AS timeframe_period_ms,
-      t.operable AS timeframe_operable,
+      t.active AS timeframe_active,
       t.created_at AS timeframe_created_at,
       t.updated_at AS timeframe_updated_at,
       s.id AS strategy_id,
@@ -1363,18 +1520,18 @@ export const listResolvedAnalysisSettings = async (
       td.created_at AS trading_defaults_created_at,
       td.updated_at AS trading_defaults_updated_at
     FROM analysis_settings a
-    INNER JOIN pairs p ON p.code = a.pair_code
+    INNER JOIN symbols s2 ON s2.code = a.symbol_code
     INNER JOIN timeframes t ON t.code = a.timeframe_code
     INNER JOIN strategies s ON s.name = a.strategy_name
     INNER JOIN risk_profiles r ON r.name = a.risk_profile_name
     INNER JOIN trading_defaults td ON td.name = a.trading_defaults_name
     WHERE a.enabled = TRUE
-      AND p.operable = TRUE
-      AND t.operable = TRUE
+      AND s2.active = TRUE
+      AND t.active = TRUE
       AND s.activated = TRUE
       AND r.enabled = TRUE
       AND td.enabled = TRUE
-    ORDER BY a.pair_code ASC, a.timeframe_code ASC, a.strategy_name ASC
+    ORDER BY a.symbol_code ASC, a.timeframe_code ASC, a.strategy_name ASC
   `);
 
   return result.rows.map((row) => mapResolvedAnalysisSettingsRow(row));

@@ -50,7 +50,7 @@ pub fn derive_active_subscriptions(
     let mut pair_groups = BTreeMap::<String, PairStreamSubscription>::new();
     let enabled_records = records.iter().filter(|record| record.enabled).collect::<Vec<_>>();
 
-    for pair in pairs.iter().filter(|pair| pair.operable) {
+    for pair in pairs.iter().filter(|pair| pair.active) {
         let symbol = to_binance_symbol(&pair.code)?;
         pair_groups.insert(
             pair.code.clone(),
@@ -63,7 +63,7 @@ pub fn derive_active_subscriptions(
             },
         );
 
-        for timeframe in timeframes.iter().filter(|timeframe| timeframe.operable) {
+        for timeframe in timeframes.iter().filter(|timeframe| timeframe.active) {
             let interval = timeframe.code.trim().to_string();
             if interval.is_empty() {
                 bail!("Timeframe code cannot be empty");
@@ -171,10 +171,12 @@ mod tests {
             enabled: true,
             created_at: "2026-03-12T18:00:00Z".to_string(),
             updated_at: "2026-03-12T18:00:00Z".to_string(),
-            pair: PairRecord {
+            symbol_entity: PairRecord {
                 id: "pair-1".to_string(),
                 code: "BTC/USDT".to_string(),
-                operable: true,
+                active: true,
+                base_asset: "BTC".to_string(),
+                destination_asset: "USDT".to_string(),
                 origin_asset_needed_funds: None,
                 destination_asset_needed_funds: None,
                 created_at: "2026-03-12T18:00:00Z".to_string(),
@@ -186,7 +188,7 @@ mod tests {
                 longer_timeframe_code: "5m".to_string(),
                 longer_timeframe_multiplier: 5,
                 period_ms: 60_000,
-                operable: true,
+                active: true,
                 created_at: "2026-03-12T18:00:00Z".to_string(),
                 updated_at: "2026-03-12T18:00:00Z".to_string(),
             },
@@ -227,7 +229,9 @@ mod tests {
         PairRecord {
             id: format!("pair-{code}"),
             code: code.to_string(),
-            operable: true,
+            active: true,
+            base_asset: "BTC".to_string(),
+            destination_asset: "USDT".to_string(),
             origin_asset_needed_funds: None,
             destination_asset_needed_funds: None,
             created_at: "2026-03-12T18:00:00Z".to_string(),
@@ -242,7 +246,7 @@ mod tests {
             longer_timeframe_code: "5m".to_string(),
             longer_timeframe_multiplier: 5,
             period_ms,
-            operable: true,
+            active: true,
             created_at: "2026-03-12T18:00:00Z".to_string(),
             updated_at: "2026-03-12T18:00:00Z".to_string(),
         }

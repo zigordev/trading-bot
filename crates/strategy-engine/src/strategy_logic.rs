@@ -65,8 +65,8 @@ pub fn build_analysis_spec(
     record: &ResolvedAnalysisSettingsRecord,
 ) -> Result<Option<AnalysisSpec>> {
     if !record.enabled
-        || !record.pair.operable
-        || !record.timeframe.operable
+        || !record.symbol_entity.active
+        || !record.timeframe.active
         || !record.strategy.activated
     {
         return Ok(None);
@@ -314,10 +314,12 @@ mod tests {
             enabled: true,
             created_at: "2026-01-01T00:00:00Z".to_string(),
             updated_at: "2026-01-01T00:00:00Z".to_string(),
-            pair: PairRecord {
+            symbol_entity: PairRecord {
                 id: "pair-1".to_string(),
                 code: "BTCUSDT".to_string(),
-                operable: true,
+                active: true,
+                base_asset: "BTC".to_string(),
+                destination_asset: "USDT".to_string(),
                 origin_asset_needed_funds: None,
                 destination_asset_needed_funds: None,
                 created_at: "2026-01-01T00:00:00Z".to_string(),
@@ -329,7 +331,7 @@ mod tests {
                 longer_timeframe_code: "5m".to_string(),
                 longer_timeframe_multiplier: 5,
                 period_ms: 60_000,
-                operable: true,
+                active: true,
                 created_at: "2026-01-01T00:00:00Z".to_string(),
                 updated_at: "2026-01-01T00:00:00Z".to_string(),
             },

@@ -5,6 +5,10 @@ use std::time::Instant;
 
 use anyhow::{Context, Result, bail};
 use chrono::{DateTime, Datelike, TimeZone, Utc};
+use rdkafka::{
+    ClientConfig,
+    producer::{FutureProducer, FutureRecord},
+};
 use serde::Serialize;
 use std::time::Duration as StdDuration;
 use trading_bot_market_data::db::{Database, StoredBacktestRunSummary, StoredBacktestRunWrite};
@@ -21,6 +25,7 @@ use trading_bot_strategy_engine::{
 use crate::{
     config::AppConfig,
     execution_simulation::{SimulationConfig, simulate_trade_replay_paged},
+    kafka_topics::ensure_topics,
     metrics::Metrics,
     models::{
         BacktestDatasetSummary, BacktestExecutionAssumptions, BacktestRequest, BacktestResponse,
@@ -43,6 +48,7 @@ struct Inner {
     config: AppConfig,
     metrics: Metrics,
     control_plane_client: reqwest::Client,
+    kafka_producer: FutureProducer,
     historical_store: Database,
     status: tokio::sync::RwLock<RuntimeStatus>,
 }
@@ -83,6 +89,37 @@ pub struct ReadinessChecks {
 #[derive(Clone, Debug)]
 struct CompletedBacktest {
     response: BacktestResponse,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BacktestCompletedEventData {
+    backtest_id: String,
+    finished_at: String,
+    backtest_duration_ms: i64,
+    data_retrieval_duration_ms: i64,
+    analysis_setting_id: String,
+    risk_profile_name: String,
+    symbol: String,
+    timeframe_code: String,
+    strategy_name: String,
+    requested_start_time: i64,
+    requested_end_time: i64,
+    replay_kline_count: usize,
+    replay_trade_count: usize,
+    signal_count: usize,
+    trade_count: usize,
+    total_pnl_percent: f64,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BacktestCompletedEventEnvelope {
+    event_id: String,
+    event_type: &'static str,
+    source: String,
+    occurred_at: String,
+    data: BacktestCompletedEventData,
 }
 
 #[derive(Clone)]
@@ -129,11 +166,20 @@ fn expand_analyses_by_risk_profiles(
 
 impl ResearchBacktestingService {
     pub async fn new(config: AppConfig) -> Result<Self> {
+        ensure_topics(
+            &config.kafka_bootstrap_servers,
+            &[&config.backtest_completed_events_topic],
+        )
+        .await?;
         let control_plane_client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_millis(
                 config.control_plane_request_timeout_ms,
             ))
             .build()?;
+        let kafka_producer = ClientConfig::new()
+            .set("bootstrap.servers", &config.kafka_bootstrap_servers)
+            .set("message.timeout.ms", "5000")
+            .create::<FutureProducer>()?;
         let historical_store = Database::from_connection(
             format!(
                 "http://{}:{}",
@@ -150,6 +196,7 @@ impl ResearchBacktestingService {
                 config: config.clone(),
                 metrics,
                 control_plane_client,
+                kafka_producer,
                 historical_store,
                 status: tokio::sync::RwLock::new(RuntimeStatus {
                     started: false,
@@ -285,6 +332,13 @@ impl ResearchBacktestingService {
             .historical_store
             .insert_backtest_run(&persisted_run)
             .await?;
+        if let Err(error) = self.publish_backtest_completed_event(&completed.response).await {
+            warn!(
+                error = %error,
+                backtest_id = completed.response.backtest_id,
+                "failed to publish backtest-completed event"
+            );
+        }
 
         self.inner
             .metrics
@@ -337,6 +391,47 @@ impl ResearchBacktestingService {
         Ok(Some(serde_json::from_str::<BacktestResponse>(
             &run.response_json,
         )?))
+    }
+
+    async fn publish_backtest_completed_event(&self, response: &BacktestResponse) -> Result<()> {
+        let envelope = BacktestCompletedEventEnvelope {
+            event_id: Uuid::new_v4().to_string(),
+            event_type: "trading-bot.research-backtesting.backtest-completed.v1",
+            source: self.inner.config.service_name.clone(),
+            occurred_at: response.finished_at.clone(),
+            data: BacktestCompletedEventData {
+                backtest_id: response.backtest_id.clone(),
+                finished_at: response.finished_at.clone(),
+                backtest_duration_ms: response.backtest_duration_ms,
+                data_retrieval_duration_ms: response.data_retrieval_duration_ms,
+                analysis_setting_id: response.analysis_setting_id.clone(),
+                risk_profile_name: response.analysis.risk_profile_name.clone(),
+                symbol: response.analysis.symbol_entity.code.clone(),
+                timeframe_code: response.analysis.timeframe_code.clone(),
+                strategy_name: response.analysis.strategy_name.clone(),
+                requested_start_time: response.time_window.requested_start_time,
+                requested_end_time: response.time_window.requested_end_time,
+                replay_kline_count: response.dataset.replay_kline_count,
+                replay_trade_count: response.dataset.replay_trade_count,
+                signal_count: response.summary.signal_count,
+                trade_count: response.summary.trade_count,
+                total_pnl_percent: response.summary.total_pnl_percent,
+            },
+        };
+        let payload = serde_json::to_string(&envelope)?;
+
+        self.inner
+            .kafka_producer
+            .send(
+                FutureRecord::to(&self.inner.config.backtest_completed_events_topic)
+                    .key(&response.backtest_id)
+                    .payload(&payload),
+                StdDuration::from_secs(5),
+            )
+            .await
+            .map_err(|(error, _)| anyhow::anyhow!(error))?;
+
+        Ok(())
     }
 
     async fn run_enabled_analysis_backtests(
@@ -1685,10 +1780,12 @@ mod tests {
             enabled: true,
             created_at: "2026-01-01T00:00:00Z".to_string(),
             updated_at: "2026-01-01T00:00:00Z".to_string(),
-            pair: PairRecord {
+            symbol_entity: PairRecord {
                 id: "pair-1".to_string(),
                 code: "BTCUSDT".to_string(),
-                operable: true,
+                active: true,
+                base_asset: "BTC".to_string(),
+                destination_asset: "USDT".to_string(),
                 origin_asset_needed_funds: Some(1000.0),
                 destination_asset_needed_funds: Some(1000.0),
                 created_at: "2026-01-01T00:00:00Z".to_string(),
@@ -1700,7 +1797,7 @@ mod tests {
                 longer_timeframe_code: "5m".to_string(),
                 longer_timeframe_multiplier: 5,
                 period_ms: 60_000,
-                operable: true,
+                active: true,
                 created_at: "2026-01-01T00:00:00Z".to_string(),
                 updated_at: "2026-01-01T00:00:00Z".to_string(),
             },

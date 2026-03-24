@@ -2,11 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import Fastify from "fastify";
-import { Gauge, Registry } from "prom-client";
+import { Gauge } from "prom-client";
 
 import type { ResolvedAnalysisSettingsRecord } from "../src/features/config-resources.js";
 import { registerHealthRoutes } from "../src/routes/health.js";
-import { registerInfoRoutes } from "../src/routes/info.js";
+import { registerOpsRoutes } from "../src/routes/ops.js";
 import { registerRuntimeConfigRoutes } from "../src/routes/runtime-config.js";
 import { testConfig } from "./helpers.ts";
 
@@ -77,23 +77,47 @@ test("GET /health/readiness returns degraded when the database is down", async (
   });
 });
 
-test("GET /v1/info reports config-change publication as implemented", async (t) => {
+test("GET /v1/ops/overview aggregates service availability", async (t) => {
   const app = Fastify({ logger: false });
   t.after(() => app.close());
 
-  registerInfoRoutes(app, new Registry(), testConfig);
+  let requestCount = 0;
+  registerOpsRoutes(app, testConfig, {} as never, {
+    fetchJson: async (url) => {
+      requestCount += 1;
+      if (url.includes("market-data")) {
+        return { status: "ok" };
+      }
+      if (url.includes("strategy-engine")) {
+        return { status: "degraded" };
+      }
+
+      throw new Error("connection refused");
+    },
+    listResolvedAnalysisSettingsFn: async () => [],
+    listBacktestJobsFn: async () => [],
+  });
 
   const response = await app.inject({
     method: "GET",
-    url: "/v1/info",
+    url: "/v1/ops/overview",
   });
 
   assert.equal(response.statusCode, 200);
   const payload = response.json();
-  assert.ok(payload.runtime.implemented.includes("config-change event publication"));
-  assert.ok(
-    !payload.runtime.pending.includes("event publication"),
-    "event publication should no longer be listed as pending",
+  assert.equal(requestCount, 3);
+  assert.equal(payload.services.length, 4);
+  assert.deepEqual(
+    payload.services.map((service: { name: string; status: string }) => ({
+      name: service.name,
+      status: service.status,
+    })),
+    [
+      { name: "control-plane", status: "up" },
+      { name: "market-data", status: "up" },
+      { name: "strategy-engine", status: "down" },
+      { name: "research-backtesting", status: "down" },
+    ],
   );
 });
 
@@ -104,7 +128,7 @@ test("GET /v1/runtime-config/analysis-settings returns the injected projection",
   const projection: ResolvedAnalysisSettingsRecord[] = [
     {
       id: "analysis-1",
-      pairCode: "BTCUSDT",
+      symbolCode: "BTCUSDT",
       timeframeCode: "1m",
       strategyName: "ema",
       riskProfileName: "default-risk",
@@ -113,10 +137,12 @@ test("GET /v1/runtime-config/analysis-settings returns the injected projection",
       enabled: true,
       createdAt: "2026-03-12T16:00:00.000Z",
       updatedAt: "2026-03-12T16:00:00.000Z",
-      pair: {
-        id: "pair-1",
+      symbol: {
+        id: "symbol-1",
         code: "BTCUSDT",
-        operable: true,
+        active: true,
+        baseAsset: "BTC",
+        destinationAsset: "USDT",
         createdAt: "2026-03-12T16:00:00.000Z",
         updatedAt: "2026-03-12T16:00:00.000Z",
       },
@@ -126,7 +152,7 @@ test("GET /v1/runtime-config/analysis-settings returns the injected projection",
         longerTimeframeCode: "5m",
         longerTimeframeMultiplier: 5,
         periodMs: 60_000,
-        operable: true,
+        active: true,
         createdAt: "2026-03-12T16:00:00.000Z",
         updatedAt: "2026-03-12T16:00:00.000Z",
       },
