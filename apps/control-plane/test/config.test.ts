@@ -33,6 +33,22 @@ test("loadConfig returns defaults for optional config", async () => {
         config.configChangeEventsTopic,
         "trading-bot.control-plane.config-changes.v1",
       );
+      assert.equal(
+        config.backtestCompletedEventsTopic,
+        "trading-bot.research-backtesting.backtest-completed.v1",
+      );
+      assert.equal(
+        config.backtestCompletedEventsConsumerGroupId,
+        "trading-bot-control-plane-backtest-projection-v1",
+      );
+      assert.equal(
+        config.dataReadinessEventsTopic,
+        "trading-bot.market-data.data-readiness-snapshot.v1",
+      );
+      assert.equal(
+        config.dataReadinessEventsConsumerGroupId,
+        "trading-bot-control-plane-data-readiness-projection-v1",
+      );
     },
   );
 });

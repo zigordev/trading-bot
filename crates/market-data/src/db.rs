@@ -857,17 +857,11 @@ impl Database {
             r#"
             SELECT
               COUNT(*) AS row_count,
-              MIN(latest_trade_time) AS min_time,
-              MAX(latest_trade_time) AS max_time
-            FROM
-            (
-              SELECT
-                max(trade_time) AS latest_trade_time
-              FROM {}.market_data_trades
-              WHERE pair_code = '{}'
-                {}
-              GROUP BY aggregate_trade_id
-            )
+              MIN(trade_time) AS min_time,
+              MAX(trade_time) AS max_time
+            FROM {}.market_data_trades
+            WHERE pair_code = '{}'
+              {}
             FORMAT JSONEachRow
             "#,
             sql_ident(&self.database),
@@ -897,23 +891,22 @@ impl Database {
             FROM
             (
               SELECT
-                latest_trade_time AS trade_time,
+                trade_time,
                 nullIf(
-                  lagInFrame(latest_trade_time) OVER (
-                    ORDER BY latest_trade_time ASC
+                  lagInFrame(trade_time) OVER (
+                    ORDER BY trade_time ASC
                     ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
                   ),
                   0
                 ) AS prev_trade_time
               FROM
               (
-                SELECT
-                  max(trade_time) AS latest_trade_time
+                SELECT DISTINCT
+                  trade_time
                 FROM {}.market_data_trades
                 WHERE pair_code = '{}'
                   AND trade_time >= {}
                   AND trade_time < {}
-                GROUP BY aggregate_trade_id
               )
             )
             WHERE prev_trade_time IS NOT NULL
@@ -1053,12 +1046,9 @@ impl Database {
             r#"
             SELECT
               max(trade_time) AS latest_trade_time,
-              aggregate_trade_id
+              argMax(aggregate_trade_id, trade_time) AS aggregate_trade_id
             FROM {}.market_data_trades
             WHERE pair_code = '{}'
-            GROUP BY aggregate_trade_id
-            ORDER BY latest_trade_time DESC, aggregate_trade_id DESC
-            LIMIT 1
             FORMAT JSONEachRow
             "#,
             sql_ident(&self.database),
@@ -1126,23 +1116,15 @@ impl Database {
         start_time: i64,
         end_time: i64,
     ) -> Result<WindowCoverage> {
-        let time_range =
-            sql_numeric_time_range("latest_occurred_at_ms", Some(start_time), Some(end_time));
+        let time_range = sql_numeric_time_range("occurred_at_ms", Some(start_time), Some(end_time));
         let sql = format!(
             r#"
             SELECT
               COUNT(*) AS row_count,
-              MIN(latest_occurred_at_ms) AS min_time,
-              MAX(latest_occurred_at_ms) AS max_time
-            FROM
-            (
-              SELECT
-                argMax(occurred_at_ms, updated_at_ms) AS latest_occurred_at_ms
-              FROM {}.market_data_book_tickers
-              WHERE pair_code = '{}'
-              GROUP BY pair_code, order_book_update_id
-            )
-            WHERE 1 = 1
+              MIN(occurred_at_ms) AS min_time,
+              MAX(occurred_at_ms) AS max_time
+            FROM {}.market_data_book_tickers
+            WHERE pair_code = '{}'
               {}
             FORMAT JSONEachRow
             "#,
@@ -1183,13 +1165,12 @@ impl Database {
                 ) AS prev_occurred_at_ms
               FROM
               (
-                SELECT
-                  argMax(occurred_at_ms, updated_at_ms) AS occurred_at_ms
+                SELECT DISTINCT
+                  occurred_at_ms
                 FROM {}.market_data_book_tickers
                 WHERE pair_code = '{}'
-                GROUP BY pair_code, order_book_update_id
-                HAVING occurred_at_ms >= {}
-                   AND occurred_at_ms < {}
+                  AND occurred_at_ms >= {}
+                  AND occurred_at_ms < {}
               )
             )
             WHERE prev_occurred_at_ms IS NOT NULL

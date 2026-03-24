@@ -24,6 +24,7 @@ tokio-tungstenite = { version = "0.28.0", features = ["rustls-tls-webpki-roots"]
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.20", features = ["env-filter", "fmt", "json"] }
 url = "2.5.7"
+uuid = { version = "1.18.1", features = ["v4"] }
 
 [dev-dependencies]
 assert-json-diff = "2.0.2"

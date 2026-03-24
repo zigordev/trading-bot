@@ -17,6 +17,8 @@ pub struct AppConfig {
     pub control_plane_request_timeout_ms: u64,
     pub kafka_bootstrap_servers: String,
     pub config_change_events_topic: String,
+    pub data_readiness_events_topic: String,
+    pub data_readiness_publish_interval_ms: u64,
     pub market_data_klines_topic: String,
     pub market_data_trades_topic: String,
     pub runtime_config_refresh_interval_ms: u64,
@@ -248,6 +250,14 @@ pub fn load_config() -> Result<AppConfig> {
             "CONFIG_CHANGE_EVENTS_TOPIC",
             "trading-bot.control-plane.config-changes.v1",
         ),
+        data_readiness_events_topic: env_or_default(
+            "DATA_READINESS_EVENTS_TOPIC",
+            "trading-bot.market-data.data-readiness-snapshot.v1",
+        ),
+        data_readiness_publish_interval_ms: parse_u64(
+            "DATA_READINESS_PUBLISH_INTERVAL_MS",
+            60_000,
+        )?,
         market_data_klines_topic,
         market_data_trades_topic: env_or_default(
             "MARKET_DATA_TRADES_TOPIC",
@@ -403,6 +413,8 @@ mod tests {
             std::env::remove_var("HISTORICAL_TRADE_BACKFILL_USE_ROW_BINARY_INSERT");
             std::env::remove_var("MARKET_DATA_KLINES_TOPIC");
             std::env::remove_var("MARKET_DATA_EVENTS_TOPIC");
+            std::env::remove_var("DATA_READINESS_EVENTS_TOPIC");
+            std::env::remove_var("DATA_READINESS_PUBLISH_INTERVAL_MS");
             std::env::remove_var("BINANCE_REST_MAX_RETRIES");
             std::env::remove_var("BINANCE_REST_RETRY_BACKOFF_MS");
             std::env::remove_var("HISTORICAL_TRADE_BACKFILL_LIMIT");
@@ -429,6 +441,11 @@ mod tests {
             config.market_data_klines_topic,
             "trading-bot.market-data.klines.v1"
         );
+        assert_eq!(
+            config.data_readiness_events_topic,
+            "trading-bot.market-data.data-readiness-snapshot.v1"
+        );
+        assert_eq!(config.data_readiness_publish_interval_ms, 60_000);
         assert_eq!(config.binance_rest_max_retries, 5);
         assert_eq!(config.binance_rest_retry_backoff_ms, 500);
         assert_eq!(config.binance_rest_request_weight_limit_per_minute, 6000);

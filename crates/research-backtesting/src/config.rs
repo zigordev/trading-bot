@@ -6,6 +6,8 @@ pub struct AppConfig {
     pub app_env: String,
     pub service_name: String,
     pub port: u16,
+    pub kafka_bootstrap_servers: String,
+    pub backtest_completed_events_topic: String,
     pub control_plane_base_url: String,
     pub control_plane_request_timeout_ms: u64,
     pub historical_store_host: String,
@@ -154,6 +156,14 @@ pub fn load_config() -> Result<AppConfig> {
         app_env: env_or_default("APP_ENV", "local"),
         service_name: env_or_default("SERVICE_NAME", "trading-bot-research-backtesting"),
         port: parse_u16("PORT", 8110)?,
+        kafka_bootstrap_servers: env_or_default(
+            "KAFKA_BOOTSTRAP_SERVERS",
+            "platform-redpanda:9092",
+        ),
+        backtest_completed_events_topic: env_or_default(
+            "BACKTEST_COMPLETED_EVENTS_TOPIC",
+            "trading-bot.research-backtesting.backtest-completed.v1",
+        ),
         control_plane_base_url: env_or_default(
             "CONTROL_PLANE_BASE_URL",
             "http://trading-bot-api:8080",
@@ -203,6 +213,7 @@ mod tests {
 
         let config = load_config().expect("config should load");
         assert_eq!(config.service_name, "trading-bot-research-backtesting");
+        assert_eq!(config.kafka_bootstrap_servers, "platform-redpanda:9092");
         assert_eq!(config.auto_backtest_enabled, false);
         assert_eq!(config.auto_backtest_interval_seconds, 3600);
         assert_eq!(config.default_warmup_multiplier, 5);

@@ -9,6 +9,47 @@ export type AppConfig = {
   dbPassword: string;
   kafkaBootstrapServers: string;
   configChangeEventsTopic: string;
+  backtestCompletedEventsTopic: string;
+  backtestCompletedEventsConsumerGroupId: string;
+  dataReadinessEventsTopic: string;
+  dataReadinessEventsConsumerGroupId: string;
+  marketDataBaseUrl: string;
+  strategyEngineBaseUrl: string;
+  researchBacktestingBaseUrl: string;
+  upstreamRequestTimeoutMs: number;
+  opsStreamIntervalMs: number;
+  backtestWarmupMultiplier: number;
+  backtestTimerangeMsByTimeframe: Record<string, number>;
+};
+
+const parsePositiveInteger = (value: string | undefined, fallback: number): number => {
+  const parsed = Number(value ?? "");
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+};
+
+const parseTimerangeMap = (value: string | undefined): Record<string, number> => {
+  const source = value?.trim();
+  if (!source) {
+    return {
+      "1m": 600_000_000,
+      "3m": 1_800_000_000,
+      "5m": 3_000_000_000,
+    };
+  }
+
+  return source.split(",").reduce<Record<string, number>>((accumulator, entry) => {
+    const [timeframeCode, durationMs] = entry.split("=");
+    if (!timeframeCode || !durationMs) {
+      return accumulator;
+    }
+
+    const parsed = Number(durationMs.trim());
+    if (Number.isFinite(parsed) && parsed > 0) {
+      accumulator[timeframeCode.trim()] = parsed;
+    }
+
+    return accumulator;
+  }, {});
 };
 
 export const loadConfig = (): AppConfig => {
@@ -32,5 +73,39 @@ export const loadConfig = (): AppConfig => {
     configChangeEventsTopic:
       process.env.CONFIG_CHANGE_EVENTS_TOPIC ??
       "trading-bot.control-plane.config-changes.v1",
+    backtestCompletedEventsTopic:
+      process.env.BACKTEST_COMPLETED_EVENTS_TOPIC ??
+      "trading-bot.research-backtesting.backtest-completed.v1",
+    backtestCompletedEventsConsumerGroupId:
+      process.env.BACKTEST_COMPLETED_EVENTS_CONSUMER_GROUP_ID ??
+      "trading-bot-control-plane-backtest-projection-v1",
+    dataReadinessEventsTopic:
+      process.env.DATA_READINESS_EVENTS_TOPIC ??
+      "trading-bot.market-data.data-readiness-snapshot.v1",
+    dataReadinessEventsConsumerGroupId:
+      process.env.DATA_READINESS_EVENTS_CONSUMER_GROUP_ID ??
+      "trading-bot-control-plane-data-readiness-projection-v1",
+    marketDataBaseUrl:
+      process.env.MARKET_DATA_BASE_URL ?? "http://trading-bot-market-data:8090",
+    strategyEngineBaseUrl:
+      process.env.STRATEGY_ENGINE_BASE_URL ?? "http://trading-bot-strategy-engine:8100",
+    researchBacktestingBaseUrl:
+      process.env.RESEARCH_BACKTESTING_BASE_URL ??
+      "http://trading-bot-research-backtesting:8110",
+    upstreamRequestTimeoutMs: parsePositiveInteger(
+      process.env.UPSTREAM_REQUEST_TIMEOUT_MS,
+      5000,
+    ),
+    opsStreamIntervalMs: parsePositiveInteger(
+      process.env.OPS_STREAM_INTERVAL_MS,
+      5000,
+    ),
+    backtestWarmupMultiplier: parsePositiveInteger(
+      process.env.BACKTEST_WARMUP_MULTIPLIER,
+      5,
+    ),
+    backtestTimerangeMsByTimeframe: parseTimerangeMap(
+      process.env.BACKTEST_TIMERANGE_MS_BY_TIMEFRAME,
+    ),
   };
 };
