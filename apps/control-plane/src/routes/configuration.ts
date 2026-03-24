@@ -5,8 +5,8 @@ import {
   analysisSettingsRecordSchema,
   type ConfigStore,
   type ConfigStores,
-  pairBodySchema,
-  pairRecordSchema,
+  symbolBodySchema,
+  symbolRecordSchema,
   riskProfileBodySchema,
   riskProfileRecordSchema,
   strategyBodySchema,
@@ -222,12 +222,12 @@ export const registerConfigurationRoutes = (
   stores: ConfigStores,
 ): void => {
   registerCrudRoutes(app, {
-    path: "/v1/pairs",
-    tag: "pairs",
-    entityName: "pair",
-    bodySchema: pairBodySchema,
-    recordSchema: pairRecordSchema,
-    store: stores.pairs,
+    path: "/v1/symbols",
+    tag: "symbols",
+    entityName: "symbol",
+    bodySchema: symbolBodySchema,
+    recordSchema: symbolRecordSchema,
+    store: stores.symbols,
   });
 
   registerCrudRoutes(app, {

@@ -19,12 +19,23 @@ SET client_min_messages = warning;
 SET row_security = off;
 
 --
--- Data for Name: pairs; Type: TABLE DATA; Schema: public; Owner: -
+-- Data for Name: symbols; Type: TABLE DATA; Schema: public; Owner: -
 --
 
-INSERT INTO public.pairs VALUES ('6f686479-a001-4d72-89f3-f8a6a98f894f', 'BTCUSDT', true, 0.001, 10, '2026-03-16 10:42:15.044+00', '2026-03-16 10:42:15.044+00');
-INSERT INTO public.pairs VALUES ('0d7c2f49-63a0-4f37-9a9d-4cb2c8b4d901', 'ETHUSDT', true, 0.001, 10, '2026-03-20 16:32:00+00', '2026-03-20 16:32:00+00');
-INSERT INTO public.pairs VALUES ('b6d58aab-3c38-4f8b-9c43-09d2a0c2e902', 'BNBUSDT', true, 0.001, 10, '2026-03-20 16:32:00+00', '2026-03-20 16:32:00+00');
+INSERT INTO public.symbols (
+  id,
+  code,
+  active,
+  base_asset,
+  destination_asset,
+  origin_asset_needed_funds,
+  destination_asset_needed_funds,
+  created_at,
+  updated_at
+) VALUES
+  ('6f686479-a001-4d72-89f3-f8a6a98f894f', 'BTCUSDT', true, 'BTC', 'USDT', 0.001, 10, '2026-03-16 10:42:15.044+00', '2026-03-16 10:42:15.044+00'),
+  ('0d7c2f49-63a0-4f37-9a9d-4cb2c8b4d901', 'ETHUSDT', true, 'ETH', 'USDT', 0.001, 10, '2026-03-20 16:32:00+00', '2026-03-20 16:32:00+00'),
+  ('b6d58aab-3c38-4f8b-9c43-09d2a0c2e902', 'BNBUSDT', true, 'BNB', 'USDT', 0.001, 10, '2026-03-20 16:32:00+00', '2026-03-20 16:32:00+00');
 
 
 --

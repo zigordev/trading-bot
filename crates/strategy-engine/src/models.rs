@@ -6,7 +6,10 @@ use serde_json::Value;
 pub struct PairRecord {
     pub id: String,
     pub code: String,
-    pub operable: bool,
+    #[serde(alias = "operable")]
+    pub active: bool,
+    pub base_asset: String,
+    pub destination_asset: String,
     pub origin_asset_needed_funds: Option<f64>,
     pub destination_asset_needed_funds: Option<f64>,
     pub created_at: String,
@@ -21,7 +24,8 @@ pub struct TimeframeRecord {
     pub longer_timeframe_code: String,
     pub longer_timeframe_multiplier: i64,
     pub period_ms: i64,
-    pub operable: bool,
+    #[serde(alias = "operable")]
+    pub active: bool,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -69,7 +73,7 @@ pub struct TradingDefaultsRecord {
 #[serde(rename_all = "camelCase")]
 pub struct ResolvedAnalysisSettingsRecord {
     pub id: String,
-    #[serde(rename = "pairCode")]
+    #[serde(rename = "symbolCode", alias = "pairCode")]
     pub symbol: String,
     pub timeframe_code: String,
     pub strategy_name: String,
@@ -79,7 +83,8 @@ pub struct ResolvedAnalysisSettingsRecord {
     pub enabled: bool,
     pub created_at: String,
     pub updated_at: String,
-    pub pair: PairRecord,
+    #[serde(rename = "symbol", alias = "pair")]
+    pub symbol_entity: PairRecord,
     pub timeframe: TimeframeRecord,
     pub strategy: StrategyRecord,
     pub risk_profile: RiskProfileRecord,

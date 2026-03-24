@@ -217,20 +217,24 @@ BASE_URL=http://localhost:3020
 Create extra pairs:
 
 ```bash
-curl -fsS -X POST "$BASE_URL/v1/pairs" \
+curl -fsS -X POST "$BASE_URL/v1/symbols" \
   -H 'content-type: application/json' \
   -d '{
     "code": "ETHUSDT",
-    "operable": true,
+    "active": true,
+    "baseAsset": "ETH",
+    "destinationAsset": "USDT",
     "originAssetNeededFunds": 1000,
     "destinationAssetNeededFunds": 1000
   }' | jq
 
-curl -fsS -X POST "$BASE_URL/v1/pairs" \
+curl -fsS -X POST "$BASE_URL/v1/symbols" \
   -H 'content-type: application/json' \
   -d '{
     "code": "SOLUSDT",
-    "operable": true,
+    "active": true,
+    "baseAsset": "SOL",
+    "destinationAsset": "USDT",
     "originAssetNeededFunds": 1000,
     "destinationAssetNeededFunds": 1000
   }' | jq
@@ -246,7 +250,7 @@ curl -fsS -X POST "$BASE_URL/v1/timeframes" \
     "longerTimeframeCode": "15m",
     "longerTimeframeMultiplier": 5,
     "periodMs": 180000,
-    "operable": true
+    "active": true
   }' | jq
 
 curl -fsS -X POST "$BASE_URL/v1/timeframes" \
@@ -256,7 +260,7 @@ curl -fsS -X POST "$BASE_URL/v1/timeframes" \
     "longerTimeframeCode": "15m",
     "longerTimeframeMultiplier": 3,
     "periodMs": 300000,
-    "operable": true
+    "active": true
   }' | jq
 ```
 

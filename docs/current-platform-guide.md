@@ -521,14 +521,16 @@ Set the base URL:
 BASE_URL=http://localhost:3020
 ```
 
-Create a pair:
+Create a symbol:
 
 ```bash
-curl -fsS -X POST "$BASE_URL/v1/pairs" \
+curl -fsS -X POST "$BASE_URL/v1/symbols" \
   -H 'content-type: application/json' \
   -d '{
     "code": "BTCUSDT",
-    "operable": true,
+    "active": true,
+    "baseAsset": "BTC",
+    "destinationAsset": "USDT",
     "originAssetNeededFunds": 1000,
     "destinationAssetNeededFunds": 1000
   }' | jq
@@ -544,7 +546,7 @@ curl -fsS -X POST "$BASE_URL/v1/timeframes" \
     "longerTimeframeCode": "5m",
     "longerTimeframeMultiplier": 5,
     "periodMs": 60000,
-    "operable": true
+    "active": true
   }' | jq
 ```
 
