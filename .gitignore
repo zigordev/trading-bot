@@ -19,6 +19,9 @@ dist/
 build/
 coverage/
 target/
+.expo/
+.expo-shared/
+web-build/
 
 # Editors
 .idea/

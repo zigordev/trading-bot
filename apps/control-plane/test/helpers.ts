@@ -19,6 +19,23 @@ export const testConfig: AppConfig = {
   dbPassword: "secret",
   kafkaBootstrapServers: "platform-redpanda:9092",
   configChangeEventsTopic: "trading-bot.control-plane.config-changes.v1",
+  backtestCompletedEventsTopic: "trading-bot.research-backtesting.backtest-completed.v1",
+  backtestCompletedEventsConsumerGroupId:
+    "trading-bot-control-plane-backtest-projection-test-v1",
+  dataReadinessEventsTopic: "trading-bot.market-data.data-readiness-snapshot.v1",
+  dataReadinessEventsConsumerGroupId:
+    "trading-bot-control-plane-data-readiness-projection-test-v1",
+  marketDataBaseUrl: "http://market-data:8090",
+  strategyEngineBaseUrl: "http://strategy-engine:8100",
+  researchBacktestingBaseUrl: "http://research-backtesting:8110",
+  upstreamRequestTimeoutMs: 5_000,
+  opsStreamIntervalMs: 5_000,
+  backtestWarmupMultiplier: 5,
+  backtestTimerangeMsByTimeframe: {
+    "1m": 600_000_000,
+    "3m": 1_800_000_000,
+    "5m": 3_000_000_000,
+  },
 };
 
 export const withEnv = async <T>(

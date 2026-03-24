@@ -38,6 +38,14 @@ struct ReplayQuery {
     limit: Option<i64>,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DataReadinessQuery {
+    start_time: i64,
+    end_time: i64,
+    period_ms: i64,
+}
+
 fn init_tracing() {
     let filter =
         EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info,rdkafka=warn"));
@@ -65,6 +73,10 @@ async fn main() -> Result<()> {
         .route("/v1/info", get(info))
         .route("/v1/status", get(status))
         .route("/v1/subscriptions", get(subscriptions))
+        .route(
+            "/v1/readiness/backtest/{pair_code}/{timeframe_code}",
+            get(backtest_data_readiness),
+        )
         .route(
             "/v1/klines/{pair_code}/{timeframe_code}",
             get(recent_klines),
@@ -199,6 +211,31 @@ async fn status(State(state): State<AppState>) -> Json<serde_json::Value> {
 async fn subscriptions(State(state): State<AppState>) -> Json<serde_json::Value> {
     let status = state.service.status().await;
     Json(serde_json::to_value(status.subscriptions).unwrap_or_else(|_| json!({})))
+}
+
+async fn backtest_data_readiness(
+    State(state): State<AppState>,
+    Path((pair_code, timeframe_code)): Path<(String, String)>,
+    Query(query): Query<DataReadinessQuery>,
+) -> Response {
+    match state
+        .service
+        .backtest_data_readiness(
+            &pair_code,
+            &timeframe_code,
+            query.start_time,
+            query.end_time,
+            query.period_ms,
+        )
+        .await
+    {
+        Ok(payload) => Json(payload).into_response(),
+        Err(error) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "message": error.to_string() })),
+        )
+            .into_response(),
+    }
 }
 
 async fn recent_klines(

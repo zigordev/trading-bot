@@ -1,5 +1,7 @@
+import fastifyCors from "@fastify/cors";
 import fastifySwagger from "@fastify/swagger";
 import fastifySwaggerUi from "@fastify/swagger-ui";
+import fastifyWebsocket from "@fastify/websocket";
 import Fastify from "fastify";
 import { collectDefaultMetrics, Gauge, Registry } from "prom-client";
 
@@ -8,14 +10,21 @@ import {
   createConfigStores,
   ensureControlPlaneSchema,
 } from "./features/config-resources.js";
+import { ensureOpsSchema } from "./features/ops.js";
 import { HttpError } from "./http-error.js";
 import {
   createConfigChangeEventPublisher,
 } from "./infrastructure/config-change-events.js";
+import {
+  createBacktestRunProjectionConsumer,
+} from "./infrastructure/backtest-run-events.js";
+import {
+  createDataReadinessProjectionConsumer,
+} from "./infrastructure/data-readiness-events.js";
 import { createPool } from "./infrastructure/database.js";
 import { registerConfigurationRoutes } from "./routes/configuration.js";
 import { registerHealthRoutes } from "./routes/health.js";
-import { registerInfoRoutes } from "./routes/info.js";
+import { registerOpsRoutes } from "./routes/ops.js";
 import { registerRuntimeConfigRoutes } from "./routes/runtime-config.js";
 
 const config = loadConfig();
@@ -36,7 +45,18 @@ const app = Fastify({
 });
 const pool = createPool(config);
 await ensureControlPlaneSchema(pool);
+await ensureOpsSchema(pool);
 const configChangePublisher = createConfigChangeEventPublisher(config, app.log);
+const backtestRunProjectionConsumer = createBacktestRunProjectionConsumer(
+  config,
+  app.log,
+  pool,
+);
+const dataReadinessProjectionConsumer = createDataReadinessProjectionConsumer(
+  config,
+  app.log,
+  pool,
+);
 const stores = createConfigStores(pool, configChangePublisher);
 const hasStatusCode = (error: unknown): error is { statusCode: number } =>
   typeof error === "object" &&
@@ -53,7 +73,7 @@ await app.register(fastifySwagger, {
         "Control-plane API for trading-bot configuration, health, and runtime metadata.",
     },
     tags: [
-      { name: "pairs", description: "Tradable market pairs" },
+      { name: "symbols", description: "Tradable market symbols" },
       {
         name: "timeframes",
         description:
@@ -68,12 +88,16 @@ await app.register(fastifySwagger, {
       {
         name: "analysis-settings",
         description:
-          "Relational bindings between pair, timeframe, strategy, risk profile, and trading defaults",
+          "Relational bindings between symbol, timeframe, strategy, risk profile, and trading defaults",
       },
       {
         name: "runtime-config",
         description:
           "Resolved runtime projections consumed by future trading services",
+      },
+      {
+        name: "ops",
+        description: "Operator-facing aggregated runtime views for the console",
       },
     ],
   },
@@ -83,11 +107,31 @@ await app.register(fastifySwaggerUi, {
   routePrefix: "/docs",
 });
 
+await app.register(fastifyCors, {
+  origin: true,
+});
+await app.register(fastifyWebsocket);
+
 registerHealthRoutes(app, pool, databaseReadinessGauge, config);
-registerInfoRoutes(app, metricsRegistry, config);
 registerConfigurationRoutes(app, stores);
 registerRuntimeConfigRoutes(app, pool);
+registerOpsRoutes(app, config, pool);
 await configChangePublisher.start();
+await backtestRunProjectionConsumer.start();
+await dataReadinessProjectionConsumer.start();
+
+app.get(
+  "/metrics",
+  {
+    schema: {
+      hide: true,
+    },
+  },
+  async (_request, reply) => {
+    reply.header("content-type", metricsRegistry.contentType);
+    return metricsRegistry.metrics();
+  },
+);
 
 app.setErrorHandler((error, _request, reply) => {
   const statusCode =
@@ -116,6 +160,8 @@ app.setErrorHandler((error, _request, reply) => {
 });
 
 const close = async () => {
+  await backtestRunProjectionConsumer.stop();
+  await dataReadinessProjectionConsumer.stop();
   await configChangePublisher.stop();
   await app.close();
   await pool.end();

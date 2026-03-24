@@ -18,10 +18,11 @@ use reqwest::StatusCode;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::Value;
 use tokio::{
-    sync::{Mutex, RwLock, mpsc, watch},
+    sync::{Mutex, RwLock, mpsc, oneshot, watch},
     task::JoinHandle,
     time::MissedTickBehavior,
 };
+use uuid::Uuid;
 use tokio_tungstenite::{connect_async, tungstenite::protocol::Message as WsMessage};
 
 use crate::{
@@ -115,6 +116,67 @@ pub struct DatabaseStatus {
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct ReadinessDimension {
+    pub row_count: u64,
+    pub min_time: Option<i64>,
+    pub max_time: Option<i64>,
+    pub latest_time: Option<i64>,
+    pub gap_count: usize,
+    pub complete: bool,
+    pub coverage_percent: f64,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BacktestDataReadiness {
+    pub status: String,
+    pub details: Option<String>,
+    pub completeness_percent: f64,
+    pub pair_code: String,
+    pub timeframe_code: String,
+    pub start_time: i64,
+    pub end_time: i64,
+    pub period_ms: i64,
+    pub kline: ReadinessDimension,
+    pub trades: ReadinessDimension,
+    pub book_tickers: ReadinessDimension,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DataReadinessSnapshotItem {
+    status: String,
+    pair_code: String,
+    timeframe_code: String,
+    analysis_setting_ids: Vec<String>,
+    requested_start_time: i64,
+    requested_end_time: i64,
+    required_history_ms: i64,
+    completeness_percent: f64,
+    details: Option<String>,
+    kline: ReadinessDimension,
+    trades: ReadinessDimension,
+    book_tickers: ReadinessDimension,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DataReadinessSnapshotEnvelope {
+    event_id: String,
+    event_type: &'static str,
+    source: String,
+    occurred_at: String,
+    data: DataReadinessSnapshotPayload,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DataReadinessSnapshotPayload {
+    items: Vec<DataReadinessSnapshotItem>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ReadinessPayload {
     pub status: String,
     pub service: String,
@@ -136,6 +198,17 @@ pub struct ReadinessChecks {
 struct ConfigChangeEventEnvelope {
     resource_type: String,
     operation: String,
+}
+
+#[derive(Clone, Debug)]
+struct DataReadinessTarget {
+    pair_code: String,
+    timeframe_code: String,
+    period_ms: i64,
+    analysis_setting_ids: Vec<String>,
+    requested_start_time: i64,
+    requested_end_time: i64,
+    required_history_ms: i64,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -341,6 +414,7 @@ impl MarketDataService {
             &config.kafka_bootstrap_servers,
             &[
                 &config.config_change_events_topic,
+                &config.data_readiness_events_topic,
                 &config.market_data_klines_topic,
                 &config.market_data_trades_topic,
             ],
@@ -643,6 +717,183 @@ impl MarketDataService {
             .database
             .replay_trades(pair_code, start_time, end_time, limit)
             .await
+    }
+
+    pub async fn backtest_data_readiness(
+        &self,
+        pair_code: &str,
+        timeframe_code: &str,
+        start_time: i64,
+        end_time: i64,
+        period_ms: i64,
+    ) -> Result<BacktestDataReadiness> {
+        let mut diagnostics = Vec::new();
+
+        let kline_coverage = self
+            .inner
+            .database
+            .kline_window_coverage_in_range(pair_code, timeframe_code, start_time, end_time)
+            .await?;
+        let kline_gaps = self
+            .inner
+            .database
+            .kline_time_gaps_in_range(pair_code, timeframe_code, start_time, end_time, period_ms, 25)
+            .await?;
+
+        let trade_coverage = self
+            .inner
+            .database
+            .trade_window_coverage_in_range(pair_code, start_time, end_time)
+            .await?;
+        let trade_gap_threshold_ms = (period_ms / 4).clamp(1_000, 60_000);
+        let trade_gaps = self
+            .inner
+            .database
+            .trade_time_gaps_in_range(pair_code, start_time, end_time, trade_gap_threshold_ms, 25)
+            .await?;
+        let latest_trade = self.inner.database.latest_trade_checkpoint(pair_code).await?;
+
+        let book_ticker_coverage = match self
+            .inner
+            .database
+            .book_ticker_window_coverage_in_range(pair_code, start_time, end_time)
+            .await
+        {
+            Ok(coverage) => coverage,
+            Err(error) => {
+                tracing::warn!(
+                    ?error,
+                    pair_code,
+                    timeframe_code,
+                    "book-ticker readiness coverage probe failed"
+                );
+                diagnostics.push("book ticker coverage unavailable".to_string());
+                crate::db::WindowCoverage {
+                    row_count: 0,
+                    min_time: None,
+                    max_time: None,
+                }
+            }
+        };
+        let book_ticker_gaps = match self
+            .inner
+            .database
+            .book_ticker_time_gaps_in_range(pair_code, start_time, end_time, 60_000, 25)
+            .await
+        {
+            Ok(gaps) => gaps,
+            Err(error) => {
+                tracing::warn!(
+                    ?error,
+                    pair_code,
+                    timeframe_code,
+                    "book-ticker readiness gap probe failed"
+                );
+                if !diagnostics
+                    .iter()
+                    .any(|message| message == "book ticker coverage unavailable")
+                {
+                    diagnostics.push("book ticker gaps unavailable".to_string());
+                }
+                Vec::new()
+            }
+        };
+        let latest_book_ticker = match self
+            .inner
+            .database
+            .latest_book_ticker_checkpoint(pair_code)
+            .await
+        {
+            Ok(checkpoint) => checkpoint,
+            Err(error) => {
+                tracing::warn!(
+                    ?error,
+                    pair_code,
+                    timeframe_code,
+                    "book-ticker readiness checkpoint probe failed"
+                );
+                None
+            }
+        };
+
+        let kline = map_dimension(
+            &kline_coverage,
+            kline_coverage.max_time,
+            kline_gaps.len(),
+            start_time,
+            end_time,
+            period_ms,
+        );
+        let trades = map_dimension(
+            &trade_coverage,
+            latest_trade.map(|checkpoint| checkpoint.trade_time),
+            trade_gaps.len(),
+            start_time,
+            end_time,
+            trade_gap_threshold_ms,
+        );
+        let book_tickers = map_dimension(
+            &book_ticker_coverage,
+            latest_book_ticker.map(|checkpoint| checkpoint.latest_occurred_at_ms),
+            book_ticker_gaps.len(),
+            start_time,
+            end_time,
+            60_000,
+        );
+
+        let completeness_percent =
+            ((kline.coverage_percent + trades.coverage_percent + book_tickers.coverage_percent)
+                / 3.0)
+                .clamp(0.0, 100.0);
+
+        let (status, details) = if kline.complete
+            && trades.complete
+            && (book_tickers.complete || book_ticker_coverage.row_count == 0)
+        {
+            (
+                "ready".to_string(),
+                (!diagnostics.is_empty()).then(|| diagnostics.join("; ")),
+            )
+        } else if kline.row_count == 0 && trade_coverage.row_count == 0 && book_ticker_coverage.row_count == 0
+        {
+            (
+                "missing".to_string(),
+                Some(if diagnostics.is_empty() {
+                    "no replay-grade dataset was found for this pair/timeframe window".to_string()
+                } else {
+                    format!(
+                        "no replay-grade dataset was found for this pair/timeframe window; {}",
+                        diagnostics.join("; ")
+                    )
+                }),
+            )
+        } else {
+            (
+                "partial".to_string(),
+                Some(if diagnostics.is_empty() {
+                    "one or more replay inputs are incomplete for the requested window".to_string()
+                } else {
+                    format!(
+                        "one or more replay inputs are incomplete for the requested window; {}",
+                        diagnostics.join("; ")
+                    )
+                }),
+            )
+        };
+
+        Ok(BacktestDataReadiness {
+            status,
+            details,
+            completeness_percent,
+            pair_code: pair_code.to_string(),
+            timeframe_code: timeframe_code.to_string(),
+            start_time,
+            end_time,
+            period_ms,
+            kline,
+            trades,
+            book_tickers,
+        })
     }
 
     async fn refresh_loop(&self, mut refresh_rx: mpsc::Receiver<String>) {
@@ -994,10 +1245,12 @@ impl MarketDataService {
 
     async fn perform_refresh(&self, reason: &str) -> Result<()> {
         let _maintenance = self.inner.maintenance_gate.lock().await;
-        let pairs = self.fetch_pairs().await?;
+        let symbols = self.fetch_symbols().await?;
         let timeframes = self.fetch_timeframes().await?;
         let records = self.fetch_resolved_analysis_settings().await?;
-        let active = derive_active_subscriptions(&pairs, &timeframes, &records)?;
+        let readiness_publish_handle = self
+            .start_periodic_data_readiness_publish(records.clone(), reason.to_string());
+        let active = derive_active_subscriptions(&symbols, &timeframes, &records)?;
         let required_history_plan = self.build_required_history_plan(&records, &active);
         let (kline_by_stream, pair_by_stream) = build_stream_maps(&active);
 
@@ -1043,31 +1296,100 @@ impl MarketDataService {
             "refreshed market-data subscriptions from control-plane"
         );
 
-        self.run_backfill_and_gap_repair(&active, &required_history_plan)
-            .await?;
+        let refresh_result: Result<()> = async {
+            self.run_backfill_and_gap_repair(&active, &required_history_plan)
+                .await?;
 
-        // Extra deep audit at startup: the existing backfill+repair pass is
-        // anchored to a clamped "required lookback" window, which can leave
-        // older leading gaps unfixed. The deep audit re-checks from the
-        // earliest kline we have for each pair (bounded by config).
-        if reason == "startup" && self.inner.config.trade_gap_repair_enabled {
-            if let Err(error) = self
-                .run_trade_gap_audit_and_repair(
-                    &active,
-                    &required_history_plan.trade_by_pair_code,
-                    &required_history_plan.trade_gap_threshold_by_pair_code,
-                    TradeGapRepairMode::StartupDeep,
-                )
-                .await
-            {
+            // Extra deep audit at startup: the existing backfill+repair pass is
+            // anchored to a clamped "required lookback" window, which can leave
+            // older leading gaps unfixed. The deep audit re-checks from the
+            // earliest kline we have for each pair (bounded by config).
+            if reason == "startup" && self.inner.config.trade_gap_repair_enabled {
+                if let Err(error) = self
+                    .run_trade_gap_audit_and_repair(
+                        &active,
+                        &required_history_plan.trade_by_pair_code,
+                        &required_history_plan.trade_gap_threshold_by_pair_code,
+                        TradeGapRepairMode::StartupDeep,
+                    )
+                    .await
+                {
+                    tracing::warn!(
+                        ?error,
+                        reason,
+                        "startup trade gap audit/repair failed (continuing)"
+                    );
+                }
+            }
+            Ok(())
+        }
+        .await;
+
+        if let Some((stop_tx, handle)) = readiness_publish_handle {
+            let _ = stop_tx.send(());
+            let _ = handle.await;
+        }
+
+        refresh_result?;
+
+        if let Err(error) = self.publish_data_readiness_snapshot(&records).await {
+            tracing::warn!(
+                ?error,
+                reason,
+                "failed to publish data-readiness snapshot"
+            );
+        }
+        Ok(())
+    }
+
+    fn start_periodic_data_readiness_publish(
+        &self,
+        records: Vec<ResolvedAnalysisSettingsRecord>,
+        reason: String,
+    ) -> Option<(oneshot::Sender<()>, JoinHandle<()>)> {
+        if records.is_empty() {
+            return None;
+        }
+
+        let service = self.clone();
+        let interval_ms = self
+            .inner
+            .config
+            .data_readiness_publish_interval_ms
+            .max(1_000);
+        let (stop_tx, mut stop_rx) = oneshot::channel::<()>();
+        let handle = tokio::spawn(async move {
+            if let Err(error) = service.publish_data_readiness_snapshot(&records).await {
                 tracing::warn!(
                     ?error,
                     reason,
-                    "startup trade gap audit/repair failed (continuing)"
+                    "failed to publish initial in-progress data-readiness snapshot"
                 );
             }
-        }
-        Ok(())
+
+            let mut interval = tokio::time::interval(Duration::from_millis(interval_ms));
+            interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
+            interval.tick().await;
+
+            loop {
+                tokio::select! {
+                    _ = &mut stop_rx => {
+                        break;
+                    }
+                    _ = interval.tick() => {
+                        if let Err(error) = service.publish_data_readiness_snapshot(&records).await {
+                            tracing::warn!(
+                                ?error,
+                                reason,
+                                "failed to publish periodic data-readiness snapshot"
+                            );
+                        }
+                    }
+                }
+            }
+        });
+
+        Some((stop_tx, handle))
     }
 
     async fn fetch_resolved_analysis_settings(
@@ -1077,8 +1399,8 @@ impl MarketDataService {
             .await
     }
 
-    async fn fetch_pairs(&self) -> Result<Vec<crate::models::PairRecord>> {
-        self.fetch_control_plane_records("/v1/pairs").await
+    async fn fetch_symbols(&self) -> Result<Vec<crate::models::PairRecord>> {
+        self.fetch_control_plane_records("/v1/symbols").await
     }
 
     async fn fetch_timeframes(&self) -> Result<Vec<crate::models::TimeframeRecord>> {
@@ -1105,6 +1427,165 @@ impl MarketDataService {
             .await?
             .error_for_status()?;
         Ok(response.json::<Vec<T>>().await?)
+    }
+
+    fn derive_data_readiness_targets(
+        &self,
+        records: &[ResolvedAnalysisSettingsRecord],
+    ) -> Vec<DataReadinessTarget> {
+        let now = Utc::now().timestamp_millis();
+        let mut grouped: HashMap<(String, String), DataReadinessTarget> = HashMap::new();
+
+        for record in records.iter().filter(|record| record.enabled) {
+            let configured_duration_ms = self
+                .inner
+                .config
+                .backtesting_timerange_ms_by_timeframe
+                .get(&record.timeframe_code)
+                .copied()
+                .unwrap_or_else(|| {
+                    (self.inner.config.historical_backfill_limit as i64)
+                        .saturating_mul(record.timeframe.period_ms.max(1))
+                })
+                .max(record.timeframe.period_ms.max(1));
+            let warmup_candles =
+                estimate_warmup_candles(record, self.inner.config.default_warmup_multiplier);
+            let required_history_ms = configured_duration_ms
+                .saturating_add((warmup_candles as i64).saturating_mul(record.timeframe.period_ms));
+            let key = (record.symbol.clone(), record.timeframe_code.clone());
+
+            grouped
+                .entry(key)
+                .and_modify(|target| {
+                    target.required_history_ms =
+                        target.required_history_ms.max(required_history_ms);
+                    target.analysis_setting_ids.push(record.id.clone());
+                })
+                .or_insert_with(|| DataReadinessTarget {
+                    pair_code: record.symbol.clone(),
+                    timeframe_code: record.timeframe_code.clone(),
+                    period_ms: record.timeframe.period_ms,
+                    analysis_setting_ids: vec![record.id.clone()],
+                    requested_start_time: now.saturating_sub(configured_duration_ms),
+                    requested_end_time: now,
+                    required_history_ms,
+                });
+        }
+
+        grouped.into_values().collect()
+    }
+
+    async fn publish_data_readiness_snapshot(
+        &self,
+        records: &[ResolvedAnalysisSettingsRecord],
+    ) -> Result<()> {
+        let targets = self.derive_data_readiness_targets(records);
+        let mut items = Vec::with_capacity(targets.len());
+
+        if targets.is_empty() {
+            self.publish_data_readiness_items(&items).await?;
+            return Ok(());
+        }
+
+        for target in targets {
+            let item = match self
+                .backtest_data_readiness(
+                    &target.pair_code,
+                    &target.timeframe_code,
+                    target.requested_start_time,
+                    target.requested_end_time,
+                    target.period_ms,
+                )
+                .await
+            {
+                Ok(readiness) => DataReadinessSnapshotItem {
+                    status: readiness.status,
+                    pair_code: readiness.pair_code,
+                    timeframe_code: readiness.timeframe_code,
+                    analysis_setting_ids: target.analysis_setting_ids,
+                    requested_start_time: target.requested_start_time,
+                    requested_end_time: target.requested_end_time,
+                    required_history_ms: target.required_history_ms,
+                    completeness_percent: readiness.completeness_percent,
+                    details: readiness.details,
+                    kline: readiness.kline,
+                    trades: readiness.trades,
+                    book_tickers: readiness.book_tickers,
+                },
+                Err(error) => DataReadinessSnapshotItem {
+                    status: "error".to_string(),
+                    pair_code: target.pair_code,
+                    timeframe_code: target.timeframe_code,
+                    analysis_setting_ids: target.analysis_setting_ids,
+                    requested_start_time: target.requested_start_time,
+                    requested_end_time: target.requested_end_time,
+                    required_history_ms: target.required_history_ms,
+                    completeness_percent: 0.0,
+                    details: Some(error.to_string()),
+                    kline: ReadinessDimension {
+                        row_count: 0,
+                        min_time: None,
+                        max_time: None,
+                        latest_time: None,
+                        gap_count: 0,
+                        complete: false,
+                        coverage_percent: 0.0,
+                    },
+                    trades: ReadinessDimension {
+                        row_count: 0,
+                        min_time: None,
+                        max_time: None,
+                        latest_time: None,
+                        gap_count: 0,
+                        complete: false,
+                        coverage_percent: 0.0,
+                    },
+                    book_tickers: ReadinessDimension {
+                        row_count: 0,
+                        min_time: None,
+                        max_time: None,
+                        latest_time: None,
+                        gap_count: 0,
+                        complete: false,
+                        coverage_percent: 0.0,
+                    },
+                },
+            };
+
+            items.push(item);
+            self.publish_data_readiness_items(&items).await?;
+        }
+
+        Ok(())
+    }
+
+    async fn publish_data_readiness_items(
+        &self,
+        items: &[DataReadinessSnapshotItem],
+    ) -> Result<()> {
+        let envelope = DataReadinessSnapshotEnvelope {
+            event_id: Uuid::new_v4().to_string(),
+            event_type: "trading-bot.market-data.data-readiness-snapshot.v1",
+            source: self.inner.config.service_name.clone(),
+            occurred_at: Utc::now().to_rfc3339(),
+            data: DataReadinessSnapshotPayload {
+                items: items.to_vec(),
+            },
+        };
+        let payload = serde_json::to_string(&envelope)?;
+
+        self.inner
+            .kafka_producer
+            .send(
+                FutureRecord::to(&self.inner.config.data_readiness_events_topic)
+                    .key("snapshot")
+                    .payload(&payload),
+                Duration::from_secs(5),
+            )
+            .await
+            .map_err(|(error, _)| anyhow::anyhow!(error))?;
+
+        Ok(())
     }
 
     fn build_required_history_plan(
@@ -3109,6 +3590,38 @@ impl MarketDataService {
         if let Some(last_error) = last_error {
             status.stream.last_error = Some(last_error);
         }
+    }
+}
+
+fn map_dimension(
+    coverage: &crate::db::WindowCoverage,
+    latest_time: Option<i64>,
+    gap_count: usize,
+    requested_start_time: i64,
+    requested_end_time: i64,
+    tolerance_ms: i64,
+) -> ReadinessDimension {
+    let requested_span_ms = (requested_end_time - requested_start_time).max(1) as f64;
+    let covered_span_ms = match (coverage.min_time, coverage.max_time) {
+        (Some(min_time), Some(max_time)) if max_time >= min_time => {
+            (max_time - min_time + tolerance_ms.max(1)) as f64
+        }
+        _ => 0.0,
+    };
+    let coverage_percent = ((covered_span_ms / requested_span_ms) * 100.0).clamp(0.0, 100.0);
+    let complete = coverage.row_count > 0
+        && coverage.min_time.unwrap_or(i64::MAX) <= requested_start_time + tolerance_ms
+        && coverage.max_time.unwrap_or(i64::MIN) >= requested_end_time - tolerance_ms
+        && gap_count == 0;
+
+    ReadinessDimension {
+        row_count: coverage.row_count,
+        min_time: coverage.min_time,
+        max_time: coverage.max_time,
+        latest_time,
+        gap_count,
+        complete,
+        coverage_percent,
     }
 }
 
