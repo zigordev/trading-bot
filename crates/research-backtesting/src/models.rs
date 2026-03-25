@@ -4,6 +4,14 @@ use trading_bot_strategy_engine::models::{PersistedKlineRecord, ResolvedAnalysis
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BacktestRequest {
+    #[serde(default)]
+    pub control_plane_job_id: Option<String>,
+    #[serde(default)]
+    pub batch_id: Option<String>,
+    #[serde(default)]
+    pub batch_total_count: Option<usize>,
+    #[serde(default)]
+    pub batch_completed_count: Option<usize>,
     pub analysis_setting_id: String,
     #[serde(default)]
     pub risk_profile_name: Option<String>,

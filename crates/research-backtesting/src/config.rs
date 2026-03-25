@@ -8,6 +8,9 @@ pub struct AppConfig {
     pub port: u16,
     pub kafka_bootstrap_servers: String,
     pub backtest_completed_events_topic: String,
+    pub backtest_progress_events_topic: String,
+    pub data_readiness_events_topic: String,
+    pub data_readiness_events_consumer_group_id: String,
     pub control_plane_base_url: String,
     pub control_plane_request_timeout_ms: u64,
     pub historical_store_host: String,
@@ -34,8 +37,6 @@ pub struct AppConfig {
     /// still requiring that all trades which actually occurred inside the
     /// window are present.
     pub trade_coverage_tolerance_ms: u64,
-    pub auto_backtest_enabled: bool,
-    pub auto_backtest_interval_seconds: u64,
     /// Backtest lookback duration window per timeframe (duration in milliseconds).
     ///
     /// Format: `1m=86400000,5m=604800000` (comma-separated `timeframeCode=durationMs` pairs).
@@ -64,15 +65,6 @@ fn parse_u64(key: &str, default: u64) -> Result<u64> {
     }
 
     Ok(parsed)
-}
-
-fn parse_bool(key: &str, default: bool) -> Result<bool> {
-    let raw = env_or_default(key, if default { "true" } else { "false" });
-    match raw.to_ascii_lowercase().as_str() {
-        "1" | "true" | "yes" | "on" => Ok(true),
-        "0" | "false" | "no" | "off" => Ok(false),
-        _ => bail!("{key} must be a valid boolean"),
-    }
 }
 
 fn parse_usize(key: &str, default: usize) -> Result<usize> {
@@ -164,6 +156,23 @@ pub fn load_config() -> Result<AppConfig> {
             "BACKTEST_COMPLETED_EVENTS_TOPIC",
             "trading-bot.research-backtesting.backtest-completed.v1",
         ),
+        backtest_progress_events_topic: env_or_default(
+            "BACKTEST_PROGRESS_EVENTS_TOPIC",
+            "trading-bot.research-backtesting.backtest-progress.v1",
+        ),
+        data_readiness_events_topic: env_or_default(
+            "DATA_READINESS_EVENTS_TOPIC",
+            "trading-bot.market-data.data-readiness-snapshot.v1",
+        ),
+        data_readiness_events_consumer_group_id: std::env::var(
+            "RESEARCH_BACKTESTING_DATA_READINESS_EVENTS_CONSUMER_GROUP_ID",
+        )
+        .unwrap_or_else(|_| {
+            env_or_default(
+                "DATA_READINESS_EVENTS_CONSUMER_GROUP_ID",
+                "trading-bot-research-backtesting-data-readiness-trigger-v1",
+            )
+        }),
         control_plane_base_url: env_or_default(
             "CONTROL_PLANE_BASE_URL",
             "http://trading-bot-api:8080",
@@ -191,8 +200,6 @@ pub fn load_config() -> Result<AppConfig> {
         default_fee_bps: parse_f64("BACKTEST_FEE_BPS", 0.0)?,
         default_slippage_bps: parse_f64("BACKTEST_SLIPPAGE_BPS", 0.0)?,
         trade_coverage_tolerance_ms: parse_u64("BACKTEST_TRADE_COVERAGE_TOLERANCE_MS", 15_000)?,
-        auto_backtest_enabled: parse_bool("AUTO_BACKTEST_ENABLED", false)?,
-        auto_backtest_interval_seconds: parse_u64("AUTO_BACKTEST_INTERVAL_SECONDS", 3600)?,
         backtesting_timerange_ms_by_timeframe,
         otel_exporter_otlp_endpoint: std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT").ok(),
     })
@@ -207,15 +214,16 @@ mod tests {
         unsafe {
             std::env::remove_var("SERVICE_NAME");
             std::env::remove_var("BACKTEST_WARMUP_MULTIPLIER");
-            std::env::remove_var("AUTO_BACKTEST_ENABLED");
             std::env::remove_var("BACKTEST_TIMERANGE_MS_BY_TIMEFRAME");
         }
 
         let config = load_config().expect("config should load");
         assert_eq!(config.service_name, "trading-bot-research-backtesting");
         assert_eq!(config.kafka_bootstrap_servers, "platform-redpanda:9092");
-        assert_eq!(config.auto_backtest_enabled, false);
-        assert_eq!(config.auto_backtest_interval_seconds, 3600);
+        assert_eq!(
+            config.data_readiness_events_topic,
+            "trading-bot.market-data.data-readiness-snapshot.v1"
+        );
         assert_eq!(config.default_warmup_multiplier, 5);
         assert_eq!(config.max_backtest_trades, 1_000_000);
         assert_eq!(config.backtest_result_retention_days, 365);

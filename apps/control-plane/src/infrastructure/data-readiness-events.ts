@@ -98,12 +98,6 @@ const parseEnvelope = (value: string): DataReadinessSnapshotEnvelope | null => {
             item.trades && typeof item.trades === "object" && !Array.isArray(item.trades)
               ? (item.trades as Record<string, unknown>)
               : null,
-          bookTickers:
-            item.bookTickers &&
-            typeof item.bookTickers === "object" &&
-            !Array.isArray(item.bookTickers)
-              ? (item.bookTickers as Record<string, unknown>)
-              : null,
         }))
         .filter((item) => item.symbolCode && item.timeframeCode),
     },

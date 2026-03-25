@@ -22,6 +22,9 @@ export const testConfig: AppConfig = {
   backtestCompletedEventsTopic: "trading-bot.research-backtesting.backtest-completed.v1",
   backtestCompletedEventsConsumerGroupId:
     "trading-bot-control-plane-backtest-projection-test-v1",
+  backtestProgressEventsTopic: "trading-bot.research-backtesting.backtest-progress.v1",
+  backtestProgressEventsConsumerGroupId:
+    "trading-bot-control-plane-backtest-progress-test-v1",
   dataReadinessEventsTopic: "trading-bot.market-data.data-readiness-snapshot.v1",
   dataReadinessEventsConsumerGroupId:
     "trading-bot-control-plane-data-readiness-projection-test-v1",

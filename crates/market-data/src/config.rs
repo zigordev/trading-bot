@@ -19,14 +19,9 @@ pub struct AppConfig {
     pub config_change_events_topic: String,
     pub data_readiness_events_topic: String,
     pub data_readiness_publish_interval_ms: u64,
-    pub market_data_klines_topic: String,
-    pub market_data_trades_topic: String,
-    pub runtime_config_refresh_interval_ms: u64,
     pub config_refresh_debounce_ms: u64,
     pub readiness_max_config_age_ms: u64,
-    pub binance_stream_base_url: String,
     pub binance_rest_base_url: String,
-    pub binance_reconnect_backoff_ms: u64,
     pub binance_rest_max_retries: usize,
     pub binance_rest_retry_backoff_ms: u64,
     /// Configured Binance REQUEST_WEIGHT minute ceiling used by the local
@@ -67,40 +62,24 @@ pub struct AppConfig {
     pub historical_store_compaction_enabled: bool,
     pub historical_store_compaction_interval_ms: u64,
     pub historical_store_compact_after_refresh: bool,
-    /// Periodically audits ClickHouse trade coverage and backfills any detected
-    /// gaps so backtests/replays keep working even if backfill missed some ranges.
-    pub trade_gap_repair_enabled: bool,
-    /// How often to run the periodic trade gap audit.
-    pub trade_gap_repair_interval_ms: u64,
-    /// How far behind "now" the audit window ends, to avoid trying to fill
-    /// trailing gaps for the still-incoming latest trades.
-    pub trade_gap_repair_end_grace_ms: u64,
     /// Maximum time span (ms) for the startup deep audit window.
     pub trade_gap_repair_startup_max_window_ms: u64,
-    /// Maximum time span (ms) for the periodic audit window.
-    pub trade_gap_repair_periodic_lookback_ms: u64,
-    /// Multiplier for `historical_trade_backfill_max_batches` used by the gap repair
-    /// backfill loops (the repair code further multiplies internally).
-    pub trade_gap_repair_max_batches_multiplier: usize,
     /// Smallest aggregate-trade gap that should be treated as missing
     /// historical coverage during repair/planning.
     pub trade_gap_repair_min_gap_ms: u64,
     /// If true, historical trade backfill flushes into ClickHouse using
     /// `INSERT ... FORMAT RowBinary` (faster than JSONEachRow for large batches).
     pub historical_trade_backfill_use_rowbinary_insert: bool,
-    pub live_trade_insert_batch_rows: usize,
-    pub live_trade_insert_flush_interval_ms: u64,
     pub default_warmup_multiplier: usize,
     /// Extra completed klines kept beyond the nominal backtest window plus
     /// warmup so market-data retention matches research-backtesting's replay
     /// cushion when validating/reading kline windows.
     pub backtest_kline_headroom_candles: usize,
-    /// Extra history headroom kept in market-data so scheduled backtests that
-    /// end at a prior UTC midnight still find the full required window plus
-    /// warmup, even when market-data computes retention relative to "now".
+    /// Extra history headroom kept in market-data so readiness-triggered
+    /// backtests still find the full required window plus warmup when
+    /// market-data computes retention relative to the last closed hour.
     pub scheduled_backtest_history_headroom_ms: u64,
     pub backtesting_timerange_ms_by_timeframe: BTreeMap<String, i64>,
-    pub market_event_dedup_capacity: usize,
     pub otel_exporter_otlp_endpoint: Option<String>,
 }
 
@@ -217,10 +196,6 @@ pub fn load_config() -> Result<AppConfig> {
         parse_timerange_map(raw)?
     };
 
-    let market_data_klines_topic = std::env::var("MARKET_DATA_KLINES_TOPIC")
-        .or_else(|_| std::env::var("MARKET_DATA_EVENTS_TOPIC"))
-        .unwrap_or_else(|_| "trading-bot.market-data.klines.v1".to_string());
-
     let mut config = AppConfig {
         app_env: env_or_default("APP_ENV", "local"),
         service_name: env_or_default("SERVICE_NAME", "trading-bot-market-data"),
@@ -258,20 +233,9 @@ pub fn load_config() -> Result<AppConfig> {
             "DATA_READINESS_PUBLISH_INTERVAL_MS",
             60_000,
         )?,
-        market_data_klines_topic,
-        market_data_trades_topic: env_or_default(
-            "MARKET_DATA_TRADES_TOPIC",
-            "trading-bot.market-data.trades.v1",
-        ),
-        runtime_config_refresh_interval_ms: parse_u64("RUNTIME_CONFIG_REFRESH_INTERVAL_MS", 30000)?,
         config_refresh_debounce_ms: parse_u64("CONFIG_REFRESH_DEBOUNCE_MS", 500)?,
         readiness_max_config_age_ms: parse_u64("READINESS_MAX_CONFIG_AGE_MS", 120000)?,
-        binance_stream_base_url: env_or_default(
-            "BINANCE_STREAM_BASE_URL",
-            "wss://stream.binance.com:9443/stream",
-        ),
         binance_rest_base_url: env_or_default("BINANCE_REST_BASE_URL", "https://api.binance.com"),
-        binance_reconnect_backoff_ms: parse_u64("BINANCE_RECONNECT_BACKOFF_MS", 2000)?,
         binance_rest_max_retries: parse_usize("BINANCE_REST_MAX_RETRIES", 5)?,
         binance_rest_retry_backoff_ms: parse_u64("BINANCE_REST_RETRY_BACKOFF_MS", 500)?,
         binance_rest_request_weight_limit_per_minute: parse_u64(
@@ -326,28 +290,15 @@ pub fn load_config() -> Result<AppConfig> {
             "HISTORICAL_STORE_COMPACTION_AFTER_REFRESH",
             false,
         )?,
-        trade_gap_repair_enabled: parse_bool("TRADE_GAP_REPAIR_ENABLED", true)?,
-        trade_gap_repair_interval_ms: parse_u64("TRADE_GAP_REPAIR_INTERVAL_MS", 60 * 60 * 1000)?,
-        trade_gap_repair_end_grace_ms: parse_u64("TRADE_GAP_REPAIR_END_GRACE_MS", 5 * 60 * 1000)?,
         trade_gap_repair_startup_max_window_ms: parse_u64(
             "TRADE_GAP_REPAIR_STARTUP_MAX_WINDOW_MS",
             180 * 24 * 60 * 60 * 1000,
-        )?,
-        trade_gap_repair_periodic_lookback_ms: parse_u64(
-            "TRADE_GAP_REPAIR_PERIODIC_LOOKBACK_MS",
-            7 * 24 * 60 * 60 * 1000,
-        )?,
-        trade_gap_repair_max_batches_multiplier: parse_usize(
-            "TRADE_GAP_REPAIR_MAX_BATCHES_MULTIPLIER",
-            1,
         )?,
         trade_gap_repair_min_gap_ms: parse_u64("TRADE_GAP_REPAIR_MIN_GAP_MS", 15_000)?,
         historical_trade_backfill_use_rowbinary_insert: parse_bool(
             "HISTORICAL_TRADE_BACKFILL_USE_ROW_BINARY_INSERT",
             true,
         )?,
-        live_trade_insert_batch_rows: parse_usize("LIVE_TRADE_INSERT_BATCH_ROWS", 2_000)?,
-        live_trade_insert_flush_interval_ms: parse_u64("LIVE_TRADE_INSERT_FLUSH_INTERVAL_MS", 250)?,
         default_warmup_multiplier: parse_usize("BACKTEST_WARMUP_MULTIPLIER", 5)?,
         backtest_kline_headroom_candles: parse_usize("BACKTEST_KLINE_HEADROOM_CANDLES", 4)?,
         scheduled_backtest_history_headroom_ms: parse_u64(
@@ -355,7 +306,6 @@ pub fn load_config() -> Result<AppConfig> {
             48 * 60 * 60 * 1000,
         )?,
         backtesting_timerange_ms_by_timeframe,
-        market_event_dedup_capacity: parse_usize("MARKET_EVENT_DEDUP_CAPACITY", 10000)?,
         otel_exporter_otlp_endpoint: std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT").ok(),
     };
 
@@ -404,15 +354,8 @@ mod tests {
             std::env::remove_var("HISTORICAL_STORE_COMPACTION_ENABLED");
             std::env::remove_var("HISTORICAL_STORE_COMPACTION_INTERVAL_MS");
             std::env::remove_var("HISTORICAL_STORE_COMPACTION_AFTER_REFRESH");
-            std::env::remove_var("TRADE_GAP_REPAIR_ENABLED");
-            std::env::remove_var("TRADE_GAP_REPAIR_INTERVAL_MS");
-            std::env::remove_var("TRADE_GAP_REPAIR_END_GRACE_MS");
             std::env::remove_var("TRADE_GAP_REPAIR_STARTUP_MAX_WINDOW_MS");
-            std::env::remove_var("TRADE_GAP_REPAIR_PERIODIC_LOOKBACK_MS");
-            std::env::remove_var("TRADE_GAP_REPAIR_MAX_BATCHES_MULTIPLIER");
             std::env::remove_var("HISTORICAL_TRADE_BACKFILL_USE_ROW_BINARY_INSERT");
-            std::env::remove_var("MARKET_DATA_KLINES_TOPIC");
-            std::env::remove_var("MARKET_DATA_EVENTS_TOPIC");
             std::env::remove_var("DATA_READINESS_EVENTS_TOPIC");
             std::env::remove_var("DATA_READINESS_PUBLISH_INTERVAL_MS");
             std::env::remove_var("BINANCE_REST_MAX_RETRIES");
@@ -437,10 +380,6 @@ mod tests {
         assert_eq!(config.historical_store_compaction_enabled, false);
         assert_eq!(config.historical_store_compaction_interval_ms, 180000);
         assert_eq!(config.historical_store_compact_after_refresh, false);
-        assert_eq!(
-            config.market_data_klines_topic,
-            "trading-bot.market-data.klines.v1"
-        );
         assert_eq!(
             config.data_readiness_events_topic,
             "trading-bot.market-data.data-readiness-snapshot.v1"

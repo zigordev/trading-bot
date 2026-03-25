@@ -11,6 +11,8 @@ export type AppConfig = {
   configChangeEventsTopic: string;
   backtestCompletedEventsTopic: string;
   backtestCompletedEventsConsumerGroupId: string;
+  backtestProgressEventsTopic: string;
+  backtestProgressEventsConsumerGroupId: string;
   dataReadinessEventsTopic: string;
   dataReadinessEventsConsumerGroupId: string;
   marketDataBaseUrl: string;
@@ -79,6 +81,12 @@ export const loadConfig = (): AppConfig => {
     backtestCompletedEventsConsumerGroupId:
       process.env.BACKTEST_COMPLETED_EVENTS_CONSUMER_GROUP_ID ??
       "trading-bot-control-plane-backtest-projection-v1",
+    backtestProgressEventsTopic:
+      process.env.BACKTEST_PROGRESS_EVENTS_TOPIC ??
+      "trading-bot.research-backtesting.backtest-progress.v1",
+    backtestProgressEventsConsumerGroupId:
+      process.env.BACKTEST_PROGRESS_EVENTS_CONSUMER_GROUP_ID ??
+      "trading-bot-control-plane-backtest-progress-v1",
     dataReadinessEventsTopic:
       process.env.DATA_READINESS_EVENTS_TOPIC ??
       "trading-bot.market-data.data-readiness-snapshot.v1",
@@ -91,7 +99,7 @@ export const loadConfig = (): AppConfig => {
       process.env.STRATEGY_ENGINE_BASE_URL ?? "http://trading-bot-strategy-engine:8100",
     researchBacktestingBaseUrl:
       process.env.RESEARCH_BACKTESTING_BASE_URL ??
-      "http://trading-bot-research-backtesting:8110",
+      "http://research-backtesting:8110",
     upstreamRequestTimeoutMs: parsePositiveInteger(
       process.env.UPSTREAM_REQUEST_TIMEOUT_MS,
       5000,

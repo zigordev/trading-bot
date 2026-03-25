@@ -4,6 +4,7 @@ import type { Pool } from "pg";
 
 import type { AppConfig } from "../config.js";
 import {
+  completeBacktestJobFromProjectionEvent,
   listBacktestRunProjections,
   type BacktestRunProjectionInput,
   upsertBacktestRunProjection,
@@ -14,7 +15,9 @@ export type BacktestCompletedEventEnvelope = {
   eventType: "trading-bot.research-backtesting.backtest-completed.v1";
   source: string;
   occurredAt: string;
-  data: Omit<BacktestRunProjectionInput, "sourceEventId" | "sourceOccurredAt">;
+  data: Omit<BacktestRunProjectionInput, "sourceEventId" | "sourceOccurredAt"> & {
+    controlPlaneJobId?: string;
+  };
 };
 
 type KafkaAdmin = Pick<
@@ -81,6 +84,8 @@ const parseEnvelope = (value: string): BacktestCompletedEventEnvelope | null => 
     source: parsed.source,
     occurredAt: parsed.occurredAt,
     data: {
+      controlPlaneJobId:
+        typeof data.controlPlaneJobId === "string" ? data.controlPlaneJobId : undefined,
       backtestId: data.backtestId as string,
       finishedAt: data.finishedAt as string,
       backtestDurationMs: Number(data.backtestDurationMs ?? 0),
@@ -127,11 +132,14 @@ const createFetchJson = (config: AppConfig): FetchJson => async (url, init) => {
 
 const toProjectionInput = (
   envelope: BacktestCompletedEventEnvelope,
-): BacktestRunProjectionInput => ({
-  ...envelope.data,
-  sourceEventId: envelope.eventId,
-  sourceOccurredAt: envelope.occurredAt,
-});
+): BacktestRunProjectionInput => {
+  const { controlPlaneJobId: _controlPlaneJobId, ...data } = envelope.data;
+  return {
+    ...data,
+    sourceEventId: envelope.eventId,
+    sourceOccurredAt: envelope.occurredAt,
+  };
+};
 
 export const createBacktestRunProjectionConsumer = (
   config: AppConfig,
@@ -249,6 +257,10 @@ export const createBacktestRunProjectionConsumer = (
       stopped = false;
       await ensureTopicExists();
       await hydrate();
+      void (async () => {
+        await new Promise((resolve) => setTimeout(resolve, 5_000));
+        await hydrate();
+      })();
       await consumer.connect();
       await consumer.subscribe({
         topic: config.backtestCompletedEventsTopic,
@@ -268,6 +280,12 @@ export const createBacktestRunProjectionConsumer = (
             }
 
             await upsertBacktestRunProjection(pool, toProjectionInput(envelope));
+            if (envelope.data.controlPlaneJobId) {
+              await completeBacktestJobFromProjectionEvent(pool, {
+                jobId: envelope.data.controlPlaneJobId,
+                backtestId: envelope.data.backtestId,
+              });
+            }
           } catch (error) {
             logger.error(
               { err: error, rawValue },

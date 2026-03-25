@@ -31,7 +31,6 @@ type LineStream = futures_util::stream::BoxStream<'static, Result<String>>;
 
 #[derive(Debug, Deserialize)]
 struct HistoricalKlineRow {
-    pair_code: String,
     symbol: String,
     timeframe_code: String,
     period_ms: i64,
@@ -54,7 +53,6 @@ struct HistoricalKlineRow {
 
 #[derive(Debug, Deserialize)]
 struct HistoricalBookTickerRow {
-    pair_code: String,
     symbol: String,
     order_book_update_id: i64,
     bid_price: String,
@@ -297,26 +295,6 @@ struct StoredBacktestRunWriteRow<'a> {
     trade_count: i64,
     total_pnl_percent: f64,
     response_json: &'a str,
-}
-
-#[derive(Serialize)]
-struct LatestBacktestRunWriteRow<'a> {
-    analysis_setting_id: &'a str,
-    window_kind: &'a str,
-    backtest_id: &'a str,
-    finished_at_ms: i64,
-    pair_code: &'a str,
-    timeframe_code: &'a str,
-    strategy_name: &'a str,
-    requested_start_time: i64,
-    requested_end_time: i64,
-    replay_kline_count: i64,
-    replay_trade_count: i64,
-    signal_count: i64,
-    trade_count: i64,
-    total_pnl_percent: f64,
-    response_json: &'a str,
-    updated_at_ms: i64,
 }
 
 impl Database {
@@ -1624,6 +1602,40 @@ impl Database {
 
         let rows = self.query_backtest_rows(&sql).await?;
         Ok(rows.into_iter().map(|row| row.summary).collect())
+    }
+
+    pub async fn backtest_run_exists_for_window(
+        &self,
+        analysis_setting_id: &str,
+        risk_profile_name: &str,
+        requested_start_time: i64,
+        requested_end_time: i64,
+    ) -> Result<bool> {
+        let sql = format!(
+            r#"
+            SELECT COUNT(*) AS row_count
+            FROM {}.research_backtest_runs
+            WHERE analysis_setting_id = '{}'
+              AND risk_profile_name = '{}'
+              AND requested_start_time = {}
+              AND requested_end_time = {}
+            FORMAT JSONEachRow
+            "#,
+            sql_ident(&self.database),
+            sql_string(analysis_setting_id),
+            sql_string(risk_profile_name),
+            requested_start_time,
+            requested_end_time
+        );
+
+        let body = self.query_text(&sql).await?;
+        let trimmed = body.trim();
+        if trimmed.is_empty() {
+            return Ok(false);
+        }
+
+        let row = serde_json::from_str::<KlineCountRow>(trimmed)?;
+        Ok(row.row_count > 0)
     }
 
     // latest_backtest_run has been removed; callers should query

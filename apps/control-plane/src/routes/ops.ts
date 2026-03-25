@@ -10,6 +10,7 @@ import {
 } from "../features/config-resources.js";
 import {
   createBacktestJob,
+  listBacktestBatches,
   getBacktestJob,
   listDataReadinessProjections,
   listBacktestRunProjections,
@@ -17,6 +18,7 @@ import {
   markBacktestJobCompleted,
   markBacktestJobFailed,
   markBacktestJobRunning,
+  type BacktestBatchRecord,
   type BacktestJobInput,
   type BacktestJobRecord,
   type BacktestRunProjectionRecord,
@@ -164,6 +166,7 @@ export const registerOpsRoutes = (
       pool: Pool,
     ) => Promise<ResolvedAnalysisSettingsRecord[]>;
     listBacktestJobsFn?: (pool: Pool, limit: number) => Promise<BacktestJobRecord[]>;
+    listBacktestBatchesFn?: (pool: Pool, limit: number) => Promise<BacktestBatchRecord[]>;
     listBacktestRunProjectionsFn?: (
       pool: Pool,
       limit: number,
@@ -177,6 +180,7 @@ export const registerOpsRoutes = (
   const listResolvedAnalysisSettingsFn =
     options?.listResolvedAnalysisSettingsFn ?? defaultListResolvedAnalysisSettings;
   const listBacktestJobsFn = options?.listBacktestJobsFn ?? listBacktestJobs;
+  const listBacktestBatchesFn = options?.listBacktestBatchesFn ?? listBacktestBatches;
   const listBacktestRunProjectionsFn =
     options?.listBacktestRunProjectionsFn ?? listBacktestRunProjections;
   const listDataReadinessProjectionsFn =
@@ -207,6 +211,7 @@ export const registerOpsRoutes = (
       const payload = (await fetchJson(`${config.researchBacktestingBaseUrl}/v1/backtests`, {
         method: "POST",
         body: JSON.stringify({
+          controlPlaneJobId: runningJob.id,
           analysisSettingId: runningJob.analysisSettingId,
           riskProfileName: runningJob.riskProfileName ?? undefined,
           startTime: runningJob.startTime ?? undefined,
@@ -276,14 +281,21 @@ export const registerOpsRoutes = (
   };
 
   const buildBacktestsSummary = async () => {
-    const [jobs, recentRuns] = await Promise.all([
+    const [jobs, batches, recentRuns] = await Promise.all([
       listBacktestJobsFn(pool, 100),
+      listBacktestBatchesFn(pool, 100),
       listBacktestRunProjectionsFn(pool, 100),
     ]);
 
     const latestRunByKey = new Map<string, BacktestRunProjectionRecord>();
     for (const run of recentRuns) {
-      const key = `${run.symbol}:${run.timeframeCode}`;
+      const key = [
+        run.symbol,
+        run.timeframeCode,
+        run.analysisSettingId,
+        run.riskProfileName,
+        run.strategyName,
+      ].join(":");
       if (!latestRunByKey.has(key)) {
         latestRunByKey.set(key, run);
       }
@@ -292,6 +304,7 @@ export const registerOpsRoutes = (
     return {
       generatedAt: new Date().toISOString(),
       jobs,
+      batches,
       recentRuns,
       latestRuns: [...latestRunByKey.values()],
     };
@@ -375,7 +388,14 @@ export const registerOpsRoutes = (
     },
     handler: async (request, reply) => {
       const input = request.body as BacktestJobInput;
-      const job = await createBacktestJob(pool, input);
+      const analyses = await listResolvedAnalysisSettingsFn(pool);
+      const analysis = analyses.find((item) => item.id === input.analysisSettingId);
+      const job = await createBacktestJob(pool, {
+        ...input,
+        symbolCode: analysis?.symbol.code,
+        timeframeCode: analysis?.timeframeCode,
+        strategyName: analysis?.strategyName,
+      });
       broadcastInvalidate("backtest-job-created");
       void executeBacktestJob(job);
       reply.code(202);
