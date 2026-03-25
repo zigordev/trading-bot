@@ -168,10 +168,6 @@ Set or review these values:
   - keep the default `0` unless local backtests should include a per-side fee assumption
 - `BACKTEST_SLIPPAGE_BPS`
   - keep the default `0` unless local backtests should include a slippage assumption
-- `AUTO_BACKTEST_ENABLED`
-  - set `true` to run all enabled analysis-settings backtests on a schedule
-- `AUTO_BACKTEST_INTERVAL_SECONDS`
-  - keep `3600` for hourly scheduling
 - `BACKTEST_TIMERANGE_MS_BY_TIMEFRAME`
   - comma-separated timeframeCode=durationMs pairs, e.g. `1m=86400000,5m=604800000`
 

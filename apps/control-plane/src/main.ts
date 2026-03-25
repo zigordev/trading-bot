@@ -19,6 +19,9 @@ import {
   createBacktestRunProjectionConsumer,
 } from "./infrastructure/backtest-run-events.js";
 import {
+  createBacktestProgressConsumer,
+} from "./infrastructure/backtest-progress-events.js";
+import {
   createDataReadinessProjectionConsumer,
 } from "./infrastructure/data-readiness-events.js";
 import { createPool } from "./infrastructure/database.js";
@@ -48,6 +51,11 @@ await ensureControlPlaneSchema(pool);
 await ensureOpsSchema(pool);
 const configChangePublisher = createConfigChangeEventPublisher(config, app.log);
 const backtestRunProjectionConsumer = createBacktestRunProjectionConsumer(
+  config,
+  app.log,
+  pool,
+);
+const backtestProgressConsumer = createBacktestProgressConsumer(
   config,
   app.log,
   pool,
@@ -118,6 +126,7 @@ registerRuntimeConfigRoutes(app, pool);
 registerOpsRoutes(app, config, pool);
 await configChangePublisher.start();
 await backtestRunProjectionConsumer.start();
+await backtestProgressConsumer.start();
 await dataReadinessProjectionConsumer.start();
 
 app.get(
@@ -161,6 +170,7 @@ app.setErrorHandler((error, _request, reply) => {
 
 const close = async () => {
   await backtestRunProjectionConsumer.stop();
+  await backtestProgressConsumer.stop();
   await dataReadinessProjectionConsumer.stop();
   await configChangePublisher.stop();
   await app.close();

@@ -177,13 +177,11 @@ async fn info(State(state): State<AppState>) -> Json<serde_json::Value> {
                 "Prometheus-style metrics endpoint",
                 "runtime-config bootstrap from control-plane",
                 "config-change driven subscription refresh",
-                "periodic runtime-config reconciliation",
+                "hourly closed-window snapshot refresh",
                 "Kafka topic provisioning for consumed and published contracts",
-                "Binance combined websocket streams for klines and aggregate trades",
-                "normalized market-data publication into Redpanda",
                 "persisted kline and aggregate-trade storage in ClickHouse historical store",
-                "startup backfill and tail-gap repair for klines and aggregate trades",
-                "periodic trade gap audit/repair loop",
+                "startup historical snapshot materialization for klines and aggregate trades",
+                "closed-hour gap detection within the required backtest window",
                 "historian inspection endpoints",
                 "replay-oriented historian query endpoints",
                 "ClickHouse historian reads for research-backtesting consumers"
@@ -195,10 +193,7 @@ async fn info(State(state): State<AppState>) -> Json<serde_json::Value> {
         },
         "topics": {
             "consumes": [config.config_change_events_topic],
-            "publishes": [
-                config.market_data_klines_topic,
-                config.market_data_trades_topic
-            ]
+            "publishes": []
         },
         "status": status
     }))

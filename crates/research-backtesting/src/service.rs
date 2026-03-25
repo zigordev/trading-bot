@@ -1,12 +1,15 @@
-use std::collections::HashMap;
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
 
 use anyhow::{Context, Result, bail};
-use chrono::{DateTime, Datelike, TimeZone, Utc};
+use chrono::{DateTime, TimeZone, Utc};
+use futures_util::StreamExt;
 use rdkafka::{
     ClientConfig,
+    Message,
+    consumer::{Consumer, StreamConsumer},
     producer::{FutureProducer, FutureRecord},
 };
 use serde::Serialize;
@@ -51,6 +54,7 @@ struct Inner {
     kafka_producer: FutureProducer,
     historical_store: Database,
     status: tokio::sync::RwLock<RuntimeStatus>,
+    running_readiness_windows: tokio::sync::Mutex<HashSet<String>>,
 }
 
 #[derive(Clone, Debug, Default, Serialize)]
@@ -94,6 +98,7 @@ struct CompletedBacktest {
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct BacktestCompletedEventData {
+    control_plane_job_id: Option<String>,
     backtest_id: String,
     finished_at: String,
     backtest_duration_ms: i64,
@@ -120,6 +125,96 @@ struct BacktestCompletedEventEnvelope {
     source: String,
     occurred_at: String,
     data: BacktestCompletedEventData,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BacktestProgressEventData {
+    control_plane_job_id: String,
+    analysis_setting_id: String,
+    risk_profile_name: String,
+    symbol: String,
+    timeframe_code: String,
+    strategy_name: String,
+    stage: String,
+    progress_percent: f64,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BacktestProgressEventEnvelope {
+    event_id: String,
+    event_type: &'static str,
+    source: String,
+    occurred_at: String,
+    data: BacktestProgressEventData,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BacktestBatchProgressEventData {
+    batch_id: String,
+    symbol: String,
+    timeframe_code: String,
+    requested_start_time: i64,
+    requested_end_time: i64,
+    stage: String,
+    progress_percent: f64,
+    total_count: usize,
+    completed_count: usize,
+    running_count: usize,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BacktestBatchProgressEventEnvelope {
+    event_id: String,
+    event_type: &'static str,
+    source: String,
+    occurred_at: String,
+    data: BacktestBatchProgressEventData,
+}
+
+#[derive(Clone, Debug)]
+struct BacktestProgressContext {
+    control_plane_job_id: String,
+    analysis_setting_id: String,
+    risk_profile_name: String,
+    symbol: String,
+    timeframe_code: String,
+    strategy_name: String,
+    batch_id: Option<String>,
+    batch_total_count: Option<usize>,
+    batch_completed_count: Option<usize>,
+    requested_start_time: Option<i64>,
+    requested_end_time: Option<i64>,
+}
+
+#[derive(Clone, Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DataReadinessSnapshotEnvelope {
+    event_id: String,
+    event_type: String,
+    data: DataReadinessSnapshotPayload,
+}
+
+#[derive(Clone, Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DataReadinessSnapshotPayload {
+    items: Vec<DataReadinessSnapshotItem>,
+}
+
+#[derive(Clone, Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DataReadinessSnapshotItem {
+    status: String,
+    #[serde(alias = "pairCode")]
+    symbol_code: String,
+    timeframe_code: String,
+    #[serde(default)]
+    analysis_setting_ids: Vec<String>,
+    requested_start_time: i64,
+    requested_end_time: i64,
 }
 
 #[derive(Clone)]
@@ -168,7 +263,11 @@ impl ResearchBacktestingService {
     pub async fn new(config: AppConfig) -> Result<Self> {
         ensure_topics(
             &config.kafka_bootstrap_servers,
-            &[&config.backtest_completed_events_topic],
+            &[
+                &config.backtest_completed_events_topic,
+                &config.backtest_progress_events_topic,
+                &config.data_readiness_events_topic,
+            ],
         )
         .await?;
         let control_plane_client = reqwest::Client::builder()
@@ -204,6 +303,7 @@ impl ResearchBacktestingService {
                     last_backtest: None,
                     otel_exporter_configured: config.otel_exporter_otlp_endpoint.is_some(),
                 }),
+                running_readiness_windows: tokio::sync::Mutex::new(HashSet::new()),
             }),
         };
 
@@ -219,40 +319,96 @@ impl ResearchBacktestingService {
             status.started = true;
         }
 
-        if service.inner.config.auto_backtest_enabled {
-            service.start_auto_backtest_scheduler();
-        }
+        service.start_data_readiness_consumer();
 
         Ok(service)
     }
 
-    fn start_auto_backtest_scheduler(self: &Self) {
+    pub fn config_snapshot(&self) -> AppConfig {
+        self.inner.config.clone()
+    }
+
+    fn start_data_readiness_consumer(&self) {
         let service = self.clone();
-        let interval = StdDuration::from_secs(service.inner.config.auto_backtest_interval_seconds);
 
         tokio::spawn(async move {
-            if let Err(error) = service.run_enabled_analysis_backtests_if_ready("startup").await {
-                warn!(error = %error, "startup backtest batch failed");
-            }
-
-            tokio::time::sleep(interval).await;
-            loop {
-                if let Err(error) = service
-                    .run_enabled_analysis_backtests_if_ready("periodic")
-                    .await
-                {
-                    error!(
-                        error = %error,
-                        "scheduled backtest batch failed"
-                    );
-                }
-                tokio::time::sleep(interval).await;
+            if let Err(error) = service.consume_data_readiness_events().await {
+                error!(error = %error, "data-readiness trigger consumer stopped");
             }
         });
     }
 
-    pub fn config_snapshot(&self) -> AppConfig {
-        self.inner.config.clone()
+    async fn consume_data_readiness_events(&self) -> Result<()> {
+        let consumer = ClientConfig::new()
+            .set("bootstrap.servers", &self.inner.config.kafka_bootstrap_servers)
+            .set(
+                "group.id",
+                &self.inner.config.data_readiness_events_consumer_group_id,
+            )
+            .set("enable.auto.commit", "true")
+            .set("auto.offset.reset", "earliest")
+            .create::<StreamConsumer>()?;
+
+        consumer.subscribe(&[&self.inner.config.data_readiness_events_topic])?;
+
+        info!(
+            topic = %self.inner.config.data_readiness_events_topic,
+            group_id = %self.inner.config.data_readiness_events_consumer_group_id,
+            "data-readiness trigger consumer started"
+        );
+
+        let mut stream = consumer.stream();
+        while let Some(message) = stream.next().await {
+            match message {
+                Ok(message) => {
+                    let Some(payload) = message.payload_view::<str>().transpose()? else {
+                        continue;
+                    };
+
+                    if let Err(error) = self
+                        .handle_data_readiness_message(payload)
+                        .await
+                    {
+                        warn!(error = %error, "failed to process data-readiness snapshot");
+                    }
+                }
+                Err(error) => {
+                    warn!(error = %error, "data-readiness trigger consumer poll failed");
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn handle_data_readiness_message(&self, payload: &str) -> Result<()> {
+        let envelope = serde_json::from_str::<DataReadinessSnapshotEnvelope>(payload)
+            .context("invalid data-readiness snapshot payload")?;
+        if envelope.event_type != "trading-bot.market-data.data-readiness-snapshot.v1" {
+            return Ok(());
+        }
+
+        for item in envelope.data.items {
+            if item.status != "ready" {
+                continue;
+            }
+
+            if let Err(error) = self
+                .trigger_backtests_for_ready_dataset(&item, &envelope.event_id)
+                .await
+            {
+                warn!(
+                    error = %error,
+                    symbol = %item.symbol_code,
+                    timeframe_code = %item.timeframe_code,
+                    requested_start_time = item.requested_start_time,
+                    requested_end_time = item.requested_end_time,
+                    "failed to trigger readiness-driven backtests"
+                );
+            }
+        }
+
+        Ok(())
     }
 
     pub fn metrics_text(&self) -> Result<String> {
@@ -316,6 +472,33 @@ impl ResearchBacktestingService {
         }
 
         let resolved = self.resolve_input(&request).await?;
+        let progress_context = request
+            .control_plane_job_id
+            .clone()
+            .map(|control_plane_job_id| BacktestProgressContext {
+                control_plane_job_id,
+                analysis_setting_id: resolved.analysis.id.clone(),
+                risk_profile_name: resolved.analysis.risk_profile_name.clone(),
+                symbol: resolved.analysis.symbol.clone(),
+                timeframe_code: resolved.analysis.timeframe_code.clone(),
+                strategy_name: resolved.analysis.strategy_name.clone(),
+                batch_id: request.batch_id.clone(),
+                batch_total_count: request.batch_total_count,
+                batch_completed_count: request.batch_completed_count,
+                requested_start_time: request.start_time,
+                requested_end_time: request.end_time,
+            });
+        if let Some(context) = progress_context.as_ref()
+            && let Err(error) = self
+                .publish_backtest_progress_event(context, "retrieving-data", 0.0)
+                .await
+        {
+            warn!(
+                error = %error,
+                control_plane_job_id = %context.control_plane_job_id,
+                "failed to publish backtest-progress event"
+            );
+        }
         let completed = execute_backtest(
             &self.inner.config.service_name,
             resolved,
@@ -325,6 +508,10 @@ impl ResearchBacktestingService {
             self.inner.config.default_slippage_bps,
             None,
             None,
+            progress_context.clone(),
+            self.inner.kafka_producer.clone(),
+            self.inner.config.backtest_progress_events_topic.clone(),
+            self.inner.config.service_name.clone(),
         )
         .await?;
         let persisted_run = persisted_backtest_run(&completed.response)?;
@@ -332,7 +519,13 @@ impl ResearchBacktestingService {
             .historical_store
             .insert_backtest_run(&persisted_run)
             .await?;
-        if let Err(error) = self.publish_backtest_completed_event(&completed.response).await {
+        if let Err(error) = self
+            .publish_backtest_completed_event(
+                &completed.response,
+                request.control_plane_job_id.as_deref(),
+            )
+            .await
+        {
             warn!(
                 error = %error,
                 backtest_id = completed.response.backtest_id,
@@ -393,13 +586,18 @@ impl ResearchBacktestingService {
         )?))
     }
 
-    async fn publish_backtest_completed_event(&self, response: &BacktestResponse) -> Result<()> {
+    async fn publish_backtest_completed_event(
+        &self,
+        response: &BacktestResponse,
+        control_plane_job_id: Option<&str>,
+    ) -> Result<()> {
         let envelope = BacktestCompletedEventEnvelope {
             event_id: Uuid::new_v4().to_string(),
             event_type: "trading-bot.research-backtesting.backtest-completed.v1",
             source: self.inner.config.service_name.clone(),
             occurred_at: response.finished_at.clone(),
             data: BacktestCompletedEventData {
+                control_plane_job_id: control_plane_job_id.map(ToOwned::to_owned),
                 backtest_id: response.backtest_id.clone(),
                 finished_at: response.finished_at.clone(),
                 backtest_duration_ms: response.backtest_duration_ms,
@@ -434,207 +632,350 @@ impl ResearchBacktestingService {
         Ok(())
     }
 
-    async fn run_enabled_analysis_backtests(
+    async fn publish_backtest_progress_event(
         &self,
-        analyses: Vec<ResolvedAnalysisSettingsRecord>,
+        context: &BacktestProgressContext,
+        stage: &str,
+        progress_percent: f64,
+    ) -> Result<()> {
+        let envelope = BacktestProgressEventEnvelope {
+            event_id: Uuid::new_v4().to_string(),
+            event_type: "trading-bot.research-backtesting.backtest-progress.v1",
+            source: self.inner.config.service_name.clone(),
+            occurred_at: Utc::now().to_rfc3339(),
+            data: BacktestProgressEventData {
+                control_plane_job_id: context.control_plane_job_id.clone(),
+                analysis_setting_id: context.analysis_setting_id.clone(),
+                risk_profile_name: context.risk_profile_name.clone(),
+                symbol: context.symbol.clone(),
+                timeframe_code: context.timeframe_code.clone(),
+                strategy_name: context.strategy_name.clone(),
+                stage: stage.to_string(),
+                progress_percent: progress_percent.clamp(0.0, 100.0),
+            },
+        };
+        let payload = serde_json::to_string(&envelope)?;
+
+        self.inner
+            .kafka_producer
+            .send(
+                FutureRecord::to(&self.inner.config.backtest_progress_events_topic)
+                    .key(&context.control_plane_job_id)
+                    .payload(&payload),
+                StdDuration::from_secs(5),
+            )
+            .await
+            .map_err(|(error, _)| anyhow::anyhow!(error))?;
+
+        if let (Some(batch_id), Some(total_count), Some(completed_count)) = (
+            context.batch_id.as_ref(),
+            context.batch_total_count,
+            context.batch_completed_count,
+        ) {
+            let requested_start_time = context.requested_start_time.unwrap_or_default();
+            let requested_end_time = context.requested_end_time.unwrap_or_default();
+            let normalized_progress = progress_percent.clamp(0.0, 100.0) / 100.0;
+            let batch_progress_percent = if total_count == 0 {
+                100.0
+            } else {
+                (((completed_count as f64) + normalized_progress) / total_count as f64) * 100.0
+            };
+            self.publish_backtest_batch_progress_event(
+                batch_id,
+                &context.symbol,
+                &context.timeframe_code,
+                requested_start_time,
+                requested_end_time,
+                stage,
+                batch_progress_percent,
+                total_count,
+                completed_count,
+                1,
+            )
+            .await?;
+        }
+
+        Ok(())
+    }
+
+    async fn publish_backtest_batch_progress_event(
+        &self,
+        batch_id: &str,
+        symbol: &str,
+        timeframe_code: &str,
+        requested_start_time: i64,
+        requested_end_time: i64,
+        stage: &str,
+        progress_percent: f64,
+        total_count: usize,
+        completed_count: usize,
+        running_count: usize,
+    ) -> Result<()> {
+        let envelope = BacktestBatchProgressEventEnvelope {
+            event_id: Uuid::new_v4().to_string(),
+            event_type: "trading-bot.research-backtesting.backtest-batch-progress.v1",
+            source: self.inner.config.service_name.clone(),
+            occurred_at: Utc::now().to_rfc3339(),
+            data: BacktestBatchProgressEventData {
+                batch_id: batch_id.to_string(),
+                symbol: symbol.to_string(),
+                timeframe_code: timeframe_code.to_string(),
+                requested_start_time,
+                requested_end_time,
+                stage: stage.to_string(),
+                progress_percent: progress_percent.clamp(0.0, 100.0),
+                total_count,
+                completed_count,
+                running_count,
+            },
+        };
+        let payload = serde_json::to_string(&envelope)?;
+
+        self.inner
+            .kafka_producer
+            .send(
+                FutureRecord::to(&self.inner.config.backtest_progress_events_topic)
+                    .key(batch_id)
+                    .payload(&payload),
+                StdDuration::from_secs(5),
+            )
+            .await
+            .map_err(|(error, _)| anyhow::anyhow!(error))?;
+
+        Ok(())
+    }
+
+    async fn trigger_backtests_for_ready_dataset(
+        &self,
+        item: &DataReadinessSnapshotItem,
+        source_event_id: &str,
     ) -> Result<usize> {
+        let analysis_id_filter = item
+            .analysis_setting_ids
+            .iter()
+            .cloned()
+            .collect::<HashSet<_>>();
+        let analyses = self
+            .fetch_runtime_analysis_settings()
+            .await?
+            .into_iter()
+            .filter(|analysis| analysis.enabled)
+            .filter(|analysis| analysis.symbol == item.symbol_code)
+            .filter(|analysis| analysis.timeframe_code == item.timeframe_code)
+            .filter(|analysis| {
+                analysis_id_filter.is_empty() || analysis_id_filter.contains(&analysis.id)
+            })
+            .collect::<Vec<_>>();
+        let risk_profiles = self.fetch_enabled_risk_profiles().await?;
+        let mut analyses = expand_analyses_by_risk_profiles(analyses, &risk_profiles);
+
         if analyses.is_empty() {
-            warn!("no enabled analysis settings found for scheduled backtests");
             return Ok(0);
         }
 
-        let mut analyses_by_pair: HashMap<String, Vec<ResolvedAnalysisSettingsRecord>> =
-            HashMap::new();
+        analyses.sort_by_key(|analysis| {
+            std::cmp::Reverse(
+                self.inner
+                    .config
+                    .backtesting_timerange_ms_by_timeframe
+                    .get(&analysis.timeframe_code)
+                    .copied()
+                    .unwrap_or_default(),
+            )
+        });
+
+        let mut runnable_analyses = Vec::new();
+        let mut skipped_existing = 0usize;
+
         for analysis in analyses {
-            analyses_by_pair
-                .entry(analysis.symbol.clone())
-                .or_default()
-                .push(analysis);
+            let run_key = readiness_run_key(
+                &analysis.id,
+                &analysis.risk_profile_name,
+                item.requested_start_time,
+                item.requested_end_time,
+            );
+
+            if self.readiness_window_in_flight(&run_key).await {
+                continue;
+            }
+
+            if self
+                .inner
+                .historical_store
+                .backtest_run_exists_for_window(
+                    &analysis.id,
+                    &analysis.risk_profile_name,
+                    item.requested_start_time,
+                    item.requested_end_time,
+                )
+                .await?
+            {
+                skipped_existing += 1;
+                continue;
+            }
+
+            runnable_analyses.push((analysis, run_key));
         }
 
-        let mut ran = 0usize;
-        let mut failed = 0usize;
+        if runnable_analyses.is_empty() {
+            if skipped_existing > 0 {
+                info!(
+                    symbol = %item.symbol_code,
+                    timeframe_code = %item.timeframe_code,
+                    requested_start_time = item.requested_start_time,
+                    requested_end_time = item.requested_end_time,
+                    started = 0,
+                    skipped_existing,
+                    source_event_id,
+                    "processed readiness-triggered backtests"
+                );
+            }
+            return Ok(0);
+        }
 
-        for (_, mut pair_analyses) in analyses_by_pair {
-            pair_analyses.sort_by_key(|analysis| {
-                std::cmp::Reverse(
-                    self.inner
-                        .config
-                        .backtesting_timerange_ms_by_timeframe
-                        .get(&analysis.timeframe_code)
-                        .copied()
-                        .unwrap_or_default(),
-                )
-            });
+        let batch_id = format!(
+            "{}:{}:{}:{}",
+            item.symbol_code, item.timeframe_code, item.requested_start_time, item.requested_end_time
+        );
+        let total_count = runnable_analyses.len();
+        let mut trade_cache: Option<TradeWindowCache> = None;
+        let mut started = 0usize;
 
-            let mut trade_cache: Option<TradeWindowCache> = None;
+        self.publish_backtest_batch_progress_event(
+            &batch_id,
+            &item.symbol_code,
+            &item.timeframe_code,
+            item.requested_start_time,
+            item.requested_end_time,
+            "retrieving-data",
+            0.0,
+            total_count,
+            0,
+            0,
+        )
+        .await?;
 
-            for analysis in pair_analyses {
-                let request = BacktestRequest {
-                    analysis_setting_id: analysis.id.clone(),
-                    risk_profile_name: Some(analysis.risk_profile_name.clone()),
-                    start_time: None,
-                    end_time: None,
-                    warmup_candles: None,
-                };
-                if let Err(error) = self
-                    .run_backtest_with_trade_cache(request, &mut trade_cache)
-                    .await
-                {
-                    failed += 1;
+        for (analysis, run_key) in runnable_analyses {
+            self.mark_readiness_window_in_flight(&run_key).await;
+
+            let request = BacktestRequest {
+                control_plane_job_id: Some(format!("readiness-{}", Uuid::new_v4())),
+                batch_id: Some(batch_id.clone()),
+                batch_total_count: Some(total_count),
+                batch_completed_count: Some(started),
+                analysis_setting_id: analysis.id.clone(),
+                risk_profile_name: Some(analysis.risk_profile_name.clone()),
+                start_time: Some(item.requested_start_time),
+                end_time: Some(item.requested_end_time),
+                warmup_candles: None,
+            };
+            let result = self
+                .run_backtest_with_trade_cache(request, &mut trade_cache)
+                .await;
+            self.unmark_readiness_window_in_flight(&run_key).await;
+
+            match result {
+                Ok(_) => {
+                    started += 1;
+                    let stage = if started >= total_count {
+                        "completed"
+                    } else {
+                        "running-backtests"
+                    };
+                    if let Err(error) = self
+                        .publish_backtest_batch_progress_event(
+                            &batch_id,
+                            &item.symbol_code,
+                            &item.timeframe_code,
+                            item.requested_start_time,
+                            item.requested_end_time,
+                            stage,
+                            (started as f64 / total_count as f64) * 100.0,
+                            total_count,
+                            started,
+                            0,
+                        )
+                        .await
+                    {
+                        warn!(
+                            error = %error,
+                            batch_id = %batch_id,
+                            "failed to publish backtest-batch progress event"
+                        );
+                    }
+                }
+                Err(error) => {
+                    let _ = self
+                        .publish_backtest_batch_progress_event(
+                            &batch_id,
+                            &item.symbol_code,
+                            &item.timeframe_code,
+                            item.requested_start_time,
+                            item.requested_end_time,
+                            "failed",
+                            if total_count == 0 {
+                                0.0
+                            } else {
+                                (started as f64 / total_count as f64) * 100.0
+                            },
+                            total_count,
+                            started,
+                            0,
+                        )
+                        .await;
                     warn!(
                         error = %error,
                         analysis_setting_id = %analysis.id,
                         risk_profile_name = %analysis.risk_profile_name,
                         symbol = %analysis.symbol,
                         timeframe_code = %analysis.timeframe_code,
-                        strategy_name = %analysis.strategy_name,
-                        "scheduled backtest failed"
+                        requested_start_time = item.requested_start_time,
+                        requested_end_time = item.requested_end_time,
+                        source_event_id,
+                        "readiness-triggered backtest failed"
                     );
-                } else {
-                    ran += 1;
                 }
             }
         }
 
-        info!(
-            ran = ran,
-            failed = failed,
-            total = ran + failed,
-            "scheduled backtest batch completed"
-        );
-
-        Ok(ran)
-    }
-
-    async fn run_enabled_analysis_backtests_if_ready(&self, reason: &str) -> Result<usize> {
-        let analyses = self
-            .fetch_runtime_analysis_settings()
-            .await?
-            .into_iter()
-            .filter(|analysis| analysis.enabled)
-            .collect::<Vec<_>>();
-        let risk_profiles = self.fetch_enabled_risk_profiles().await?;
-        let analyses = expand_analyses_by_risk_profiles(analyses, &risk_profiles);
-
-        if analyses.is_empty() {
-            warn!("no enabled analysis settings or risk profiles found for scheduled backtests");
-            return Ok(0);
-        }
-
-        let mut not_ready = Vec::new();
-        for analysis in &analyses {
-            if let Some(blocker) = self.scheduled_backtest_readiness_blocker(analysis).await? {
-                let request = BacktestRequest {
-                    analysis_setting_id: analysis.id.clone(),
-                    risk_profile_name: Some(analysis.risk_profile_name.clone()),
-                    start_time: None,
-                    end_time: None,
-                    warmup_candles: None,
-                };
-                let time_window = build_analysis_spec(analysis)?
-                    .map(|spec| {
-                        resolve_time_window(
-                            analysis,
-                            &request,
-                            &spec,
-                            self.inner.config.default_warmup_multiplier,
-                            &self.inner.config.backtesting_timerange_ms_by_timeframe,
-                        )
-                    })
-                    .transpose()?;
-                not_ready.push((
-                    format!("{}:{}", analysis.id, analysis.risk_profile_name),
-                    analysis.symbol.clone(),
-                    analysis.timeframe_code.clone(),
-                    analysis.risk_profile_name.clone(),
-                    time_window
-                        .as_ref()
-                        .map(|window| window.requested_start_time),
-                    time_window.as_ref().map(|window| window.requested_end_time),
-                    blocker,
-                ));
-            }
-        }
-
-        if !not_ready.is_empty() {
-            let blocked_analysis_ids = not_ready
-                .iter()
-                .map(|(id, ..)| id.clone())
-                .collect::<Vec<_>>();
-            let blocked_analyses = not_ready
-                .iter()
-                .map(
-                    |(id, pair_code, timeframe_code, risk_profile_name, requested_start_time, requested_end_time, blocker)| {
-                        format!(
-                            "analysis_id={id} pair={pair_code} timeframe={timeframe_code} risk_profile_name={risk_profile_name} requested_start_ms={requested_start_time:?} requested_end_ms={requested_end_time:?} blocker={blocker}"
-                        )
-                    },
-                )
-                .collect::<Vec<_>>();
-            warn!(
-                reason,
-                blocked_analysis_ids = ?blocked_analysis_ids,
-                blocked_analyses = ?blocked_analyses,
-                blocked_count = not_ready.len(),
-                "scheduled backtest batch skipped because historical data is not ready"
+        if started > 0 || skipped_existing > 0 {
+            info!(
+                symbol = %item.symbol_code,
+                timeframe_code = %item.timeframe_code,
+                requested_start_time = item.requested_start_time,
+                requested_end_time = item.requested_end_time,
+                started,
+                skipped_existing,
+                source_event_id,
+                "processed readiness-triggered backtests"
             );
-            return Ok(0);
         }
 
-        self.run_enabled_analysis_backtests(analyses).await
+        Ok(started)
     }
 
-    async fn scheduled_backtest_readiness_blocker(
-        &self,
-        analysis: &ResolvedAnalysisSettingsRecord,
-    ) -> Result<Option<String>> {
-        let Some(spec) = build_analysis_spec(analysis)? else {
-            return Ok(Some("analysis is not runnable offline".to_string()));
-        };
+    async fn readiness_window_in_flight(&self, run_key: &str) -> bool {
+        self.inner
+            .running_readiness_windows
+            .lock()
+            .await
+            .contains(run_key)
+    }
 
-        let request = BacktestRequest {
-            analysis_setting_id: analysis.id.clone(),
-            risk_profile_name: Some(analysis.risk_profile_name.clone()),
-            start_time: None,
-            end_time: None,
-            warmup_candles: None,
-        };
-        let time_window = resolve_time_window(
-            analysis,
-            &request,
-            &spec,
-            self.inner.config.default_warmup_multiplier,
-            &self.inner.config.backtesting_timerange_ms_by_timeframe,
-        )?;
+    async fn mark_readiness_window_in_flight(&self, run_key: &str) {
+        self.inner
+            .running_readiness_windows
+            .lock()
+            .await
+            .insert(run_key.to_string());
+    }
 
-        if let Some(blocker) = kline_coverage_blocker_from_store(
-            &self.inner.historical_store,
-            &analysis.symbol,
-            &analysis.timeframe_code,
-            time_window.effective_warmup_start_time,
-            time_window.requested_end_time,
-            analysis.timeframe.period_ms,
-        )
-        .await?
-        {
-            return Ok(Some(blocker));
-        }
-
-        let tolerance = self.inner.config.trade_coverage_tolerance_ms as i64;
-        if let Some(blocker) = trade_coverage_blocker_from_store(
-            &self.inner.historical_store,
-            &analysis.symbol,
-            time_window.requested_start_time,
-            time_window.requested_end_time,
-            tolerance,
-        )
-        .await?
-        {
-            return Ok(Some(blocker));
-        }
-
-        Ok(None)
+    async fn unmark_readiness_window_in_flight(&self, run_key: &str) {
+        self.inner
+            .running_readiness_windows
+            .lock()
+            .await
+            .remove(run_key);
     }
 
     async fn run_backtest_with_trade_cache(
@@ -652,6 +993,33 @@ impl ResearchBacktestingService {
         }
 
         let resolved = self.resolve_input(&request).await?;
+        let progress_context = request
+            .control_plane_job_id
+            .clone()
+            .map(|control_plane_job_id| BacktestProgressContext {
+                control_plane_job_id,
+                analysis_setting_id: resolved.analysis.id.clone(),
+                risk_profile_name: resolved.analysis.risk_profile_name.clone(),
+                symbol: resolved.analysis.symbol.clone(),
+                timeframe_code: resolved.analysis.timeframe_code.clone(),
+                strategy_name: resolved.analysis.strategy_name.clone(),
+                batch_id: request.batch_id.clone(),
+                batch_total_count: request.batch_total_count,
+                batch_completed_count: request.batch_completed_count,
+                requested_start_time: request.start_time,
+                requested_end_time: request.end_time,
+            });
+        if let Some(context) = progress_context.as_ref()
+            && let Err(error) = self
+                .publish_backtest_progress_event(context, "retrieving-data", 0.0)
+                .await
+        {
+            warn!(
+                error = %error,
+                control_plane_job_id = %context.control_plane_job_id,
+                "failed to publish backtest-progress event"
+            );
+        }
         let (cached_trades, data_retrieval_duration_ms) = match trade_cache {
             Some(existing)
                 if existing.contains_window(
@@ -698,6 +1066,10 @@ impl ResearchBacktestingService {
             self.inner.config.default_slippage_bps,
             data_retrieval_duration_ms,
             cached_trades,
+            progress_context.clone(),
+            self.inner.kafka_producer.clone(),
+            self.inner.config.backtest_progress_events_topic.clone(),
+            self.inner.config.service_name.clone(),
         )
         .await?;
         let persisted_run = persisted_backtest_run(&completed.response)?;
@@ -705,6 +1077,19 @@ impl ResearchBacktestingService {
             .historical_store
             .insert_backtest_run(&persisted_run)
             .await?;
+        if let Err(error) = self
+            .publish_backtest_completed_event(
+                &completed.response,
+                request.control_plane_job_id.as_deref(),
+            )
+            .await
+        {
+            warn!(
+                error = %error,
+                backtest_id = completed.response.backtest_id,
+                "failed to publish backtest-completed event"
+            );
+        }
 
         self.inner
             .metrics
@@ -1126,6 +1511,17 @@ fn millis_to_rfc3339(value: i64) -> Result<String> {
     Ok(timestamp.to_rfc3339())
 }
 
+fn readiness_run_key(
+    analysis_setting_id: &str,
+    risk_profile_name: &str,
+    requested_start_time: i64,
+    requested_end_time: i64,
+) -> String {
+    format!(
+        "{analysis_setting_id}:{risk_profile_name}:{requested_start_time}:{requested_end_time}"
+    )
+}
+
 fn resolve_time_window(
     analysis: &ResolvedAnalysisSettingsRecord,
     request: &BacktestRequest,
@@ -1158,7 +1554,7 @@ fn resolve_time_window(
                 (start_time, end_time, "request".to_string())
             }
             (None, None) => {
-                let end_time = previous_midnight_utc(Utc::now()).timestamp_millis();
+                let end_time = last_closed_hour_utc(Utc::now()).timestamp_millis();
                 let start_time = end_time
                     .checked_sub(configured_duration_ms)
                     .context("legacy-style backtest startTime overflowed i64")?;
@@ -1219,17 +1615,13 @@ fn validate_time_window(start_time: i64, end_time: i64) -> Result<()> {
     Ok(())
 }
 
-fn previous_midnight_utc(reference_time: DateTime<Utc>) -> DateTime<Utc> {
-    Utc.with_ymd_and_hms(
-        reference_time.year(),
-        reference_time.month(),
-        reference_time.day(),
-        0,
-        0,
-        0,
-    )
-    .single()
-    .expect("valid midnight")
+fn last_closed_hour_utc(reference_time: DateTime<Utc>) -> DateTime<Utc> {
+    let timestamp_ms = reference_time.timestamp_millis();
+    let hour_ms = 60 * 60 * 1000;
+    let closed_hour_ms = timestamp_ms.div_euclid(hour_ms) * hour_ms;
+    Utc.timestamp_millis_opt(closed_hour_ms)
+        .single()
+        .expect("valid closed hour")
 }
 
 fn expected_candle_count(start_time: i64, end_time: i64, period_ms: i64) -> Result<usize> {
@@ -1455,6 +1847,10 @@ async fn execute_backtest(
     slippage_bps: f64,
     data_retrieval_duration_ms_override: Option<i64>,
     cached_trades: Option<Arc<Vec<HistoricalTradeRecord>>>,
+    progress_context: Option<BacktestProgressContext>,
+    kafka_producer: FutureProducer,
+    backtest_progress_events_topic: String,
+    progress_event_source: String,
 ) -> Result<CompletedBacktest> {
     let execution_started_at = Instant::now();
     let backtest_id = Uuid::new_v4().to_string();
@@ -1497,6 +1893,10 @@ async fn execute_backtest(
     let retrieval_backtest_id = backtest_id.clone();
     let retrieval_page_count = Arc::new(AtomicUsize::new(0));
     let retrieval_rows_total = Arc::new(AtomicUsize::new(0));
+    let progress_context_for_fetch = progress_context.clone();
+    let kafka_producer_for_fetch = kafka_producer.clone();
+    let backtest_progress_events_topic_for_fetch = backtest_progress_events_topic.clone();
+    let progress_event_source_for_fetch = progress_event_source.clone();
 
     info!(
         backtest_id = %retrieval_backtest_id,
@@ -1517,6 +1917,10 @@ async fn execute_backtest(
         let retrieval_page_count = retrieval_page_count.clone();
         let retrieval_rows_total = retrieval_rows_total.clone();
         let cached_trades = cached_trades.clone();
+        let progress_context = progress_context_for_fetch.clone();
+        let kafka_producer = kafka_producer_for_fetch.clone();
+        let backtest_progress_events_topic = backtest_progress_events_topic_for_fetch.clone();
+        let progress_event_source = progress_event_source_for_fetch.clone();
         let limit = page_rows.min(remaining).max(1);
         Box::pin(async move {
             let page = match cached_trades.as_ref() {
@@ -1577,6 +1981,35 @@ async fn execute_backtest(
                     elapsed_ms = retrieval_started_at.elapsed().as_millis() as u64,
                     "backtest trade retrieval progress"
                 );
+
+                if let Some(context) = progress_context.as_ref() {
+                    let envelope = BacktestProgressEventEnvelope {
+                        event_id: Uuid::new_v4().to_string(),
+                        event_type: "trading-bot.research-backtesting.backtest-progress.v1",
+                        source: progress_event_source.clone(),
+                        occurred_at: Utc::now().to_rfc3339(),
+                        data: BacktestProgressEventData {
+                            control_plane_job_id: context.control_plane_job_id.clone(),
+                            analysis_setting_id: context.analysis_setting_id.clone(),
+                            risk_profile_name: context.risk_profile_name.clone(),
+                            symbol: context.symbol.clone(),
+                            timeframe_code: context.timeframe_code.clone(),
+                            strategy_name: context.strategy_name.clone(),
+                            stage: "retrieving-data".to_string(),
+                            progress_percent: window_progress_percent.clamp(0.0, 99.0),
+                        },
+                    };
+                    if let Ok(payload) = serde_json::to_string(&envelope) {
+                        let _ = kafka_producer
+                            .send(
+                                FutureRecord::to(&backtest_progress_events_topic)
+                                    .key(&context.control_plane_job_id)
+                                    .payload(&payload),
+                                StdDuration::from_secs(5),
+                            )
+                            .await;
+                    }
+                }
             }
 
             Ok(page)
@@ -1598,6 +2031,34 @@ async fn execute_backtest(
         fetch_page,
     )
     .await?;
+    if let Some(context) = progress_context.as_ref() {
+        let envelope = BacktestProgressEventEnvelope {
+            event_id: Uuid::new_v4().to_string(),
+            event_type: "trading-bot.research-backtesting.backtest-progress.v1",
+            source: progress_event_source,
+            occurred_at: Utc::now().to_rfc3339(),
+            data: BacktestProgressEventData {
+                control_plane_job_id: context.control_plane_job_id.clone(),
+                analysis_setting_id: context.analysis_setting_id.clone(),
+                risk_profile_name: context.risk_profile_name.clone(),
+                symbol: context.symbol.clone(),
+                timeframe_code: context.timeframe_code.clone(),
+                strategy_name: context.strategy_name.clone(),
+                stage: "simulating".to_string(),
+                progress_percent: 100.0,
+            },
+        };
+        if let Ok(payload) = serde_json::to_string(&envelope) {
+            let _ = kafka_producer
+                .send(
+                    FutureRecord::to(&backtest_progress_events_topic)
+                        .key(&context.control_plane_job_id)
+                        .payload(&payload),
+                    StdDuration::from_secs(5),
+                )
+                .await;
+        }
+    }
     let trades = resequence_trades(trades);
     let summary = summarize_backtest(&signals, &trades);
     let backtest_duration_ms = execution_started_at.elapsed().as_millis() as i64;
@@ -1894,6 +2355,10 @@ mod tests {
             .expect("spec build")
             .expect("spec present");
         let request = BacktestRequest {
+            control_plane_job_id: None,
+            batch_id: None,
+            batch_total_count: None,
+            batch_completed_count: None,
             analysis_setting_id: analysis.id.clone(),
             risk_profile_name: None,
             start_time: Some(1_000_000),
@@ -1971,15 +2436,15 @@ mod tests {
     }
 
     #[test]
-    fn previous_midnight_utc_matches_market_data_boundary() {
+    fn last_closed_hour_utc_matches_market_data_boundary() {
         let reference = Utc
             .with_ymd_and_hms(2026, 3, 20, 19, 2, 0)
             .single()
             .expect("valid timestamp");
 
-        let midnight = previous_midnight_utc(reference);
+        let hour = last_closed_hour_utc(reference);
 
-        assert_eq!(midnight.to_rfc3339(), "2026-03-20T00:00:00+00:00");
+        assert_eq!(hour.to_rfc3339(), "2026-03-20T19:00:00+00:00");
     }
 
     #[tokio::test]
