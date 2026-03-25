@@ -20,16 +20,36 @@ export type BacktestJob = {
   status: "queued" | "running" | "completed" | "failed";
   analysisSettingId: string;
   riskProfileName: string | null;
+  symbolCode: string | null;
+  timeframeCode: string | null;
+  strategyName: string | null;
   startTime: number | null;
   endTime: number | null;
   warmupCandles: number | null;
   backtestId: string | null;
   errorMessage: string | null;
+  stage: string | null;
+  progressPercent: number | null;
   createdAt: string;
   updatedAt: string;
   startedAt: string | null;
   finishedAt: string | null;
   result: Record<string, unknown> | null;
+};
+
+export type BacktestBatch = {
+  batchId: string;
+  symbolCode: string;
+  timeframeCode: string;
+  requestedStartTime: number;
+  requestedEndTime: number;
+  stage: string;
+  progressPercent: number;
+  totalCount: number;
+  completedCount: number;
+  runningCount: number;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type RecentBacktestRun = {
@@ -54,6 +74,7 @@ export type RecentBacktestRun = {
 export type BacktestsSummaryResponse = {
   generatedAt: string;
   jobs: BacktestJob[];
+  batches: BacktestBatch[];
   recentRuns: RecentBacktestRun[];
   latestRuns: RecentBacktestRun[];
 };
@@ -81,7 +102,6 @@ export type DataReadinessResponse = {
     details: string | null;
     kline: Record<string, unknown> | null;
     trades: Record<string, unknown> | null;
-    bookTickers: Record<string, unknown> | null;
   }[];
 };
 

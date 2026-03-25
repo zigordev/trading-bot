@@ -10,12 +10,7 @@ const navItems = [
     label: "Configuration",
     icon: "settings" as const,
   },
-  {
-    href: "/data-readiness",
-    label: "Data readiness",
-    icon: "analytics" as const,
-  },
-  { href: "/backtests", label: "Backtests", icon: "timeline" as const },
+  { href: "/backtesting", label: "Backtesting", icon: "history" as const },
 ] as const;
 
 export function AppShell({
@@ -81,7 +76,10 @@ export function AppShell({
               }}
             >
               {navItems.map((item) => {
-                const active = pathname === item.href;
+                const active =
+                  item.href === "/"
+                    ? pathname === item.href
+                    : pathname === item.href || pathname.startsWith(`${item.href}/`);
                 return (
                   <Link key={item.href} href={item.href} asChild>
                     <Pressable

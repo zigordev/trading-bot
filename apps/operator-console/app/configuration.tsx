@@ -128,8 +128,16 @@ export default function ConfigurationScreen() {
                     backgroundColor: key === resourceKey ? "#1f3a5f" : "transparent",
                     paddingHorizontal: 14,
                     paddingVertical: 10,
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 8,
                   }}
                 >
+                  <MaterialIcons
+                    name={configurationIconByResourceKey[key as ConfigResourceKey]}
+                    size={18}
+                    color={key === resourceKey ? "#ffffff" : "#344054"}
+                  />
                   <Text
                     style={{
                       color: key === resourceKey ? "#ffffff" : "#344054",
@@ -309,7 +317,9 @@ export default function ConfigurationScreen() {
               </View>
 
               <ScrollView style={{ marginTop: 12 }} contentContainerStyle={{ gap: 10 }}>
-                {resource.fields.map((field) => (
+                {resource.fields
+                  .filter((field) => field.kind !== "boolean")
+                  .map((field) => (
                   <FieldInput
                     key={field.name}
                     field={field}
@@ -421,6 +431,15 @@ export default function ConfigurationScreen() {
     </AppShell>
   );
 }
+
+const configurationIconByResourceKey: Record<ConfigResourceKey, keyof typeof MaterialIcons.glyphMap> = {
+  symbols: "currency-bitcoin",
+  timeframes: "schedule",
+  strategies: "insights",
+  "risk-profiles": "shield",
+  "trading-defaults": "tune",
+  "analysis-settings": "analytics",
+};
 
 function RecordSummary({
   resourceKey,
