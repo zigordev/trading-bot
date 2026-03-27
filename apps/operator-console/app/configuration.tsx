@@ -437,7 +437,6 @@ const configurationIconByResourceKey: Record<ConfigResourceKey, keyof typeof Mat
   timeframes: "schedule",
   strategies: "insights",
   "risk-profiles": "shield",
-  "trading-defaults": "tune",
   "analysis-settings": "analytics",
 };
 
@@ -474,19 +473,11 @@ function RecordSummary({
     );
   }
 
-  if (resourceKey === "trading-defaults") {
-    return (
-      <Text style={{ color: "#475467" }}>
-        Default notional: {String(record.defaultPositionNotionalUsd ?? "n/a")} USD
-      </Text>
-    );
-  }
-
   if (resourceKey === "analysis-settings") {
     return (
       <View style={{ gap: 8 }}>
         <Text style={{ color: "#475467" }}>
-          {String(record.symbolCode ?? "n/a")} / {String(record.timeframeCode ?? "n/a")}
+          {String(record.name ?? "n/a")}
         </Text>
         <Text style={{ color: "#475467" }}>
           Strategy: {String(record.strategyName ?? "n/a")}
@@ -535,7 +526,6 @@ function RecordToggle({
 
   if (
     resourceKey === "risk-profiles" ||
-    resourceKey === "trading-defaults" ||
     resourceKey === "analysis-settings"
   ) {
     return (

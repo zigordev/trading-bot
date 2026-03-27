@@ -11,8 +11,6 @@ import {
   riskProfileRecordSchema,
   strategyBodySchema,
   strategyRecordSchema,
-  tradingDefaultsBodySchema,
-  tradingDefaultsRecordSchema,
   timeframeBodySchema,
   timeframeRecordSchema,
 } from "../features/config-resources.js";
@@ -84,23 +82,6 @@ const registerCrudRoutes = <TInput, TRecord>(
       },
     },
     handler: async () => store.list(),
-  });
-
-  app.get(`${path}/:id`, {
-    schema: {
-      tags: [tag],
-      summary: `Get ${entityName} by id`,
-      params: idParamsSchema,
-      response: {
-        200: recordSchema,
-        404: errorSchema,
-      },
-    },
-    handler: async (request) => {
-      const { id } = request.params as { id: string };
-      const entity = await store.getById(id);
-      return assertFound(entity, entityName, id);
-    },
   });
 
   app.post(path, {
@@ -255,15 +236,6 @@ export const registerConfigurationRoutes = (
     bodySchema: riskProfileBodySchema,
     recordSchema: riskProfileRecordSchema,
     store: stores.riskProfiles,
-  });
-
-  registerCrudRoutes(app, {
-    path: "/v1/trading-defaults",
-    tag: "trading-defaults",
-    entityName: "trading defaults profile",
-    bodySchema: tradingDefaultsBodySchema,
-    recordSchema: tradingDefaultsRecordSchema,
-    store: stores.tradingDefaults,
   });
 
   registerCrudRoutes(app, {

@@ -9,17 +9,11 @@ import {
   type ResolvedAnalysisSettingsRecord,
 } from "../features/config-resources.js";
 import {
-  createBacktestJob,
   listBacktestBatches,
-  getBacktestJob,
   listDataReadinessProjections,
   listBacktestRunProjections,
   listBacktestJobs,
-  markBacktestJobCompleted,
-  markBacktestJobFailed,
-  markBacktestJobRunning,
   type BacktestBatchRecord,
-  type BacktestJobInput,
   type BacktestJobRecord,
   type BacktestRunProjectionRecord,
   type DataReadinessProjectionRecord,
@@ -90,10 +84,6 @@ const buildServiceChecks = (config: AppConfig) => [
   {
     name: "market-data",
     url: `${config.marketDataBaseUrl}/health/readiness`,
-  },
-  {
-    name: "strategy-engine",
-    url: `${config.strategyEngineBaseUrl}/health/readiness`,
   },
   {
     name: "research-backtesting",
@@ -199,47 +189,6 @@ export const registerOpsRoutes = (
     });
   };
 
-  const executeBacktestJob = async (job: BacktestJobRecord): Promise<void> => {
-    const runningJob = await markBacktestJobRunning(pool, job.id);
-    if (!runningJob) {
-      return;
-    }
-
-    broadcastInvalidate("backtest-job-started");
-
-    try {
-      const payload = (await fetchJson(`${config.researchBacktestingBaseUrl}/v1/backtests`, {
-        method: "POST",
-        body: JSON.stringify({
-          controlPlaneJobId: runningJob.id,
-          analysisSettingId: runningJob.analysisSettingId,
-          riskProfileName: runningJob.riskProfileName ?? undefined,
-          startTime: runningJob.startTime ?? undefined,
-          endTime: runningJob.endTime ?? undefined,
-          warmupCandles: runningJob.warmupCandles ?? undefined,
-        }),
-      })) as Record<string, unknown>;
-
-      const backtestId = typeof payload.backtestId === "string" ? payload.backtestId : "";
-      if (!backtestId) {
-        throw new Error("backtest response did not include backtestId");
-      }
-
-      await markBacktestJobCompleted(pool, runningJob.id, {
-        backtestId,
-        result: payload,
-      });
-      broadcastInvalidate("backtest-job-completed");
-    } catch (error) {
-      await markBacktestJobFailed(
-        pool,
-        runningJob.id,
-        error instanceof Error ? error.message : "unknown backtest failure",
-      );
-      broadcastInvalidate("backtest-job-failed");
-    }
-  };
-
   const buildOverview = async () => {
     const [services, analyses, jobs] = await Promise.all([
       Promise.all(
@@ -281,8 +230,7 @@ export const registerOpsRoutes = (
   };
 
   const buildBacktestsSummary = async () => {
-    const [jobs, batches, recentRuns] = await Promise.all([
-      listBacktestJobsFn(pool, 100),
+    const [batches, recentRuns] = await Promise.all([
       listBacktestBatchesFn(pool, 100),
       listBacktestRunProjectionsFn(pool, 100),
     ]);
@@ -303,7 +251,6 @@ export const registerOpsRoutes = (
 
     return {
       generatedAt: new Date().toISOString(),
-      jobs,
       batches,
       recentRuns,
       latestRuns: [...latestRunByKey.values()],
@@ -351,56 +298,6 @@ export const registerOpsRoutes = (
       summary: "Per symbol/timeframe readiness for replay and backtesting inputs",
     },
     handler: buildDataReadiness,
-  });
-
-  app.get("/v1/ops/backtest-jobs", {
-    schema: {
-      tags: ["ops"],
-      summary: "List backtest jobs",
-    },
-    handler: async () => listBacktestJobs(pool, 100),
-  });
-
-  app.get("/v1/ops/backtest-jobs/:id", {
-    schema: {
-      tags: ["ops"],
-      summary: "Get a backtest job by id",
-    },
-    handler: async (request, reply) => {
-      const { id } = request.params as { id: string };
-      const job = await getBacktestJob(pool, id);
-      if (!job) {
-        reply.code(404);
-        return {
-          statusCode: 404,
-          message: `backtest job ${id} was not found`,
-        };
-      }
-
-      return job;
-    },
-  });
-
-  app.post("/v1/ops/backtest-jobs", {
-    schema: {
-      tags: ["ops"],
-      summary: "Queue a new backtest job",
-    },
-    handler: async (request, reply) => {
-      const input = request.body as BacktestJobInput;
-      const analyses = await listResolvedAnalysisSettingsFn(pool);
-      const analysis = analyses.find((item) => item.id === input.analysisSettingId);
-      const job = await createBacktestJob(pool, {
-        ...input,
-        symbolCode: analysis?.symbol.code,
-        timeframeCode: analysis?.timeframeCode,
-        strategyName: analysis?.strategyName,
-      });
-      broadcastInvalidate("backtest-job-created");
-      void executeBacktestJob(job);
-      reply.code(202);
-      return job;
-    },
   });
 
   app.get(

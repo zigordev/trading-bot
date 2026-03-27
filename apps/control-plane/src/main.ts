@@ -90,13 +90,9 @@ await app.register(fastifySwagger, {
       { name: "strategies", description: "Strategy registry and activation state" },
       { name: "risk-profiles", description: "Risk management profiles" },
       {
-        name: "trading-defaults",
-        description: "Operator-managed default trading profiles and position sizing",
-      },
-      {
         name: "analysis-settings",
         description:
-          "Relational bindings between symbol, timeframe, strategy, risk profile, and trading defaults",
+          "Reusable technical-analysis settings expanded across active symbols, timeframes, and risk profiles",
       },
       {
         name: "runtime-config",

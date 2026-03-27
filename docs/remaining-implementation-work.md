@@ -28,11 +28,7 @@ These slices already exist and should be testable today:
   - config-change events
 - `market-data`
   - live Binance public ingestion
-  - ClickHouse historian for klines, aggregate trades, and book tickers
   - replay-oriented read endpoints
-- `strategy-engine`
-  - live `emaCross` evaluation on closed klines
-  - signal publication
 - `research-backtesting`
   - ClickHouse-based historical replay
   - shared `emaCross` logic reused from the live strategy engine
@@ -59,7 +55,6 @@ After the current replay path is verified, the main missing work is:
 
 - stronger historian retention and backfill controls for wider replay windows
 - better automated integration coverage across multiple pair/timeframe bindings
-- replay quality gating before result publication: require synchronized kline/trade/book-ticker coverage for each requested window, and expose explicit degraded-quality reasons when inputs are partial
 - optional full order-book-aware fill modeling
 - partial-fill modeling
 - extraction of execution simulation into a crate shared directly with future live execution
@@ -69,7 +64,6 @@ state-of-the-art execution simulator.
 
 What is already good:
 
-- fills are driven by historical aggregate trades and best bid/ask book-ticker quotes rather than
   candle closes
 - stop-loss and take-profit checks use replayed quote/trade events instead of OHLC inference
 - fee and slippage assumptions are explicit and returned in the backtest response
@@ -94,7 +88,6 @@ What still limits accuracy:
 Recommended future execution-accuracy improvements, in order:
 
 - keep historical trade `quantity` and `market_maker` fields in ClickHouse replay storage
-- use book-ticker size and trade size to support partial-fill logic
 - add configurable latency modeling for signal-to-order and order-to-fill delays
 - replace fixed slippage with a state-based model using spread, short-horizon volatility, and
   order size relative to available liquidity
@@ -198,10 +191,8 @@ With the current `emaCross` defaults of `fastPeriod=9`, `slowPeriod=21`, and
   - `24h + 525m warmup`
 
 That fits the current bounded kline historian. For quote-aware accuracy, the real constraint is
-how much aggregate-trade and book-ticker history has been accumulated for the pair. If you want
 legacy-sized default windows to work without explicit shorter requests, increase
 `HISTORICAL_BACKFILL_LIMIT`, keep `market-data` running long enough to accumulate the matching
-trade and quote history, and increase `BACKTEST_MAX_BOOK_TICKERS` if quote replay on a busy pair
 hits a local cap.
 
 ## Seed The Verification Matrix
@@ -371,7 +362,6 @@ For a single pair/timeframe:
 ```bash
 curl -fsS "http://localhost:3030/v1/klines/BTCUSDT/3m?limit=5" | jq
 curl -fsS "http://localhost:3030/v1/trades/BTCUSDT?limit=5" | jq
-curl -fsS "http://localhost:3030/v1/book-tickers/BTCUSDT?limit=5" | jq
 ```
 
 ## Run Backtests Against The Matrix
@@ -490,7 +480,6 @@ Once the current matrix is behaving correctly, this is still missing:
   - wider retained history for arbitrary replay windows
 - replay realism
   - reintroduce quote-aware replay only after the trade-only path is stable
-  - restore book-ticker capture and storage later if execution modeling needs top-of-book context again
   - full order-book-aware fill matching
   - partial fills
   - richer portfolio accounting

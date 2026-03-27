@@ -10,11 +10,7 @@ The target architecture is intentionally small. This is not a CRUD microservice 
   - strategy and risk settings
 - `market-data`
   - exchange connectivity
-  - normalized market events
   - ClickHouse historian persistence and recovery
-- `strategy-engine`
-  - in-memory technical analysis
-  - signal generation
 - `research/backtesting`
   - ClickHouse replay
   - offline strategy evaluation
@@ -83,8 +79,8 @@ This repository owns only what is application-specific:
 
 ## Current implemented slice
 
-The repository currently implements the first control-plane slice plus the first runtime path
-through market-data, strategy-engine, and research-backtesting:
+The repository currently implements the first control-plane slice plus the current runtime path
+through market-data and research-backtesting:
 
 - `control-plane`
   - liveness endpoint
@@ -109,33 +105,17 @@ through market-data, strategy-engine, and research-backtesting:
   - config-change driven subscription refresh
   - periodic runtime-config reconciliation
   - startup Kafka topic provisioning for consumed and published contracts
-  - Binance combined websocket kline, aggregate-trade, and book-ticker stream consumption
-  - normalized kline, aggregate-trade, and book-ticker fanout into Redpanda
-  - persisted kline, aggregate-trade, and book-ticker storage in ClickHouse
   - replay-oriented historian query endpoints
   - startup backfill and tail-gap repair for active kline subscriptions
   - inspection endpoints for active subscriptions, runtime status, and recent stored historian rows
-- `strategy-engine`
-  - liveness endpoint
-  - readiness endpoint
-  - Prometheus-style metrics endpoint
-  - startup runtime-config fetch from the control-plane
-  - config-change driven analysis refresh
-  - startup Kafka topic provisioning for consumed and published contracts
-  - periodic runtime-config reconciliation
-  - recent-kline warmup from market-data
-  - in-memory `emaCross` strategy evaluation on live closed klines
-  - normalized signal fanout into Redpanda
-  - inspection endpoints for active analyses and runtime status
 - `research/backtesting`
   - liveness endpoint
   - readiness endpoint
 - Prometheus-style metrics endpoint
 - on-demand backtest execution endpoint
- - direct ClickHouse kline, aggregate-trade, and book-ticker replay reads
 - on-demand `research_settings` lookup from the control-plane
 - legacy-compatible timeframe-specific replay-window derivation
-- shared `emaCross` strategy logic reused offline from `strategy-engine`
+- shared `emaCross` strategy logic reused offline from the shared strategy library crate
  - quote-aware stop-loss, take-profit, reversal, fee, and slippage simulation with aggregate-trade fallback
 - local PostgreSQL
 - local Alloy sidecar
@@ -196,8 +176,8 @@ bindings at `/v1/runtime-config/analysis-settings`. That read model joins:
 - the referenced `risk_profile`
 - the referenced `trading_defaults`
 
-This gives runtime services such as `market-data`, `strategy-engine`, and future
-`research/backtesting` flows one materialized payload shape to consume without moving
+This gives runtime services such as `market-data` and `research/backtesting`
+one materialized payload shape to consume without moving
 configuration authoring out of the control-plane. Additional projections are still pending, but
 config fanout is already implemented and multiple runtime consumers now use this projection
 directly.
@@ -211,59 +191,18 @@ Detailed design notes for this slice live in `docs/analysis-settings-architectur
 Its responsibilities are intentionally narrow:
 
 - fetch the resolved `analysis-settings` projection from the control-plane
-- derive one live kline subscription per unique `pairCode + timeframeCode`
-- derive one live trade and book-ticker subscription per active `pairCode`
-- keep that subscription set fresh through config-change events plus periodic reconciliation
-- connect to Binance combined websocket streams for the active subscription set
-- normalize incoming market payloads into internal event contracts
-- publish those normalized events to Redpanda for future consumers
-- persist klines, aggregate trades, and book tickers in the ClickHouse historical store
-- expose replay-oriented historian reads for klines, trades, and book tickers
-- repair missing tail candles on startup and refresh through bounded REST backfill
+- derive one active retrieval set per unique `pairCode + timeframeCode`
+- keep that set fresh through config-change events plus periodic reconciliation
+- retrieve hourly closed-window klines and aggregate trades from Binance REST
+- repair missing kline and aggregate-trade gaps inside the required backtest window
+- publish compact data-readiness snapshots to Redpanda for downstream consumers
 
 The service does not own authored configuration, does not store secrets in PostgreSQL, and does
 not execute strategy logic. It is the exchange-connectivity edge that converts runtime
-configuration into a live event feed plus a dedicated historical store. The implemented
+configuration into an hourly historical retrieval flow plus a dedicated historical store. The implemented
 `research/backtesting` slice now consumes the same ClickHouse historian for offline replay.
 
 Detailed design notes for this slice live in `docs/market-data-architecture.md`.
-
-## Strategy-engine slice
-
-`strategy-engine` is the first service that turns normalized market events into trading intent.
-
-Its responsibilities are intentionally narrow:
-
-- fetch the resolved `analysis-settings` projection from the control-plane
-- warm per-analysis state from recent stored klines served by `market-data`
-- consume live closed kline events from Redpanda
-- evaluate supported strategies in memory
-- publish normalized signal events for future execution consumers
-
-The current implementation supports one concrete strategy kind: `emaCross`.
-
-That support is deliberately explicit rather than pretending every arbitrary strategy record is
-executable. A strategy becomes runnable when:
-
-- the resolved analysis binding is active and operable
-- the referenced strategy is activated
-- the strategy kind resolves to `emaCross`
-  - either from `strategies.parameters.kind`
-  - or, as a fallback, from the normalized strategy name
-- `fastPeriod` and `slowPeriod` are valid
-  - from `technicalAnalysisSettings`
-  - or from `strategies.parameters`
-
-On each live closed kline, the service updates the in-memory EMA state for matching
-`analysis_settings` bindings. It emits a signal only on actual crossover:
-
-- `long` when fast EMA crosses above slow EMA
-- `short` when fast EMA crosses below slow EMA
-
-The current `research/backtesting` slice reuses this same evaluator logic offline rather than
-reimplementing EMA behavior in a separate code path.
-
-Detailed design notes for this slice live in `docs/strategy-engine-architecture.md`.
 
 ## Research/backtesting slice
 
@@ -276,7 +215,6 @@ Its current responsibilities are intentionally narrow:
 - fetch named `research_settings` profiles from the control-plane on demand
 - derive a replay window from the timeframe-specific research window in milliseconds
 - read historical klines directly from ClickHouse for that pair/timeframe window
-- read historical aggregate trades and book tickers directly from ClickHouse for fill resolution
   inside that window
 - warm the shared evaluator with extra candles before the requested replay window
 - replay historical closed klines through the same `emaCross` strategy logic used live
@@ -294,7 +232,6 @@ This is not yet a full live execution replacement. It does not currently model:
 That distinction matters for historian retention:
 
 - for the currently implemented quote-aware backtests, you need the configured timeframe-specific
-  window, indicator warmup candles, aggregate trades, and book tickers covering the replay window
 - if you later want full order-book-aware or partial-fill simulation, you will also need
   lower-level market data such as order-book state for the same period
 

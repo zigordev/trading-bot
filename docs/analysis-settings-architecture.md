@@ -132,7 +132,7 @@ That is deliberate:
 - a rigid relational decomposition now would slow migration without improving runtime behavior
 
 The control-plane still validates that the field is an object, but strategy-specific validation
-can be added later once the new strategy-engine contracts are clearer.
+can be added later once the runtime contracts are clearer.
 
 ## Enablement Model
 
@@ -158,13 +158,13 @@ Implemented now:
 - uniqueness enforcement for one binding per pair/timeframe/strategy
 - OpenAPI exposure through the control-plane docs
 - direct config-change event publication
-- resolved runtime projection for active and operable bindings
+- resolved runtime projection for active bindings
 
 Not implemented yet:
 
 - additional resolved read models for runtime consumers
 - strategy-specific validation of `technicalAnalysisSettings`
-- runtime consumers in `strategy-engine` or `research/backtesting`
+- runtime consumers in `market-data` or `research/backtesting`
 - versioned configuration history
 
 ## Expected Next Steps
@@ -173,5 +173,5 @@ After this slice, the likely follow-on work is:
 
 1. extend consumer-facing projection shapes for additional runtime consumers
 2. add strategy-aware validation for `technicalAnalysisSettings`
-3. connect the future strategy-engine and replay/backtesting flows to this control-plane source
+3. extend the current market-data and replay/backtesting flows from this control-plane source
 4. add versioned change-history and rollout semantics if operators need audited config promotion

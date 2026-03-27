@@ -28,14 +28,12 @@ INSERT INTO public.symbols (
   active,
   base_asset,
   destination_asset,
-  origin_asset_needed_funds,
-  destination_asset_needed_funds,
   created_at,
   updated_at
 ) VALUES
-  ('6f686479-a001-4d72-89f3-f8a6a98f894f', 'BTCUSDT', true, 'BTC', 'USDT', 0.001, 10, '2026-03-16 10:42:15.044+00', '2026-03-16 10:42:15.044+00'),
-  ('0d7c2f49-63a0-4f37-9a9d-4cb2c8b4d901', 'ETHUSDT', true, 'ETH', 'USDT', 0.001, 10, '2026-03-20 16:32:00+00', '2026-03-20 16:32:00+00'),
-  ('b6d58aab-3c38-4f8b-9c43-09d2a0c2e902', 'BNBUSDT', true, 'BNB', 'USDT', 0.001, 10, '2026-03-20 16:32:00+00', '2026-03-20 16:32:00+00');
+  ('6f686479-a001-4d72-89f3-f8a6a98f894f', 'BTCUSDT', true, 'BTC', 'USDT', '2026-03-16 10:42:15.044+00', '2026-03-16 10:42:15.044+00'),
+  ('0d7c2f49-63a0-4f37-9a9d-4cb2c8b4d901', 'ETHUSDT', true, 'ETH', 'USDT', '2026-03-20 16:32:00+00', '2026-03-20 16:32:00+00'),
+  ('b6d58aab-3c38-4f8b-9c43-09d2a0c2e902', 'BNBUSDT', true, 'BNB', 'USDT', '2026-03-20 16:32:00+00', '2026-03-20 16:32:00+00');
 
 
 --
@@ -67,52 +65,16 @@ INSERT INTO public.timeframes VALUES ('1fcf3fe9-a8f1-43bb-81fb-af9a22d7f036', '3
 
 
 --
--- Data for Name: trading_defaults; Type: TABLE DATA; Schema: public; Owner: -
---
-
-INSERT INTO public.trading_defaults VALUES ('493b4ac7-57ce-4a1f-8bce-6b454a2173a4', 'default', 'Default trading defaults', 100, true, '2026-03-16 10:42:15.155+00', '2026-03-16 10:42:15.155+00');
-
-
---
 -- Data for Name: analysis_settings; Type: TABLE DATA; Schema: public; Owner: -
 --
 
-INSERT INTO public.analysis_settings VALUES ('f2b7510d-ff31-4e1e-ad26-9b95e8b37c2d', 'BTCUSDT', '1m', 'emaCross', 'default', 'default', '{"fastPeriod": 9, "slowPeriod": 21}', true, '2026-03-16 10:42:15.168+00', '2026-03-16 10:42:15.168+00');
-INSERT INTO public.analysis_settings VALUES ('d4b017c7-88cb-4a54-b20c-7d3bebb78d81', 'BTCUSDT', '1m', 'emaCross', 'default', 'default', '{"fastPeriod": 5, "slowPeriod": 13}', true, '2026-03-16 10:45:18.015+00', '2026-03-16 10:45:18.015+00');
-INSERT INTO public.analysis_settings VALUES ('a9999998-ca30-414d-b2ae-e18f8e1fe26a', 'BTCUSDT', '1m', 'emaCross', 'default', 'default', '{"fastPeriod": 8, "slowPeriod": 21}', true, '2026-03-16 10:45:18.051+00', '2026-03-16 10:45:18.051+00');
-INSERT INTO public.analysis_settings VALUES ('7f93de85-2179-4e63-a8cb-333005ccddb1', 'BTCUSDT', '1m', 'emaCross', 'default', 'default', '{"fastPeriod": 12, "slowPeriod": 26}', true, '2026-03-16 10:45:18.083+00', '2026-03-16 10:45:18.083+00');
-INSERT INTO public.analysis_settings VALUES ('a42b2c3c-288c-4bd0-8657-b4d652cce013', 'BTCUSDT', '3m', 'emaCross', 'default', 'default', '{"fastPeriod": 9, "slowPeriod": 21}', true, '2026-03-16 10:42:15.181+00', '2026-03-16 10:42:15.181+00');
-INSERT INTO public.analysis_settings VALUES ('3d0b62cc-ba13-458d-9215-7f70d7b3e71e', 'BTCUSDT', '3m', 'emaCross', 'default', 'default', '{"fastPeriod": 5, "slowPeriod": 13}', true, '2026-03-16 10:45:18.147+00', '2026-03-16 10:45:18.147+00');
-INSERT INTO public.analysis_settings VALUES ('5a09020c-6d9e-4435-a96b-2a0fad09a2d7', 'BTCUSDT', '3m', 'emaCross', 'default', 'default', '{"fastPeriod": 8, "slowPeriod": 21}', true, '2026-03-16 10:45:18.178+00', '2026-03-16 10:45:18.178+00');
-INSERT INTO public.analysis_settings VALUES ('6dbb97d8-0575-4bfd-aba6-52e8af030a79', 'BTCUSDT', '3m', 'emaCross', 'default', 'default', '{"fastPeriod": 12, "slowPeriod": 26}', true, '2026-03-16 10:45:18.211+00', '2026-03-16 10:45:18.211+00');
-INSERT INTO public.analysis_settings VALUES ('bb447b4f-34de-4226-bf51-79c148c1b31f', 'BTCUSDT', '5m', 'emaCross', 'default', 'default', '{"fastPeriod": 9, "slowPeriod": 21}', true, '2026-03-16 10:42:15.193+00', '2026-03-16 10:42:15.193+00');
-INSERT INTO public.analysis_settings VALUES ('29bd523d-836e-4d6d-819a-bfbe297b2f7b', 'BTCUSDT', '5m', 'emaCross', 'default', 'default', '{"fastPeriod": 5, "slowPeriod": 13}', true, '2026-03-16 10:45:18.274+00', '2026-03-16 10:45:18.274+00');
-INSERT INTO public.analysis_settings VALUES ('62f80875-6c31-4f43-891e-5b1f814c94e6', 'BTCUSDT', '5m', 'emaCross', 'default', 'default', '{"fastPeriod": 8, "slowPeriod": 21}', true, '2026-03-16 10:45:18.306+00', '2026-03-16 10:45:18.306+00');
-INSERT INTO public.analysis_settings VALUES ('0b48fa1b-2eb8-464d-bca9-c3253162bfa7', 'BTCUSDT', '5m', 'emaCross', 'default', 'default', '{"fastPeriod": 12, "slowPeriod": 26}', true, '2026-03-16 10:45:18.339+00', '2026-03-16 10:45:18.339+00');
-INSERT INTO public.analysis_settings VALUES ('91c0ec72-91f8-4f3e-bb70-a8bcd7e84501', 'ETHUSDT', '1m', 'emaCross', 'default', 'default', '{"fastPeriod": 9, "slowPeriod": 21}', true, '2026-03-20 16:32:00+00', '2026-03-20 16:32:00+00');
-INSERT INTO public.analysis_settings VALUES ('6b5d4a0d-d9e2-4695-a7f1-36ce2f8ac502', 'ETHUSDT', '1m', 'emaCross', 'default', 'default', '{"fastPeriod": 5, "slowPeriod": 13}', true, '2026-03-20 16:32:00+00', '2026-03-20 16:32:00+00');
-INSERT INTO public.analysis_settings VALUES ('f15731df-a6f6-42fe-8187-11e155919503', 'ETHUSDT', '1m', 'emaCross', 'default', 'default', '{"fastPeriod": 8, "slowPeriod": 21}', true, '2026-03-20 16:32:00+00', '2026-03-20 16:32:00+00');
-INSERT INTO public.analysis_settings VALUES ('58f7fc56-9d0e-4a0f-b08a-bd44459b4504', 'ETHUSDT', '1m', 'emaCross', 'default', 'default', '{"fastPeriod": 12, "slowPeriod": 26}', true, '2026-03-20 16:32:00+00', '2026-03-20 16:32:00+00');
-INSERT INTO public.analysis_settings VALUES ('fce03f29-0a9b-40a4-853c-e37eb6f22505', 'ETHUSDT', '3m', 'emaCross', 'default', 'default', '{"fastPeriod": 9, "slowPeriod": 21}', true, '2026-03-20 16:32:00+00', '2026-03-20 16:32:00+00');
-INSERT INTO public.analysis_settings VALUES ('6db4e84f-60fe-403d-b5dc-b2a56ff7b506', 'ETHUSDT', '3m', 'emaCross', 'default', 'default', '{"fastPeriod": 5, "slowPeriod": 13}', true, '2026-03-20 16:32:00+00', '2026-03-20 16:32:00+00');
-INSERT INTO public.analysis_settings VALUES ('6123f7d0-b110-4d23-a186-190320bf6a07', 'ETHUSDT', '3m', 'emaCross', 'default', 'default', '{"fastPeriod": 8, "slowPeriod": 21}', true, '2026-03-20 16:32:00+00', '2026-03-20 16:32:00+00');
-INSERT INTO public.analysis_settings VALUES ('c7f77102-a94d-4b7d-b02d-35b624341708', 'ETHUSDT', '3m', 'emaCross', 'default', 'default', '{"fastPeriod": 12, "slowPeriod": 26}', true, '2026-03-20 16:32:00+00', '2026-03-20 16:32:00+00');
-INSERT INTO public.analysis_settings VALUES ('e4d5bf86-765e-49d6-9f1f-7696c102d709', 'ETHUSDT', '5m', 'emaCross', 'default', 'default', '{"fastPeriod": 9, "slowPeriod": 21}', true, '2026-03-20 16:32:00+00', '2026-03-20 16:32:00+00');
-INSERT INTO public.analysis_settings VALUES ('bcd56816-2f33-4104-bd8b-52ea087f2a10', 'ETHUSDT', '5m', 'emaCross', 'default', 'default', '{"fastPeriod": 5, "slowPeriod": 13}', true, '2026-03-20 16:32:00+00', '2026-03-20 16:32:00+00');
-INSERT INTO public.analysis_settings VALUES ('5f59ac4d-8f4b-4a2f-a423-d9adef6bb611', 'ETHUSDT', '5m', 'emaCross', 'default', 'default', '{"fastPeriod": 8, "slowPeriod": 21}', true, '2026-03-20 16:32:00+00', '2026-03-20 16:32:00+00');
-INSERT INTO public.analysis_settings VALUES ('eb9e25f9-5185-44a7-a9b0-0a52eac0bc12', 'ETHUSDT', '5m', 'emaCross', 'default', 'default', '{"fastPeriod": 12, "slowPeriod": 26}', true, '2026-03-20 16:32:00+00', '2026-03-20 16:32:00+00');
-INSERT INTO public.analysis_settings VALUES ('8c868364-cdcc-42dc-a28b-47f1fdb3cf13', 'BNBUSDT', '1m', 'emaCross', 'default', 'default', '{"fastPeriod": 9, "slowPeriod": 21}', true, '2026-03-20 16:32:00+00', '2026-03-20 16:32:00+00');
-INSERT INTO public.analysis_settings VALUES ('2ecb3e83-bd49-4b81-a6cb-842be6efc914', 'BNBUSDT', '1m', 'emaCross', 'default', 'default', '{"fastPeriod": 5, "slowPeriod": 13}', true, '2026-03-20 16:32:00+00', '2026-03-20 16:32:00+00');
-INSERT INTO public.analysis_settings VALUES ('354fd4a4-6c25-4f16-99a7-0b0ea9034315', 'BNBUSDT', '1m', 'emaCross', 'default', 'default', '{"fastPeriod": 8, "slowPeriod": 21}', true, '2026-03-20 16:32:00+00', '2026-03-20 16:32:00+00');
-INSERT INTO public.analysis_settings VALUES ('dc5f4d78-f6c5-4f15-8d9f-2ed6dc807416', 'BNBUSDT', '1m', 'emaCross', 'default', 'default', '{"fastPeriod": 12, "slowPeriod": 26}', true, '2026-03-20 16:32:00+00', '2026-03-20 16:32:00+00');
-INSERT INTO public.analysis_settings VALUES ('26ebe2fe-eb9f-4612-b2b8-3de2e1597f17', 'BNBUSDT', '3m', 'emaCross', 'default', 'default', '{"fastPeriod": 9, "slowPeriod": 21}', true, '2026-03-20 16:32:00+00', '2026-03-20 16:32:00+00');
-INSERT INTO public.analysis_settings VALUES ('f06769b9-be9a-4d56-a5e0-055d876f6318', 'BNBUSDT', '3m', 'emaCross', 'default', 'default', '{"fastPeriod": 5, "slowPeriod": 13}', true, '2026-03-20 16:32:00+00', '2026-03-20 16:32:00+00');
-INSERT INTO public.analysis_settings VALUES ('66c61131-36c2-4f8c-bdc0-c5e5f17d1719', 'BNBUSDT', '3m', 'emaCross', 'default', 'default', '{"fastPeriod": 8, "slowPeriod": 21}', true, '2026-03-20 16:32:00+00', '2026-03-20 16:32:00+00');
-INSERT INTO public.analysis_settings VALUES ('b77ea2f3-9ab8-4cf6-bf61-5166b8622e20', 'BNBUSDT', '3m', 'emaCross', 'default', 'default', '{"fastPeriod": 12, "slowPeriod": 26}', true, '2026-03-20 16:32:00+00', '2026-03-20 16:32:00+00');
-INSERT INTO public.analysis_settings VALUES ('9cd3f708-2452-4f82-932d-8507e3ea1021', 'BNBUSDT', '5m', 'emaCross', 'default', 'default', '{"fastPeriod": 9, "slowPeriod": 21}', true, '2026-03-20 16:32:00+00', '2026-03-20 16:32:00+00');
-INSERT INTO public.analysis_settings VALUES ('f737c0b1-2a16-4938-bfe8-58ea7c4af422', 'BNBUSDT', '5m', 'emaCross', 'default', 'default', '{"fastPeriod": 5, "slowPeriod": 13}', true, '2026-03-20 16:32:00+00', '2026-03-20 16:32:00+00');
-INSERT INTO public.analysis_settings VALUES ('cc4e9c7d-df56-4f08-8ef3-f1c563d8b723', 'BNBUSDT', '5m', 'emaCross', 'default', 'default', '{"fastPeriod": 8, "slowPeriod": 21}', true, '2026-03-20 16:32:00+00', '2026-03-20 16:32:00+00');
-INSERT INTO public.analysis_settings VALUES ('6f98f9c7-7238-4b30-af45-26178c329124', 'BNBUSDT', '5m', 'emaCross', 'default', 'default', '{"fastPeriod": 12, "slowPeriod": 26}', true, '2026-03-20 16:32:00+00', '2026-03-20 16:32:00+00');
+INSERT INTO public.analysis_settings
+  (id, name, strategy_name, technical_analysis_settings, enabled, created_at, updated_at)
+VALUES
+  ('f2b7510d-ff31-4e1e-ad26-9b95e8b37c2d', 'ema-cross-9-21', 'emaCross', '{"fastPeriod": 9, "slowPeriod": 21}', true, '2026-03-16 10:42:15.168+00', '2026-03-16 10:42:15.168+00'),
+  ('d4b017c7-88cb-4a54-b20c-7d3bebb78d81', 'ema-cross-5-13', 'emaCross', '{"fastPeriod": 5, "slowPeriod": 13}', true, '2026-03-16 10:45:18.015+00', '2026-03-16 10:45:18.015+00'),
+  ('a9999998-ca30-414d-b2ae-e18f8e1fe26a', 'ema-cross-8-21', 'emaCross', '{"fastPeriod": 8, "slowPeriod": 21}', true, '2026-03-16 10:45:18.051+00', '2026-03-16 10:45:18.051+00'),
+  ('7f93de85-2179-4e63-a8cb-333005ccddb1', 'ema-cross-12-26', 'emaCross', '{"fastPeriod": 12, "slowPeriod": 26}', true, '2026-03-16 10:45:18.083+00', '2026-03-16 10:45:18.083+00');
 
 
 -- (research_settings intentionally omitted)

@@ -12,12 +12,6 @@ import {
   getRuntimeAnalyses,
 } from "@/src/lib/api";
 
-const statusTone = {
-  up: "#157f3b",
-  down: "#b42318",
-  unknown: "#b54708",
-} as const;
-
 export default function OverviewScreen() {
   const overviewQuery = useQuery({
     queryKey: ["ops-overview"],
@@ -39,6 +33,14 @@ export default function OverviewScreen() {
     queryKey: ["config-resource", "risk-profiles"],
     queryFn: () => getConfigResourceRecords("risk-profiles"),
   });
+  const analysisSettingsQuery = useQuery({
+    queryKey: ["config-resource", "analysis-settings"],
+    queryFn: () => getConfigResourceRecords("analysis-settings"),
+  });
+  const strategiesQuery = useQuery({
+    queryKey: ["config-resource", "strategies"],
+    queryFn: () => getConfigResourceRecords("strategies"),
+  });
   const runtimeAnalysesQuery = useQuery({
     queryKey: ["runtime-analyses"],
     queryFn: getRuntimeAnalyses,
@@ -47,6 +49,12 @@ export default function OverviewScreen() {
   const activeSymbolCount = (symbolsQuery.data ?? []).filter((record) => Boolean(record.active)).length;
   const activeTimeframeCount = (timeframesQuery.data ?? []).filter((record) => Boolean(record.active)).length;
   const enabledRiskProfileCount = (riskProfilesQuery.data ?? []).filter((record) => Boolean(record.enabled)).length;
+  const enabledAnalysisSettingsCount = (analysisSettingsQuery.data ?? []).filter((record) =>
+    Boolean(record.enabled),
+  ).length;
+  const activeStrategyCount = (strategiesQuery.data ?? []).filter((record) =>
+    Boolean(record.activated),
+  ).length;
   const topBacktests = [...(backtestsQuery.data?.recentRuns ?? [])]
     .sort((left, right) => right.totalPnlPercent - left.totalPnlPercent)
     .slice(0, 10);
@@ -69,9 +77,21 @@ export default function OverviewScreen() {
       <View style={{ gap: 16 }}>
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 16 }}>
           <Card style={{ minWidth: 220, flex: 1 }}>
-            <Text style={{ fontSize: 14, color: "#475467" }}>Active analyses</Text>
+            <Text style={{ fontSize: 14, color: "#475467" }}>Backtest combinations</Text>
             <Text style={{ fontSize: 32, fontWeight: "700", color: "#101828" }}>
               {overviewQuery.data?.activeAnalysisCount ?? "…"}
+            </Text>
+          </Card>
+          <Card style={{ minWidth: 220, flex: 1 }}>
+            <Text style={{ fontSize: 14, color: "#475467" }}>Active analyses</Text>
+            <Text style={{ fontSize: 32, fontWeight: "700", color: "#101828" }}>
+              {analysisSettingsQuery.isLoading ? "…" : enabledAnalysisSettingsCount.toLocaleString()}
+            </Text>
+          </Card>
+          <Card style={{ minWidth: 220, flex: 1 }}>
+            <Text style={{ fontSize: 14, color: "#475467" }}>Active strategies</Text>
+            <Text style={{ fontSize: 32, fontWeight: "700", color: "#101828" }}>
+              {strategiesQuery.isLoading ? "…" : activeStrategyCount.toLocaleString()}
             </Text>
           </Card>
           <Card style={{ minWidth: 220, flex: 1 }}>

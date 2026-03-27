@@ -50,8 +50,6 @@ async fn main() -> Result<()> {
         .route("/health/liveness", get(liveness))
         .route("/health/readiness", get(readiness))
         .route("/metrics", get(metrics))
-        .route("/v1/info", get(info))
-        .route("/v1/status", get(status))
         .route("/v1/backtests", get(list_backtests).post(run_backtest))
         .route("/v1/backtests/{backtest_id}", get(get_backtest))
         .with_state(state.clone());
@@ -126,38 +124,6 @@ async fn metrics(State(state): State<AppState>) -> Response {
         }
         false => StatusCode::SERVICE_UNAVAILABLE.into_response(),
     }
-}
-
-async fn info(State(state): State<AppState>) -> Json<serde_json::Value> {
-    let status = state.service.status().await;
-    let config = state.service.config_snapshot();
-
-    Json(json!({
-        "service": config.service_name,
-        "environment": config.app_env,
-        "runtime": {
-            "implemented": [
-                "health/liveness endpoint",
-                "health/readiness endpoint",
-                "Prometheus-style metrics endpoint",
-                "direct ClickHouse historical-kline, aggregate-trade, and book-ticker reads",
-                "control-plane research-settings lookup",
-                "legacy-compatible timeframe-specific timerange derivation",
-                "offline strategy replay using shared strategy-engine logic",
-                "book-ticker-aware backtesting with aggregate-trade fallback for stop-loss, take-profit, reversal, fee, and slippage handling",
-                "persisted backtest result storage and retrieval from ClickHouse"
-            ],
-            "pending": [
-                "live execution service reuse of the shared simulation rules",
-                "optimization job orchestration"
-            ]
-        },
-        "status": status
-    }))
-}
-
-async fn status(State(state): State<AppState>) -> Json<serde_json::Value> {
-    Json(serde_json::to_value(state.service.status().await).unwrap_or_else(|_| json!({})))
 }
 
 async fn list_backtests(

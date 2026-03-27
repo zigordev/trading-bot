@@ -549,18 +549,22 @@ export default function BacktestingScreen() {
                           <View
                             style={{
                               borderRadius: 16,
-                              backgroundColor: "#eff4ff",
+                              backgroundColor:
+                                group.readyCount === group.count ? "#ecfdf3" : "#fef3f2",
                               paddingHorizontal: 14,
                               paddingVertical: 12,
                               minWidth: 120,
                               alignItems: "center",
                             }}
                           >
-                            <Text style={{ color: "#175cd3", fontSize: 20, fontWeight: "800" }}>
-                              {Math.round(group.averageCompleteness)}%
-                            </Text>
-                            <Text style={{ color: "#175cd3", fontWeight: "700", marginTop: 2 }}>
-                              Avg coverage
+                            <Text
+                              style={{
+                                color:
+                                  group.readyCount === group.count ? "#027a48" : "#b42318",
+                                fontWeight: "800",
+                              }}
+                            >
+                              {group.readyCount === group.count ? "Complete" : "Incomplete"}
                             </Text>
                           </View>
                           <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
@@ -574,12 +578,6 @@ export default function BacktestingScreen() {
                             />
                           </View>
                         </View>
-                      </View>
-
-                      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
-                        <MetricBadge label="Rows" value={group.totalRows.toLocaleString()} />
-                        <MetricBadge label="Klines" value={group.klineAverage.toFixed(0) + "%"} />
-                        <MetricBadge label="Trades" value={group.tradeAverage.toFixed(0) + "%"} />
                       </View>
                     </Pressable>
 
@@ -652,6 +650,25 @@ export default function BacktestingScreen() {
   );
 }
 
+function formatBacktestStage(stage: string | null): string {
+  switch (stage) {
+    case "retrieving-data":
+      return "Retrieving data";
+    case "simulating":
+      return "Simulating backtest";
+    case "running-backtests":
+      return "Running backtests";
+    case "queued":
+      return "Queued";
+    case "completed":
+      return "Completed";
+    case "failed":
+      return "Failed";
+    default:
+      return "Running";
+  }
+}
+
 function MetricBadge({
   label,
   value,
@@ -673,25 +690,6 @@ function MetricBadge({
       </Text>
     </View>
   );
-}
-
-function formatBacktestStage(stage: string | null): string {
-  switch (stage) {
-    case "retrieving-data":
-      return "Retrieving data";
-    case "simulating":
-      return "Simulating backtest";
-    case "running-backtests":
-      return "Running backtests";
-    case "queued":
-      return "Queued";
-    case "completed":
-      return "Completed";
-    case "failed":
-      return "Failed";
-    default:
-      return "Running";
-  }
 }
 
 function groupRunningBatchesBySymbol(

@@ -70,9 +70,6 @@ async fn main() -> Result<()> {
         .route("/health/liveness", get(liveness))
         .route("/health/readiness", get(readiness))
         .route("/metrics", get(metrics))
-        .route("/v1/info", get(info))
-        .route("/v1/status", get(status))
-        .route("/v1/subscriptions", get(subscriptions))
         .route(
             "/v1/readiness/backtest/{pair_code}/{timeframe_code}",
             get(backtest_data_readiness),
@@ -161,51 +158,6 @@ async fn metrics(State(state): State<AppState>) -> Response {
         }
         false => StatusCode::SERVICE_UNAVAILABLE.into_response(),
     }
-}
-
-async fn info(State(state): State<AppState>) -> Json<serde_json::Value> {
-    let status = state.service.status().await;
-    let config = state.service.config_snapshot();
-
-    Json(json!({
-        "service": config.service_name,
-        "environment": config.app_env,
-        "runtime": {
-            "implemented": [
-                "health/liveness endpoint",
-                "health/readiness endpoint",
-                "Prometheus-style metrics endpoint",
-                "runtime-config bootstrap from control-plane",
-                "config-change driven subscription refresh",
-                "hourly closed-window snapshot refresh",
-                "Kafka topic provisioning for consumed and published contracts",
-                "persisted kline and aggregate-trade storage in ClickHouse historical store",
-                "startup historical snapshot materialization for klines and aggregate trades",
-                "closed-hour gap detection within the required backtest window",
-                "historian inspection endpoints",
-                "replay-oriented historian query endpoints",
-                "ClickHouse historian reads for research-backtesting consumers"
-            ],
-            "pending": [
-                "execution consumer",
-                "fill-accurate replay datasets"
-            ]
-        },
-        "topics": {
-            "consumes": [config.config_change_events_topic],
-            "publishes": []
-        },
-        "status": status
-    }))
-}
-
-async fn status(State(state): State<AppState>) -> Json<serde_json::Value> {
-    Json(serde_json::to_value(state.service.status().await).unwrap_or_else(|_| json!({})))
-}
-
-async fn subscriptions(State(state): State<AppState>) -> Json<serde_json::Value> {
-    let status = state.service.status().await;
-    Json(serde_json::to_value(status.subscriptions).unwrap_or_else(|_| json!({})))
 }
 
 async fn backtest_data_readiness(

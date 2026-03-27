@@ -1155,7 +1155,9 @@ impl MarketDataService {
                 .and_modify(|target| {
                     target.required_history_ms =
                         target.required_history_ms.max(required_history_ms);
-                    target.analysis_setting_ids.push(record.id.clone());
+                    if !target.analysis_setting_ids.contains(&record.id) {
+                        target.analysis_setting_ids.push(record.id.clone());
+                    }
                 })
                 .or_insert_with(|| DataReadinessTarget {
                     pair_code: record.symbol.clone(),

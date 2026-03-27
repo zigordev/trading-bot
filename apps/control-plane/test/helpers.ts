@@ -29,7 +29,6 @@ export const testConfig: AppConfig = {
   dataReadinessEventsConsumerGroupId:
     "trading-bot-control-plane-data-readiness-projection-test-v1",
   marketDataBaseUrl: "http://market-data:8090",
-  strategyEngineBaseUrl: "http://strategy-engine:8100",
   researchBacktestingBaseUrl: "http://research-backtesting:8110",
   upstreamRequestTimeoutMs: 5_000,
   opsStreamIntervalMs: 5_000,

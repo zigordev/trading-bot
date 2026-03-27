@@ -12,7 +12,6 @@ const createStore = <TInput, TRecord>(
   overrides: Partial<ConfigStore<TInput, TRecord>> = {},
 ): ConfigStore<TInput, TRecord> => ({
   list: async () => [],
-  getById: async () => null,
   create: async () => {
     throw new Error("Unexpected create call");
   },
@@ -31,7 +30,6 @@ const createStores = (
     timeframes: createStore(),
     strategies: createStore(),
     riskProfiles: createStore(),
-    tradingDefaults: createStore(),
     analysisSettings: createStore(),
     ...overrides,
   }) as ConfigStores;
@@ -60,11 +58,8 @@ test("POST /v1/analysis-settings maps foreign-key violations to 409", async (t) 
     method: "POST",
     url: "/v1/analysis-settings",
     payload: {
-      symbolCode: "BTCUSDT",
-      timeframeCode: "1m",
+      name: "ema-cross-20",
       strategyName: "ema",
-      riskProfileName: "default",
-      tradingDefaultsName: "binance-default",
       technicalAnalysisSettings: { period: 20 },
       enabled: true,
     },
@@ -74,33 +69,6 @@ test("POST /v1/analysis-settings maps foreign-key violations to 409", async (t) 
   assert.equal(
     response.json().message,
     "analysis setting references configuration entries that do not exist",
-  );
-});
-
-test("DELETE /v1/trading-defaults/:id maps reference violations to 409", async (t) => {
-  const app = createAppWithErrorHandler();
-  t.after(() => app.close());
-
-  registerConfigurationRoutes(
-    app,
-    createStores({
-      tradingDefaults: createStore({
-        delete: async () => {
-          throw createPgError("23503");
-        },
-      }),
-    }),
-  );
-
-  const response = await app.inject({
-    method: "DELETE",
-    url: "/v1/trading-defaults/default",
-  });
-
-  assert.equal(response.statusCode, 409);
-  assert.equal(
-    response.json().message,
-    "trading defaults profile default is still referenced by another configuration resource",
   );
 });
 
