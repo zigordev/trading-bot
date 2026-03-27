@@ -190,6 +190,61 @@ struct BacktestProgressContext {
     requested_end_time: Option<i64>,
 }
 
+async fn publish_batch_progress_from_context(
+    kafka_producer: &FutureProducer,
+    topic: &str,
+    source: &str,
+    context: &BacktestProgressContext,
+    stage: &str,
+    progress_percent: f64,
+) -> Result<()> {
+    let (Some(batch_id), Some(total_count), Some(completed_count)) = (
+        context.batch_id.as_ref(),
+        context.batch_total_count,
+        context.batch_completed_count,
+    ) else {
+        return Ok(());
+    };
+
+    let requested_start_time = context.requested_start_time.unwrap_or_default();
+    let requested_end_time = context.requested_end_time.unwrap_or_default();
+    let normalized_progress = progress_percent.clamp(0.0, 100.0) / 100.0;
+    let batch_progress_percent = if total_count == 0 {
+        100.0
+    } else {
+        (((completed_count as f64) + normalized_progress) / total_count as f64) * 100.0
+    };
+    let envelope = BacktestBatchProgressEventEnvelope {
+        event_id: Uuid::new_v4().to_string(),
+        event_type: "trading-bot.research-backtesting.backtest-batch-progress.v1",
+        source: source.to_string(),
+        occurred_at: Utc::now().to_rfc3339(),
+        data: BacktestBatchProgressEventData {
+            batch_id: batch_id.clone(),
+            symbol: context.symbol.clone(),
+            timeframe_code: context.timeframe_code.clone(),
+            requested_start_time,
+            requested_end_time,
+            stage: stage.to_string(),
+            progress_percent: batch_progress_percent.clamp(0.0, 100.0),
+            total_count,
+            completed_count,
+            running_count: 1,
+        },
+    };
+    let payload = serde_json::to_string(&envelope)?;
+
+    kafka_producer
+        .send(
+            FutureRecord::to(topic).key(batch_id).payload(&payload),
+            StdDuration::from_secs(5),
+        )
+        .await
+        .map_err(|(error, _)| anyhow::anyhow!(error))?;
+
+    Ok(())
+}
+
 #[derive(Clone, Debug, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct DataReadinessSnapshotEnvelope {
@@ -230,33 +285,6 @@ impl TradeWindowCache {
     fn contains_window(&self, pair_code: &str, start_time: i64, end_time: i64) -> bool {
         self.pair_code == pair_code && self.start_time <= start_time && self.end_time >= end_time
     }
-}
-
-fn apply_risk_profile(
-    analysis: &ResolvedAnalysisSettingsRecord,
-    risk_profile: &RiskProfileRecord,
-) -> ResolvedAnalysisSettingsRecord {
-    let mut resolved = analysis.clone();
-    resolved.risk_profile_name = risk_profile.name.clone();
-    resolved.risk_profile = risk_profile.clone();
-    resolved
-}
-
-fn expand_analyses_by_risk_profiles(
-    analyses: Vec<ResolvedAnalysisSettingsRecord>,
-    risk_profiles: &[RiskProfileRecord],
-) -> Vec<ResolvedAnalysisSettingsRecord> {
-    if risk_profiles.is_empty() {
-        return analyses;
-    }
-
-    let mut expanded = Vec::with_capacity(analyses.len().saturating_mul(risk_profiles.len()));
-    for analysis in analyses {
-        for risk_profile in risk_profiles {
-            expanded.push(apply_risk_profile(&analysis, risk_profile));
-        }
-    }
-    expanded
 }
 
 impl ResearchBacktestingService {
@@ -766,8 +794,7 @@ impl ResearchBacktestingService {
                 analysis_id_filter.is_empty() || analysis_id_filter.contains(&analysis.id)
             })
             .collect::<Vec<_>>();
-        let risk_profiles = self.fetch_enabled_risk_profiles().await?;
-        let mut analyses = expand_analyses_by_risk_profiles(analyses, &risk_profiles);
+        let mut analyses = analyses;
 
         if analyses.is_empty() {
             return Ok(0);
@@ -790,6 +817,8 @@ impl ResearchBacktestingService {
         for analysis in analyses {
             let run_key = readiness_run_key(
                 &analysis.id,
+                &analysis.symbol,
+                &analysis.timeframe_code,
                 &analysis.risk_profile_name,
                 item.requested_start_time,
                 item.requested_end_time,
@@ -804,6 +833,8 @@ impl ResearchBacktestingService {
                 .historical_store
                 .backtest_run_exists_for_window(
                     &analysis.id,
+                    &analysis.symbol,
+                    &analysis.timeframe_code,
                     &analysis.risk_profile_name,
                     item.requested_start_time,
                     item.requested_end_time,
@@ -1390,6 +1421,16 @@ impl ResearchBacktestingService {
     }
 }
 
+fn apply_risk_profile(
+    analysis: &ResolvedAnalysisSettingsRecord,
+    risk_profile: &RiskProfileRecord,
+) -> ResolvedAnalysisSettingsRecord {
+    let mut resolved = analysis.clone();
+    resolved.risk_profile_name = risk_profile.name.clone();
+    resolved.risk_profile = risk_profile.clone();
+    resolved
+}
+
 fn map_historical_kline_row(row: HistoricalKlineRecord) -> PersistedKlineRecord {
     PersistedKlineRecord {
         pair_code: row.symbol.clone(),
@@ -1513,12 +1554,14 @@ fn millis_to_rfc3339(value: i64) -> Result<String> {
 
 fn readiness_run_key(
     analysis_setting_id: &str,
+    symbol: &str,
+    timeframe_code: &str,
     risk_profile_name: &str,
     requested_start_time: i64,
     requested_end_time: i64,
 ) -> String {
     format!(
-        "{analysis_setting_id}:{risk_profile_name}:{requested_start_time}:{requested_end_time}"
+        "{analysis_setting_id}:{symbol}:{timeframe_code}:{risk_profile_name}:{requested_start_time}:{requested_end_time}"
     )
 }
 
@@ -2008,6 +2051,15 @@ async fn execute_backtest(
                                 StdDuration::from_secs(5),
                             )
                             .await;
+                        let _ = publish_batch_progress_from_context(
+                            &kafka_producer,
+                            &backtest_progress_events_topic,
+                            &progress_event_source,
+                            context,
+                            "retrieving-data",
+                            window_progress_percent.clamp(0.0, 99.0),
+                        )
+                        .await;
                     }
                 }
             }
@@ -2035,7 +2087,7 @@ async fn execute_backtest(
         let envelope = BacktestProgressEventEnvelope {
             event_id: Uuid::new_v4().to_string(),
             event_type: "trading-bot.research-backtesting.backtest-progress.v1",
-            source: progress_event_source,
+            source: progress_event_source.clone(),
             occurred_at: Utc::now().to_rfc3339(),
             data: BacktestProgressEventData {
                 control_plane_job_id: context.control_plane_job_id.clone(),
@@ -2057,6 +2109,15 @@ async fn execute_backtest(
                     StdDuration::from_secs(5),
                 )
                 .await;
+            let _ = publish_batch_progress_from_context(
+                &kafka_producer,
+                &backtest_progress_events_topic,
+                &progress_event_source,
+                context,
+                "simulating",
+                100.0,
+            )
+            .await;
         }
     }
     let trades = resequence_trades(trades);
@@ -2216,7 +2277,7 @@ mod tests {
     use serde_json::json;
     use trading_bot_market_data::models::PersistedTradeRecord;
     use trading_bot_strategy_engine::models::{
-        PairRecord, RiskProfileRecord, StrategyRecord, TimeframeRecord, TradingDefaultsRecord,
+        PairRecord, RiskProfileRecord, StrategyRecord, TimeframeRecord,
     };
 
     use super::*;
@@ -2233,7 +2294,6 @@ mod tests {
             timeframe_code: "1m".to_string(),
             strategy_name: "emaCross".to_string(),
             risk_profile_name: "default".to_string(),
-            trading_defaults_name: "default".to_string(),
             technical_analysis_settings: json!({
                 "fastPeriod": 2,
                 "slowPeriod": 3
@@ -2247,8 +2307,6 @@ mod tests {
                 active: true,
                 base_asset: "BTC".to_string(),
                 destination_asset: "USDT".to_string(),
-                origin_asset_needed_funds: Some(1000.0),
-                destination_asset_needed_funds: Some(1000.0),
                 created_at: "2026-01-01T00:00:00Z".to_string(),
                 updated_at: "2026-01-01T00:00:00Z".to_string(),
             },
@@ -2283,15 +2341,6 @@ mod tests {
                 minimum_stop_loss: 1.0,
                 swing_gap: 1.0,
                 rrr: 2.0,
-                enabled: true,
-                created_at: "2026-01-01T00:00:00Z".to_string(),
-                updated_at: "2026-01-01T00:00:00Z".to_string(),
-            },
-            trading_defaults: TradingDefaultsRecord {
-                id: "td-1".to_string(),
-                name: "default".to_string(),
-                description: "default".to_string(),
-                default_position_notional_usd: 100.0,
                 enabled: true,
                 created_at: "2026-01-01T00:00:00Z".to_string(),
                 updated_at: "2026-01-01T00:00:00Z".to_string(),

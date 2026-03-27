@@ -14,13 +14,12 @@ Use this as the single current-state overview. For deeper slice-by-slice details
 
 - `docs/architecture-overview.md`
 - `docs/market-data-architecture.md`
-- `docs/strategy-engine-architecture.md`
 - `docs/research-backtesting-architecture.md`
 - `docs/local-first-start.md`
 
 ## What Exists Today
 
-The current platform has four application services plus local supporting infrastructure.
+The current platform has three application services plus local supporting infrastructure.
 
 ### 1. control-plane
 
@@ -80,12 +79,10 @@ Current responsibilities:
 - subscribe to Binance public:
   - klines
   - aggregate trades
-  - book tickers
 - publish normalized events to Redpanda
 - persist:
   - `market_data_klines`
   - `market_data_trades`
-  - `market_data_book_tickers`
 - backfill and tail-gap repair for klines
 - expose recent and replay-oriented historian reads
 
@@ -93,36 +90,7 @@ Local URL:
 
 - `http://localhost:3030`
 
-### 3. strategy-engine
-
-Purpose:
-
-- in-memory technical-analysis evaluation on live closed klines
-- signal generation
-
-Technology:
-
-- Rust
-- Axum
-- Tokio
-- Reqwest
-- `rdkafka`
-- shared in-memory strategy logic
-- Prometheus metrics
-
-Current responsibilities:
-
-- fetch active runtime config from the control-plane
-- warm state from recent stored klines exposed by `market-data`
-- consume live closed kline events from Redpanda
-- evaluate `emaCross`
-- publish normalized signal events to Redpanda
-
-Local URL:
-
-- `http://localhost:3040`
-
-### 4. research-backtesting
+### 3. research-backtesting
 
 Purpose:
 
@@ -135,7 +103,7 @@ Technology:
 - Tokio
 - Reqwest
 - direct ClickHouse reads
-- shared strategy logic reused from `strategy-engine`
+- shared strategy logic reused from the strategy library crate
 - Prometheus metrics
 
 Current responsibilities:
@@ -143,7 +111,6 @@ Current responsibilities:
 - read active analysis config from the control-plane
 - read named `research_settings` profiles from the control-plane
 - derive timeframe-specific replay windows
-- read historical klines, aggregate trades, and book tickers directly from ClickHouse
 - replay the same `emaCross` logic used live
 - persist completed backtest runs in ClickHouse
 - return:
@@ -163,7 +130,6 @@ The app-local stack also includes:
 - PostgreSQL
   - local transactional store for the control-plane
 - ClickHouse
-  - historian for klines, trades, book tickers, and persisted backtest runs
 - Alloy
   - local log shipping sidecar
 
@@ -183,7 +149,7 @@ The shared infrastructure comes from `platform-ops`:
 1. Operators create or update config in `control-plane`.
 2. `control-plane` commits the change in PostgreSQL.
 3. Immediately after commit, it publishes a config-change event to Redpanda.
-4. `market-data` and `strategy-engine` consume those config-change events and refresh their runtime view.
+4. `market-data` consumes those config-change events and refreshes its runtime view.
 
 ### Live market-data flow
 
@@ -194,14 +160,6 @@ The shared infrastructure comes from `platform-ops`:
 5. It stores historical data in ClickHouse.
 6. It publishes normalized events to Redpanda.
 
-### Live strategy flow
-
-1. `strategy-engine` fetches the same resolved runtime config.
-2. It warms in-memory state from recent klines exposed by `market-data`.
-3. It consumes live closed kline events from Redpanda.
-4. It evaluates `emaCross` in memory.
-5. It publishes signal events to Redpanda.
-
 ### Offline backtesting flow
 
 1. A caller sends a backtest request to `research-backtesting`.
@@ -209,10 +167,8 @@ The shared infrastructure comes from `platform-ops`:
    - the target `analysis_setting`
    - the selected `research_settings` profile
 3. It computes the replay window for that timeframe.
-4. It reads historical klines, aggregate trades, and book tickers from ClickHouse.
 5. It warms the shared `emaCross` evaluator with pre-window candles.
 6. It replays the historical closed klines through the same evaluator used live.
-7. It resolves fills from best bid/ask book tickers with aggregate-trade fallback, using the
    configured risk profile and trading defaults.
 8. It persists the completed run in ClickHouse.
 9. It returns the persisted run payload with signals, simulated trades, and summary PnL.
@@ -227,9 +183,9 @@ The shared infrastructure comes from `platform-ops`:
 
 Those values are millisecond durations. That matches the useful part of the legacy behavior.
 
-For the currently implemented quote-aware backtests, required historian retention is:
+For the currently implemented backtests, required historian retention is:
 
-`configured_window_ms + warmup_ms + aggregate_trade_coverage_for_requested_window + book_ticker_coverage_for_requested_window`
+`configured_window_ms + warmup_ms + aggregate_trade_coverage_for_requested_window`
 
 Where:
 
@@ -238,7 +194,6 @@ Where:
 - replay safety caps come from:
   - `BACKTEST_MAX_KLINES`
   - `BACKTEST_MAX_TRADES`
-  - `BACKTEST_MAX_BOOK_TICKERS`
 
 Default warmup behavior:
 
@@ -254,7 +209,6 @@ Examples:
   - warmup = `525 minutes`
 
 For quote-aware accuracy, a longer window is only useful if ClickHouse also has aggregate trades
-and book tickers for that same replay span. Otherwise the simulator falls back more often and the
 run becomes broader, but not more precise.
 
 ### Was the legacy timeframe-specific approach correct?
@@ -277,7 +231,6 @@ aggregate-trade fallback for the requested replay window.
 So the correct interpretation is:
 
 - current replay needs timeframe klines plus warmup for indicator state
-- current fill-aware replay now uses book tickers first and aggregate trades as fallback
 - future full order-book-aware replay may still need lower-level market data beyond best bid/ask
   and aggregate trades
 
@@ -306,7 +259,6 @@ Current:
 - one smaller platform with clearer service boundaries
 - `control-plane`
 - `market-data`
-- `strategy-engine`
 - `research-backtesting`
 - PostgreSQL for authored/transactional state
 - ClickHouse for historical market data
@@ -356,19 +308,14 @@ Current historical-data behavior:
 
 - `market-data` owns exchange ingestion
 - uses Binance public websockets for live flow
-- uses bounded REST for kline and aggregate-trade backfill, plus periodic book-ticker snapshot refresh when
-  the stored book-ticker stream is stale
 - stores history in ClickHouse
 - persists:
   - klines
   - aggregate trades
-  - book tickers
 - exposes recent and replay-oriented HTTP reads
 
-Book-ticker backfill note:
 
 - current backfill is snapshot-only (`/api/v3/depth?limit=5`, using `lastUpdateId`) and does **not** reconstruct arbitrary
-  historical book-ticker rows from a target start timestamp. It ensures the live continuity is repaired
   and catches up quickly after gaps.
 
 So the current version is more explicit about a dedicated historian and replay contract. It also
@@ -384,11 +331,8 @@ Legacy strategy behavior:
 
 Current strategy behavior:
 
-- `strategy-engine` only evaluates supported strategies in memory
 - current supported strategy kind is only `emaCross`
-- it consumes normalized live kline events
-- it warms from recent stored candles
-- it publishes signals but does not place orders
+- the shared strategy library only exposes the evaluator logic used by offline replay
 
 So the current platform is narrower but cleaner. It does less today, but the part it does is more
 deliberately separated from config authoring and historical storage.
@@ -408,7 +352,6 @@ Current backtesting:
 
 - runs in `research-backtesting`
 - uses timeframe-specific timeranges from `research_settings`
-- reads historical klines, aggregate trades, and book tickers from ClickHouse
 - reuses the same `emaCross` evaluator used live
 - uses best bid/ask quotes first, with aggregate-trade fallback, to resolve entries, stop-loss
   exits, take-profit exits, reversals, and optional window-end exits
@@ -449,7 +392,6 @@ These parts should work today:
 
 - `control-plane` health, docs, CRUD, runtime projection, and config-change events
 - `market-data` health, Binance public ingestion, ClickHouse persistence, recent reads, replay reads
-- `strategy-engine` health, runtime-config loading, warmup, live `emaCross` evaluation, signal publication
 - `research-backtesting` health, ClickHouse kline/trade replay, `research_settings`-driven
   backtests, quote-aware stop-loss / take-profit / reversal simulation
 
@@ -476,7 +418,6 @@ Main missing research depth:
 
 - partial-fill execution backtesting
 - order-book-aware replay for deeper execution realism
-- replay quality gate for backtests (reject or mark windows with incomplete trade/book-ticker coverage)
 - optimization job orchestration
 - richer analytics on top of historian data
 
@@ -505,13 +446,12 @@ npm run local:up
 ```bash
 curl -fsS http://localhost:3020/health/readiness | jq
 curl -fsS http://localhost:3030/health/readiness | jq
-curl -fsS http://localhost:3040/health/readiness | jq
 curl -fsS http://localhost:3050/health/readiness | jq
 ```
 
 Expected:
 
-- all four services return status `ok`
+- all three services return status `ok`
 
 ### 3. Seed a minimal runnable config set
 
@@ -639,7 +579,6 @@ Check stored data:
 ```bash
 curl -fsS "http://localhost:3030/v1/klines/BTCUSDT/1m?limit=5" | jq
 curl -fsS "http://localhost:3030/v1/trades/BTCUSDT?limit=5" | jq
-curl -fsS "http://localhost:3030/v1/book-tickers/BTCUSDT?limit=5" | jq
 ```
 
 Check replay reads:
@@ -647,7 +586,6 @@ Check replay reads:
 ```bash
 curl -fsS "http://localhost:3030/v1/replay/klines/BTCUSDT/1m?limit=5" | jq
 curl -fsS "http://localhost:3030/v1/replay/trades/BTCUSDT?limit=5" | jq
-curl -fsS "http://localhost:3030/v1/replay/book-tickers/BTCUSDT?limit=5" | jq
 ```
 
 Expected:
@@ -672,24 +610,7 @@ docker compose --env-file docker/.env.app.local -f docker/compose.app.local.yml 
   "
 ```
 
-### 6. Validate strategy-engine
-
-```bash
-curl -fsS http://localhost:3040/v1/status | jq
-curl -fsS http://localhost:3040/v1/analyses | jq
-```
-
-Expected:
-
-- one active analysis
-- warmed runtime state
-
-Note:
-
-- live signals depend on real market movement
-- you may need to wait for an actual EMA crossover before seeing signal emission
-
-### 7. Validate research-backtesting
+### 6. Validate research-backtesting
 
 Get one analysis-setting id:
 
@@ -725,7 +646,6 @@ Expected:
 - `durationMs` is present
 - `dataset.replayKlineCount` is non-zero
 - `dataset.replayTradeCount` is non-zero
-- `dataset.replayBookTickerCount` is non-zero when quote coverage exists for the window
 - `signals` contains offline EMA crossover events if the window has enough movement
 - `trades` contains simulated entries/exits resolved from best bid/ask quotes with aggregate-trade fallback
 - `summary.totalPnlUsd` is present
@@ -760,5 +680,4 @@ If you want to understand the system from high level to detail:
 2. `docs/architecture-overview.md`
 3. `docs/local-first-start.md`
 4. `docs/market-data-architecture.md`
-5. `docs/strategy-engine-architecture.md`
-6. `docs/research-backtesting-architecture.md`
+5. `docs/research-backtesting-architecture.md`

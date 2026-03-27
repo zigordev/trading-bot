@@ -19,11 +19,9 @@ Current responsibilities:
 - fetch the resolved `analysis-settings` projection from the control-plane on demand
 - fetch named `research_settings` profiles from the control-plane on demand
 - derive a replay window from timeframe-specific research durations
-- read historical klines, aggregate trades, and book tickers directly from ClickHouse
 - warm the evaluator with pre-window candles
 - replay the requested closed klines through the shared `emaCross` evaluator
 - simulate entries, stop-loss exits, take-profit exits, reversals, and optional window-end exits
-  from best bid/ask book tickers with aggregate-trade fallback
 - apply configurable fee and slippage assumptions to the simulated fills
 - persist completed backtest runs into ClickHouse
 - expose recent persisted backtest runs and full persisted run lookup
@@ -81,7 +79,6 @@ The returned payload includes:
 - the resolved analysis record
 - the selected research-settings profile
 - the effective replay and warmup window
-- replay dataset counts for klines, aggregate trades, and book tickers
 - execution assumptions
 - emitted offline signals
 - simulated trades
@@ -115,14 +112,12 @@ two separate indicator implementations.
 
 ## Current Execution Model
 
-The implemented backtest now resolves fills from best bid/ask book tickers when they are
 available, with aggregate-trade fallback when quote coverage is missing.
 
 Current fill model:
 
 - generate signals from closed timeframe klines using the shared `emaCross` evaluator
 - open a position at the first executable event at or after the signal timestamp
-  - prefer book tickers and use:
     - ask for long entry
     - bid for short entry
   - fall back to aggregate trades if no quote arrives first
@@ -130,12 +125,10 @@ Current fill model:
 - derive stop-loss distance from `risk_profile.swingGap`, clamped between
   `minimumStopLoss` and `maximumStopLoss`
 - derive take-profit distance from `risk_profile.rrr`
-- replay book tickers and aggregate trades in chronological order
 - close on the first executable event that crosses:
   - the stop-loss threshold
   - the take-profit threshold
   - the opposite signal timestamp
-- prefer quote-side threshold checks when book tickers are available:
   - long exits evaluate against bid
   - short exits evaluate against ask
 - optionally close the last open position at the end of the window
@@ -159,7 +152,6 @@ It is not yet enough for:
 
 For the currently implemented quote-aware backtest, required historian retention is:
 
-`configured research window + indicator warmup + aggregate-trade coverage + book-ticker coverage over the replay window`
 
 In the current code:
 
@@ -169,7 +161,6 @@ In the current code:
 - replay safety caps come from:
   - `BACKTEST_MAX_KLINES`
   - `BACKTEST_MAX_TRADES`
-  - `BACKTEST_MAX_BOOK_TICKERS`
 - warmup defaults to:
   - `slowPeriod * BACKTEST_WARMUP_MULTIPLIER`
   - default multiplier: `5`
@@ -196,7 +187,6 @@ should retain at least:
 - the longest configured `research_settings` window for that timeframe
 - plus the expected warmup margin
 - and aggregate trades covering the full requested replay window
-- and book tickers covering the full requested replay window if you want quote-aware execution
 
 ## Was The Legacy Approach Correct?
 
@@ -222,7 +212,6 @@ So the correct interpretation is:
 
 - timeframe-specific durations in milliseconds are still the right control-plane model
 - timeframe klines plus warmup are still required for indicator evaluation
-- quote-aware backtests additionally need aggregate trades and book tickers for the replay window
 - if you later want partial-fill or full order-book simulation, best bid/ask plus aggregate trades
   will still not be enough
 

@@ -88,9 +88,6 @@ test("GET /v1/ops/overview aggregates service availability", async (t) => {
       if (url.includes("market-data")) {
         return { status: "ok" };
       }
-      if (url.includes("strategy-engine")) {
-        return { status: "degraded" };
-      }
 
       throw new Error("connection refused");
     },
@@ -105,8 +102,8 @@ test("GET /v1/ops/overview aggregates service availability", async (t) => {
 
   assert.equal(response.statusCode, 200);
   const payload = response.json();
-  assert.equal(requestCount, 3);
-  assert.equal(payload.services.length, 4);
+  assert.equal(requestCount, 2);
+  assert.equal(payload.services.length, 3);
   assert.deepEqual(
     payload.services.map((service: { name: string; status: string }) => ({
       name: service.name,
@@ -115,7 +112,6 @@ test("GET /v1/ops/overview aggregates service availability", async (t) => {
     [
       { name: "control-plane", status: "up" },
       { name: "market-data", status: "up" },
-      { name: "strategy-engine", status: "down" },
       { name: "research-backtesting", status: "down" },
     ],
   );
@@ -128,11 +124,11 @@ test("GET /v1/runtime-config/analysis-settings returns the injected projection",
   const projection: ResolvedAnalysisSettingsRecord[] = [
     {
       id: "analysis-1",
+      name: "ema-cross-20",
       symbolCode: "BTCUSDT",
       timeframeCode: "1m",
       strategyName: "ema",
       riskProfileName: "default-risk",
-      tradingDefaultsName: "binance-default",
       technicalAnalysisSettings: { period: 20 },
       enabled: true,
       createdAt: "2026-03-12T16:00:00.000Z",
@@ -173,15 +169,6 @@ test("GET /v1/runtime-config/analysis-settings returns the injected projection",
         minimumStopLoss: 1,
         swingGap: 0.5,
         rrr: 2,
-        enabled: true,
-        createdAt: "2026-03-12T16:00:00.000Z",
-        updatedAt: "2026-03-12T16:00:00.000Z",
-      },
-      tradingDefaults: {
-        id: "defaults-1",
-        name: "binance-default",
-        description: "default execution profile",
-        defaultPositionNotionalUsd: 100,
         enabled: true,
         createdAt: "2026-03-12T16:00:00.000Z",
         updatedAt: "2026-03-12T16:00:00.000Z",

@@ -34,7 +34,6 @@ For backtests:
 - provides fallback execution path when quote snapshots are unavailable,
 - improves realism of intrabar/edge behavior when fills are not book-based.
 
-### `market_data_book_tickers`
 
 This is the **quote-realism table**.
 
@@ -54,61 +53,35 @@ For backtests:
 `market-data` creates subscriptions from resolved analysis settings and runs:
 
 1. Resolve active settings from control-plane (`/v1/runtime-config/analysis-settings`).
-2. Build subscription sets (pair + timeframe).
-3. Start websocket streams for live events.
-4. Run backfill/gap repair:
+2. Build the active symbol/timeframe set from runtime configuration.
+3. Run hourly closed-window retrieval and gap repair:
    - `market_data_klines`: historical candle backfill from Binance (`/klines`) using stored checkpoints.
-   - `market_data_trades`: historical aggregate-trade backfill (`/aggTrades`) using `latest` checkpoints.
-   - `market_data_book_tickers`: continuity repair by snapshot when stale/missing (`/depth`).
+   - `market_data_trades`: historical aggregate-trade backfill (`/aggTrades`) using stored checkpoints.
 
-All three writers persist to ClickHouse and emit status via `/v1/status` and `/health/readiness`.
+Both writers persist to ClickHouse and emit status via `/v1/status` and `/health/readiness`.
 
 ## 3. How replay reads are assembled
 
 When a backtest is executed (`research-backtesting`), it pulls the same analysis window from:
 - `replay_klines(pair,timeframe,window)`
 - `replay_trades(pair,window)`
-- `replay_book_tickers(pair,window)`
 
-The execution layer merges these sources chronologically and simulates fills with precedence:
-- use `book_tickers` when available around event time,
-- otherwise use aggregate trades fallback.
+The execution layer merges these sources chronologically and simulates fills from the aggregate-trade tape.
 
 So in practice:
 - `klines` controls strategy timing/signals,
 - `trades` provide a chronological tape of market activity,
-- `book_tickers` improve quote-side execution decisions.
-
-## 4. Why book ticker completeness is not a hard blocker
-
-This is by design to keep the system usable without blocking all research when only one source has gaps.
-
-- Full backtest can still run with klines+trades.
-- Missing book tickers do not prevent strategy evaluation.
-- Missing book tickers mainly reduce execution realism:
-  - spread-aware fills are less precise,
-  - fallback rules are used more often.
-
-This trade-off is acceptable for throughput and operability, but it means you get two grades of result quality:
-- fully quote-aware replay (tickers present),
-- trade-tape fallback replay (tickers sparse or absent).
+- backtests run only when both sources are complete enough for the requested replay window.
 
 ## 5. Precision limitations to keep in mind
 
-### Historical `book_tickers` boundary
-
-`book_tickers` does not have the same historical backfill path as klines/trades because Binance does not expose equivalent deep historical top-of-book endpoint semantics. Current logic:
 - backfills/repairs only from a checkpoint-forward model,
-- maintains continuity from current time onward after bootstrap,
-- cannot reconstruct arbitrary distant historical ticker timelines from scratch.
-
-Consequence:
-- early intervals after first bootstrap may have good kline/trade coverage but weaker quote coverage.
+- use the last closed hour as the dataset boundary,
+- may leave a dataset partial until missing aggregate-trade-id gaps are repaired.
 
 ### Ingestion mode differences
 
 - During backfill, rows are marked `ingestion_mode="backfill"` and are still written to history.
-- During stream-driven ingestion, rows are marked `ingestion_mode="live"`.
 - Backtest uses these rows primarily for chronology and fills, not as separate business logic branches.
 
 ## 6. Practical quality checks
@@ -120,12 +93,10 @@ Use these checks to verify per-pair quality before trusting signal-level conclus
 2. Trade continuity:
 - `market_data_trades`: is there reasonable tape density over the same window?
 3. Quote coverage:
-- `market_data_book_tickers`: are there rows spanning the run window, not just near-end snapshots?
 
 In the UI/API view:
 - `/v1/replay/klines/:pair/:tf`
 - `/v1/replay/trades/:pair`
-- `/v1/replay/book-tickers/:pair`
 
 If ticker rows are missing, treat fills as “tickers-absent fallback” quality.
 

@@ -6,8 +6,8 @@ This document describes exactly how historical market data is discovered, retrie
 
 - Service: `market-data` (`crates/market-data`)
 - Store: ClickHouse (`trading-bot-historical-store`)
-- Sources: Binance websocket streams + REST endpoints
-- Consumers: `research-backtesting` and live `strategy-engine` (for inspection/replay readiness)
+- Sources: Binance REST endpoints
+- Consumers: `research-backtesting`
 
 ## 1) What data is persisted
 
@@ -19,7 +19,6 @@ Three historical tables are populated by `market-data`:
 - `market_data_trades`
   - Key inputs: pair + aggregate trade id
   - Used for fill-aware execution replay
-- `market_data_book_tickers`
   - Key inputs: pair + order book update id
   - Used for spread-aware fills when available
 
@@ -27,7 +26,6 @@ All three tables are created on startup with `ReplacingMergeTree` and TTL retent
 
 - `market_data_klines.TTL = HISTORICAL_KLINE_RETENTION_DAYS`
 - `market_data_trades.TTL = HISTORICAL_TRADE_RETENTION_DAYS`
-- `market_data_book_tickers.TTL = HISTORICAL_BOOK_TICKER_RETENTION_DAYS`
 
 ## 2) Service startup and control flow
 
@@ -95,7 +93,6 @@ Per message:
 - publish event to Kafka for live rows only (`ingestion_mode = "live"`):
   - klines: always publish
   - trades: publish only live
-  - book-tickers: publish only live
 
 Backfill rows are persisted too, but are not republished to Kafka (`ingestion_mode = "backfill"` for snapshot/repair rows).
 
@@ -150,21 +147,6 @@ For each active pair:
 Loop bounded by:
 - `HISTORICAL_TRADE_BACKFILL_MAX_BATCHES` (warn when exhausted).
 
-### 5.3 Book tickers (`/api/v3/depth`)
-
-Function: `backfill_pair_book_ticker`
-
-This is not a full historical replay path; it is continuity-aware checkpoint repair:
-
-- check latest checkpoint:
-  - `latest_book_ticker_checkpoint` (last `occurred_at_ms`)
-- if checkpoint age > `HISTORICAL_BOOK_TICKER_BACKFILL_INTERVAL_MS` (default 60s) or absent:
-  - request `GET /api/v3/depth?symbol=...&limit=5`
-  - take top-level bid/ask
-  - normalize as backfill book-ticker snapshot and store
-- else skip.
-
-This design gives near-real continuation from current time, but does not reconstruct deep historical ticker timelines arbitrarily.
 
 ## 6) Normalization + dedupe guarantees
 
@@ -183,18 +165,15 @@ This design gives near-real continuation from current time, but does not reconst
 - recent reads:
   - `/v1/klines/{pair}/{tf}`
   - `/v1/trades/{pair}`
-  - `/v1/book-tickers/{pair}`
 - replay reads:
   - `/v1/replay/klines/{pair}/{tf}?startTime=...&endTime=...&limit=...`
   - `/v1/replay/trades/{pair}?startTime=...&endTime=...&limit=...`
-  - `/v1/replay/book-tickers/{pair}?startTime=...&endTime=...&limit=...`
 
 In `research-backtesting`, `resolve_input` requires:
 
 - at least one replay kline row in window (otherwise fail),
 - at least one aggregate trade in window (otherwise fail with fill-aware warning message).
 
-Book tickers are optional; missing rows degrade quote realism but do not currently stop the run.
 
 ## 8) Why some backtests may fail in practice
 
@@ -231,7 +210,6 @@ Use these env vars from `crates/market-data/src/config.rs`:
   - upper bound on trade backfill batch count
 - `HISTORICAL_BACKFILL_MAX_CONCURRENCY`
 - `HISTORICAL_BOOK_TICKER_BACKFILL_INTERVAL_MS`
-  - when to force fresh book-ticker snapshot
 - `BINANCE_REST_MAX_RETRIES`, `BINANCE_REST_RETRY_BACKOFF_MS`
 - `HISTORICAL_*_RETENTION_DAYS`
 - `MARKET_EVENT_DEDUP_CAPACITY`
@@ -247,7 +225,6 @@ Use these env vars from `crates/market-data/src/config.rs`:
 `OPTIMIZE TABLE ... FINAL` on:
 - `market_data_klines`
 - `market_data_trades`
-- `market_data_book_tickers`
 
 The loop runs once on startup and then every `HISTORICAL_STORE_COMPACTION_INTERVAL_MS`.
 This removes inactive `ReplacingMergeTree` parts from completed merges, so those parts are not kept indefinitely.
@@ -264,9 +241,8 @@ Useful quick validation queries (against ClickHouse):
 - latest row windows per table:
   - `SELECT max(open_time) ... FROM market_data_klines`
   - `SELECT max(trade_time) ... FROM market_data_trades`
-  - `SELECT max(occurred_at_ms) ... FROM market_data_book_tickers`
 - per-pair continuity counts and checkpoints:
-  - use existing methods `latest_kline_open_time`, `kline_open_time_count_in_range`, `latest_trade_checkpoint`, `latest_book_ticker_checkpoint` (via DB wrapper / service methods).
+  - use existing methods `latest_kline_open_time`, `kline_open_time_count_in_range`, and `latest_trade_checkpoint` (via DB wrapper / service methods).
 
 ## 12) Files of interest
 

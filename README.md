@@ -12,23 +12,21 @@ This repository currently contains the first migration slice:
 - local infrastructure bootstrap for app-specific services
 - runnable control-plane API
 - runnable Rust `market-data` service
-- runnable Rust `strategy-engine` service
 - PostgreSQL-backed CRUD for pairs, timeframes, strategies, risk profiles, trading defaults, and analysis settings
 - direct config-change event publication into Redpanda
-- automatic Kafka topic provisioning for the control-plane, market-data, and strategy-engine contracts
+- automatic Kafka topic provisioning for the control-plane, market-data, and research-backtesting contracts
 - a resolved runtime-config projection for active analysis settings
-- Binance combined kline, aggregate-trade, and book-ticker stream consumption driven by that runtime projection
-- ClickHouse-backed historical kline, aggregate-trade, and book-ticker storage plus startup backfill and tail-gap repair for klines
+- hourly closed-window historical kline and aggregate-trade retrieval driven by that runtime projection
+- ClickHouse-backed historical kline and aggregate-trade storage plus startup backfill and tail-gap repair
 - historian inspection and replay-oriented query endpoints in `market-data`
-- in-memory `emaCross` strategy evaluation on live closed klines
 - runnable Rust `research-backtesting` service
 - direct ClickHouse kline and aggregate-trade replay for offline backtests
-- offline `emaCross` replay using the same strategy logic used by the live strategy-engine
+- offline `emaCross` replay using the shared strategy logic crate
 - env-driven timeframe-specific backtest windows
 - trade-tape-aware stop-loss, take-profit, reversal, fee, and slippage simulation in offline backtests
 - persisted ClickHouse-backed backtest run storage plus list/get retrieval
 - normalized signal publication into Redpanda
-- normalized market-data event publication into Redpanda on dedicated topics
+- normalized data-readiness publication into Redpanda on dedicated topics
 - local-first documentation that assumes `platform-ops` is the shared base
 
 No live order execution has been added yet.
@@ -58,7 +56,6 @@ No live order execution has been added yet.
 - `docs/research-backtesting-architecture.md`
 - `docs/research-settings-architecture.md`
 - `docs/local-first-start.md`
-- `docs/strategy-engine-architecture.md`
 
 ## Current local service surface
 
@@ -87,19 +84,8 @@ No live order execution has been added yet.
 - `/v1/status`
 - `/v1/klines/:pair_code/:timeframe_code`
 - `/v1/trades/:pair_code`
-- `/v1/book-tickers/:pair_code`
 - `/v1/replay/klines/:pair_code/:timeframe_code`
 - `/v1/replay/trades/:pair_code`
-- `/v1/replay/book-tickers/:pair_code`
-
-`strategy-engine` on `http://localhost:3040`:
-
-- `/health/liveness`
-- `/health/readiness`
-- `/metrics`
-- `/v1/info`
-- `/v1/status`
-- `/v1/analyses`
 
 `research-backtesting` on `http://localhost:3050`:
 
@@ -121,10 +107,10 @@ npm run local:down
 npm run local:reset
 ```
 
-`npm test` runs the control-plane Node test suite plus the Rust `market-data`,
-`research-backtesting`, and `strategy-engine` tests.
-`npm run build` builds the control-plane plus the Rust `market-data`,
-`research-backtesting`, and `strategy-engine` crates.
+`npm test` runs the control-plane Node test suite plus the Rust `market-data`
+and `research-backtesting` test suites.
+`npm run build` builds the control-plane plus the Rust `market-data`
+and `research-backtesting` crates.
 
 These commands only start and stop the app-specific local infrastructure.
 Shared dependencies such as OpenBao, Redpanda, and observability come from `platform-ops`.

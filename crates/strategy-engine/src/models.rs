@@ -6,12 +6,9 @@ use serde_json::Value;
 pub struct PairRecord {
     pub id: String,
     pub code: String,
-    #[serde(alias = "operable")]
     pub active: bool,
     pub base_asset: String,
     pub destination_asset: String,
-    pub origin_asset_needed_funds: Option<f64>,
-    pub destination_asset_needed_funds: Option<f64>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -24,7 +21,6 @@ pub struct TimeframeRecord {
     pub longer_timeframe_code: String,
     pub longer_timeframe_multiplier: i64,
     pub period_ms: i64,
-    #[serde(alias = "operable")]
     pub active: bool,
     pub created_at: String,
     pub updated_at: String,
@@ -59,36 +55,22 @@ pub struct RiskProfileRecord {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct TradingDefaultsRecord {
-    pub id: String,
-    pub name: String,
-    pub description: String,
-    pub default_position_notional_usd: f64,
-    pub enabled: bool,
-    pub created_at: String,
-    pub updated_at: String,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
 pub struct ResolvedAnalysisSettingsRecord {
     pub id: String,
-    #[serde(rename = "symbolCode", alias = "pairCode")]
+    #[serde(rename = "symbolCode")]
     pub symbol: String,
     pub timeframe_code: String,
     pub strategy_name: String,
     pub risk_profile_name: String,
-    pub trading_defaults_name: String,
     pub technical_analysis_settings: Value,
     pub enabled: bool,
     pub created_at: String,
     pub updated_at: String,
-    #[serde(rename = "symbol", alias = "pair")]
+    #[serde(rename = "symbol")]
     pub symbol_entity: PairRecord,
     pub timeframe: TimeframeRecord,
     pub strategy: StrategyRecord,
     pub risk_profile: RiskProfileRecord,
-    pub trading_defaults: TradingDefaultsRecord,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -141,49 +123,4 @@ pub struct MarketDataKlineEvent {
     pub trade_count: i64,
     pub analysis_setting_ids: Vec<String>,
     pub strategy_names: Vec<String>,
-}
-
-#[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AnalysisSummary {
-    pub analysis_setting_id: String,
-    pub pair_code: String,
-    pub symbol: String,
-    pub timeframe_code: String,
-    pub strategy_name: String,
-    pub strategy_kind: String,
-    pub fast_period: usize,
-    pub slow_period: usize,
-    pub warmed: bool,
-    pub last_close_time: Option<i64>,
-    pub last_fast_ema: Option<f64>,
-    pub last_slow_ema: Option<f64>,
-}
-
-#[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct StrategySignalEvent {
-    pub event_id: String,
-    pub event_type: String,
-    pub source: String,
-    pub occurred_at: String,
-    pub exchange: String,
-    pub analysis_setting_id: String,
-    pub pair_code: String,
-    pub symbol: String,
-    pub timeframe_code: String,
-    pub strategy_name: String,
-    pub strategy_kind: String,
-    pub signal_kind: String,
-    pub signal_direction: String,
-    pub close_time: i64,
-    pub close_price: f64,
-    pub kline_event_id: String,
-    pub fast_ema: f64,
-    pub slow_ema: f64,
-    pub risk_profile_name: String,
-    pub risk_profile: RiskProfileRecord,
-    pub trading_defaults_name: String,
-    pub trading_defaults: TradingDefaultsRecord,
-    pub technical_analysis_settings: Value,
 }

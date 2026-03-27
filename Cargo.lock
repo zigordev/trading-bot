@@ -1918,17 +1918,8 @@ name = "trading-bot-strategy-engine"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "axum",
- "chrono",
- "futures-util",
- "prometheus",
- "rdkafka",
- "reqwest",
  "serde",
  "serde_json",
- "tokio",
- "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]

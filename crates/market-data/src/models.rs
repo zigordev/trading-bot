@@ -6,12 +6,9 @@ use serde_json::Value;
 pub struct PairRecord {
     pub id: String,
     pub code: String,
-    #[serde(alias = "operable")]
     pub active: bool,
     pub base_asset: String,
     pub destination_asset: String,
-    pub origin_asset_needed_funds: Option<f64>,
-    pub destination_asset_needed_funds: Option<f64>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -24,7 +21,6 @@ pub struct TimeframeRecord {
     pub longer_timeframe_code: String,
     pub longer_timeframe_multiplier: i64,
     pub period_ms: i64,
-    #[serde(alias = "operable")]
     pub active: bool,
     pub created_at: String,
     pub updated_at: String,
@@ -59,36 +55,22 @@ pub struct RiskProfileRecord {
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct TradingDefaultsRecord {
-    pub id: String,
-    pub name: String,
-    pub description: String,
-    pub default_position_notional_usd: f64,
-    pub enabled: bool,
-    pub created_at: String,
-    pub updated_at: String,
-}
-
-#[derive(Clone, Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct ResolvedAnalysisSettingsRecord {
     pub id: String,
-    #[serde(rename = "symbolCode", alias = "pairCode")]
+    #[serde(rename = "symbolCode")]
     pub symbol: String,
     pub timeframe_code: String,
     pub strategy_name: String,
     pub risk_profile_name: String,
-    pub trading_defaults_name: String,
     pub technical_analysis_settings: Value,
     pub enabled: bool,
     pub created_at: String,
     pub updated_at: String,
-    #[serde(rename = "symbol", alias = "pair")]
+    #[serde(rename = "symbol")]
     pub symbol_entity: PairRecord,
     pub timeframe: TimeframeRecord,
     pub strategy: StrategyRecord,
     pub risk_profile: RiskProfileRecord,
-    pub trading_defaults: TradingDefaultsRecord,
 }
 
 #[derive(Clone, Debug, Default, Serialize, PartialEq, Eq)]
@@ -154,19 +136,6 @@ pub struct PersistedTradeRecord {
     pub trade_time: i64,
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct PersistedBookTickerRecord {
-    pub symbol: String,
-    pub order_book_update_id: i64,
-    pub bid_price: String,
-    pub bid_quantity: String,
-    pub ask_price: String,
-    pub ask_quantity: String,
-    pub occurred_at: String,
-    pub updated_at: String,
-}
-
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NormalizedKlineEvent {
@@ -213,27 +182,6 @@ pub struct NormalizedTradeEvent {
     pub quantity: String,
     pub trade_time: i64,
     pub market_maker: bool,
-    pub analysis_setting_ids: Vec<String>,
-    pub strategy_names: Vec<String>,
-}
-
-#[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct NormalizedBookTickerEvent {
-    pub event_id: String,
-    pub event_type: String,
-    pub source: String,
-    pub occurred_at: String,
-    pub exchange: String,
-    pub ingestion_mode: String,
-    pub stream_name: String,
-    pub pair_code: String,
-    pub symbol: String,
-    pub order_book_update_id: i64,
-    pub bid_price: String,
-    pub bid_quantity: String,
-    pub ask_price: String,
-    pub ask_quantity: String,
     pub analysis_setting_ids: Vec<String>,
     pub strategy_names: Vec<String>,
 }

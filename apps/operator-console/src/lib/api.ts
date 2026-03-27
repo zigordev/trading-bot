@@ -15,28 +15,6 @@ export type OverviewResponse = {
   }[];
 };
 
-export type BacktestJob = {
-  id: string;
-  status: "queued" | "running" | "completed" | "failed";
-  analysisSettingId: string;
-  riskProfileName: string | null;
-  symbolCode: string | null;
-  timeframeCode: string | null;
-  strategyName: string | null;
-  startTime: number | null;
-  endTime: number | null;
-  warmupCandles: number | null;
-  backtestId: string | null;
-  errorMessage: string | null;
-  stage: string | null;
-  progressPercent: number | null;
-  createdAt: string;
-  updatedAt: string;
-  startedAt: string | null;
-  finishedAt: string | null;
-  result: Record<string, unknown> | null;
-};
-
 export type BacktestBatch = {
   batchId: string;
   symbolCode: string;
@@ -73,7 +51,6 @@ export type RecentBacktestRun = {
 
 export type BacktestsSummaryResponse = {
   generatedAt: string;
-  jobs: BacktestJob[];
   batches: BacktestBatch[];
   recentRuns: RecentBacktestRun[];
   latestRuns: RecentBacktestRun[];
@@ -141,14 +118,6 @@ export const getBacktestsSummary = (): Promise<BacktestsSummaryResponse> =>
 
 export const getRuntimeAnalyses = (): Promise<RuntimeAnalysis[]> =>
   fetchJson("/v1/runtime-config/analysis-settings");
-
-export const createBacktestJob = (
-  payload: Record<string, unknown>,
-): Promise<BacktestJob> =>
-  fetchJson("/v1/ops/backtest-jobs", {
-    method: "POST",
-    body: JSON.stringify(payload),
-  });
 
 export const getDataReadiness = (): Promise<DataReadinessResponse> =>
   fetchJson("/v1/ops/data-readiness");

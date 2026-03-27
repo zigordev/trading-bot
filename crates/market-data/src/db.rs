@@ -10,10 +10,7 @@ use tracing::warn;
 
 use crate::{
     config::AppConfig,
-    models::{
-        NormalizedBookTickerEvent, NormalizedKlineEvent, NormalizedTradeEvent,
-        PersistedBookTickerRecord, PersistedKlineRecord, PersistedTradeRecord,
-    },
+    models::{NormalizedKlineEvent, NormalizedTradeEvent, PersistedKlineRecord, PersistedTradeRecord},
 };
 
 #[derive(Clone)]
@@ -52,19 +49,6 @@ struct HistoricalKlineRow {
 }
 
 #[derive(Debug, Deserialize)]
-struct HistoricalBookTickerRow {
-    symbol: String,
-    order_book_update_id: i64,
-    bid_price: String,
-    bid_quantity: String,
-    ask_price: String,
-    ask_quantity: String,
-    occurred_at_ms: i64,
-    #[serde(rename = "latest_updated_at_ms")]
-    updated_at_ms: i64,
-}
-
-#[derive(Debug, Deserialize)]
 struct StoredBacktestRunRow {
     backtest_id: String,
     finished_at_ms: i64,
@@ -98,18 +82,6 @@ struct LatestOpenTimeRow {
 struct LatestTradeCheckpointRow {
     latest_trade_time: Option<i64>,
     aggregate_trade_id: Option<i64>,
-}
-
-#[derive(Debug, Deserialize)]
-struct LatestBookTickerCheckpointRow {
-    latest_occurred_at_ms: Option<i64>,
-    order_book_update_id: Option<i64>,
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct BookTickerCheckpoint {
-    pub latest_occurred_at_ms: i64,
-    pub order_book_update_id: i64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -245,19 +217,6 @@ pub struct StoredBacktestRunSummary {
 pub struct StoredBacktestRun {
     pub summary: StoredBacktestRunSummary,
     pub response_json: String,
-}
-
-#[derive(Serialize)]
-struct HistoricalBookTickerWriteRow<'a> {
-    pair_code: &'a str,
-    symbol: &'a str,
-    order_book_update_id: i64,
-    bid_price: &'a str,
-    bid_quantity: &'a str,
-    ask_price: &'a str,
-    ask_quantity: &'a str,
-    occurred_at_ms: i64,
-    updated_at_ms: i64,
 }
 
 #[derive(Serialize)]
@@ -1051,144 +1010,6 @@ impl Database {
         }
     }
 
-    pub async fn latest_book_ticker_checkpoint(
-        &self,
-        pair_code: &str,
-    ) -> Result<Option<BookTickerCheckpoint>> {
-        let sql = format!(
-            r#"
-            SELECT
-              max(occurred_at_ms) AS latest_occurred_at_ms,
-              argMax(order_book_update_id, occurred_at_ms) AS order_book_update_id
-            FROM {}.market_data_book_tickers
-             WHERE pair_code = '{}'
-            FORMAT JSONEachRow
-            "#,
-            sql_ident(&self.database),
-            sql_string(pair_code)
-        );
-
-        let body = self.query_text(&sql).await?;
-        let trimmed = body.trim();
-        if trimmed.is_empty() {
-            return Ok(None);
-        }
-
-        let row = serde_json::from_str::<LatestBookTickerCheckpointRow>(trimmed)?;
-        match (row.latest_occurred_at_ms, row.order_book_update_id) {
-            (Some(latest_occurred_at_ms), Some(order_book_update_id))
-                if latest_occurred_at_ms > 0 =>
-            {
-                Ok(Some(BookTickerCheckpoint {
-                    latest_occurred_at_ms,
-                    order_book_update_id,
-                }))
-            }
-            _ => Ok(None),
-        }
-    }
-
-    pub async fn book_ticker_window_coverage_in_range(
-        &self,
-        pair_code: &str,
-        start_time: i64,
-        end_time: i64,
-    ) -> Result<WindowCoverage> {
-        let time_range = sql_numeric_time_range("occurred_at_ms", Some(start_time), Some(end_time));
-        let sql = format!(
-            r#"
-            SELECT
-              COUNT(*) AS row_count,
-              MIN(occurred_at_ms) AS min_time,
-              MAX(occurred_at_ms) AS max_time
-            FROM {}.market_data_book_tickers
-            WHERE pair_code = '{}'
-              {}
-            FORMAT JSONEachRow
-            "#,
-            sql_ident(&self.database),
-            sql_string(pair_code),
-            time_range
-        );
-
-        self.query_window_coverage(&sql).await
-    }
-
-    pub async fn book_ticker_time_gaps_in_range(
-        &self,
-        pair_code: &str,
-        start_time: i64,
-        end_time: i64,
-        min_gap_ms: i64,
-        limit: i64,
-    ) -> Result<Vec<TimeGap>> {
-        let safe_limit = limit.clamp(1, 10_000);
-        let safe_min_gap_ms = min_gap_ms.max(1);
-        let sql = format!(
-            r#"
-            SELECT
-              prev_occurred_at_ms,
-              occurred_at_ms,
-              (occurred_at_ms - prev_occurred_at_ms) AS gap_ms
-            FROM
-            (
-              SELECT
-                occurred_at_ms,
-                nullIf(
-                  lagInFrame(occurred_at_ms) OVER (
-                    ORDER BY occurred_at_ms ASC
-                    ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
-                  ),
-                  0
-                ) AS prev_occurred_at_ms
-              FROM
-              (
-                SELECT DISTINCT
-                  occurred_at_ms
-                FROM {}.market_data_book_tickers
-                WHERE pair_code = '{}'
-                  AND occurred_at_ms >= {}
-                  AND occurred_at_ms < {}
-              )
-            )
-            WHERE prev_occurred_at_ms IS NOT NULL
-              AND (occurred_at_ms - prev_occurred_at_ms) > {}
-            ORDER BY gap_ms DESC
-            LIMIT {}
-            FORMAT JSONEachRow
-            "#,
-            sql_ident(&self.database),
-            sql_string(pair_code),
-            start_time,
-            end_time,
-            safe_min_gap_ms,
-            safe_limit
-        );
-
-        #[derive(Deserialize)]
-        struct BookTickerGapRow {
-            prev_occurred_at_ms: i64,
-            occurred_at_ms: i64,
-            gap_ms: i64,
-        }
-
-        let mut lines = self.query_lines(&sql).await?;
-        let mut gaps = Vec::new();
-        while let Some(line) = lines.next().await {
-            let line = line?;
-            if line.trim().is_empty() {
-                continue;
-            }
-            let row = serde_json::from_str::<BookTickerGapRow>(&line)?;
-            gaps.push(TimeGap {
-                start_time: row.prev_occurred_at_ms.saturating_add(1),
-                end_time: row.occurred_at_ms,
-                gap_ms: row.gap_ms,
-            });
-        }
-        Ok(gaps)
-    }
-
     pub async fn trade_coverage_intervals(&self, pair_code: &str) -> Result<Vec<TimeInterval>> {
         let sql = format!(
             r#"
@@ -1412,28 +1233,6 @@ impl Database {
         Ok(rows_to_insert.len())
     }
 
-    pub async fn upsert_book_ticker(&self, event: &NormalizedBookTickerEvent) -> Result<()> {
-        let occurred_at_ms = parse_rfc3339_to_millis(&event.occurred_at)?;
-        let updated_at_ms = Utc::now().timestamp_millis();
-        let row = HistoricalBookTickerWriteRow {
-            pair_code: &event.pair_code,
-            symbol: &event.symbol,
-            order_book_update_id: event.order_book_update_id,
-            bid_price: &event.bid_price,
-            bid_quantity: &event.bid_quantity,
-            ask_price: &event.ask_price,
-            ask_quantity: &event.ask_quantity,
-            occurred_at_ms,
-            updated_at_ms,
-        };
-
-        self.insert_json_each_row(
-            "market_data_book_tickers",
-            &format!("{}\n", serde_json::to_string(&row)?),
-        )
-        .await
-    }
-
     pub async fn insert_backtest_run(&self, run: &StoredBacktestRunWrite) -> Result<()> {
         let row = StoredBacktestRunWriteRow {
             backtest_id: &run.backtest_id,
@@ -1607,6 +1406,8 @@ impl Database {
     pub async fn backtest_run_exists_for_window(
         &self,
         analysis_setting_id: &str,
+        pair_code: &str,
+        timeframe_code: &str,
         risk_profile_name: &str,
         requested_start_time: i64,
         requested_end_time: i64,
@@ -1616,6 +1417,8 @@ impl Database {
             SELECT COUNT(*) AS row_count
             FROM {}.research_backtest_runs
             WHERE analysis_setting_id = '{}'
+              AND pair_code = '{}'
+              AND timeframe_code = '{}'
               AND risk_profile_name = '{}'
               AND requested_start_time = {}
               AND requested_end_time = {}
@@ -1623,6 +1426,8 @@ impl Database {
             "#,
             sql_ident(&self.database),
             sql_string(analysis_setting_id),
+            sql_string(pair_code),
+            sql_string(timeframe_code),
             sql_string(risk_profile_name),
             requested_start_time,
             requested_end_time
@@ -1898,91 +1703,6 @@ impl Database {
         self.query_trade_rows(&sql).await
     }
 
-    pub async fn list_recent_book_tickers(
-        &self,
-        pair_code: &str,
-        limit: i64,
-    ) -> Result<Vec<PersistedBookTickerRecord>> {
-        let safe_limit = limit.clamp(1, 1_000);
-        let sql = format!(
-            r#"
-            SELECT
-              pair_code,
-              argMax(symbol, updated_at_ms) AS symbol,
-              order_book_update_id,
-              argMax(bid_price, updated_at_ms) AS bid_price,
-              argMax(bid_quantity, updated_at_ms) AS bid_quantity,
-              argMax(ask_price, updated_at_ms) AS ask_price,
-              argMax(ask_quantity, updated_at_ms) AS ask_quantity,
-              argMax(occurred_at_ms, updated_at_ms) AS occurred_at_ms,
-              max(updated_at_ms) AS latest_updated_at_ms
-            FROM {}.market_data_book_tickers
-            WHERE pair_code = '{}'
-            GROUP BY pair_code, order_book_update_id
-            ORDER BY occurred_at_ms DESC, order_book_update_id DESC
-            LIMIT {}
-            FORMAT JSONEachRow
-            "#,
-            sql_ident(&self.database),
-            sql_string(pair_code),
-            safe_limit
-        );
-
-        self.query_book_ticker_rows(&sql).await
-    }
-
-    pub async fn replay_book_tickers(
-        &self,
-        pair_code: &str,
-        start_time: Option<i64>,
-        end_time: Option<i64>,
-        limit: i64,
-    ) -> Result<Vec<PersistedBookTickerRecord>> {
-        let safe_limit = limit.clamp(1, 5_000_000);
-        let time_range = sql_numeric_time_range("latest_occurred_at_ms", start_time, end_time);
-        let sql = format!(
-            r#"
-            SELECT
-              pair_code,
-              symbol,
-              order_book_update_id,
-              bid_price,
-              bid_quantity,
-              ask_price,
-              ask_quantity,
-              latest_occurred_at_ms AS occurred_at_ms,
-              latest_updated_at_ms
-            FROM
-            (
-              SELECT
-                pair_code,
-                argMax(symbol, updated_at_ms) AS symbol,
-                order_book_update_id,
-                argMax(bid_price, updated_at_ms) AS bid_price,
-                argMax(bid_quantity, updated_at_ms) AS bid_quantity,
-                argMax(ask_price, updated_at_ms) AS ask_price,
-                argMax(ask_quantity, updated_at_ms) AS ask_quantity,
-                argMax(occurred_at_ms, updated_at_ms) AS latest_occurred_at_ms,
-                max(updated_at_ms) AS latest_updated_at_ms
-              FROM {}.market_data_book_tickers
-              WHERE pair_code = '{}'
-              GROUP BY pair_code, order_book_update_id
-            )
-            WHERE 1 = 1
-              {}
-            ORDER BY latest_occurred_at_ms ASC, order_book_update_id ASC
-            LIMIT {}
-            FORMAT JSONEachRow
-            "#,
-            sql_ident(&self.database),
-            sql_string(pair_code),
-            time_range,
-            safe_limit
-        );
-
-        self.query_book_ticker_rows(&sql).await
-    }
-
     async fn query_kline_rows(&self, sql: &str) -> Result<Vec<PersistedKlineRecord>> {
         let mut lines = self.query_lines(sql).await?;
         let mut records = Vec::new();
@@ -2033,31 +1753,6 @@ impl Database {
     async fn query_trade_rows(&self, sql: &str) -> Result<Vec<PersistedTradeRecord>> {
         let bytes = self.query_bytes(sql).await?;
         parse_trade_rows_row_binary(&bytes)
-    }
-
-    async fn query_book_ticker_rows(&self, sql: &str) -> Result<Vec<PersistedBookTickerRecord>> {
-        let mut lines = self.query_lines(sql).await?;
-        let mut records = Vec::new();
-
-        while let Some(line) = lines.next().await {
-            let line = line?;
-            if line.trim().is_empty() {
-                continue;
-            }
-            let row = serde_json::from_str::<HistoricalBookTickerRow>(&line)?;
-            records.push(PersistedBookTickerRecord {
-                symbol: row.symbol,
-                order_book_update_id: row.order_book_update_id,
-                bid_price: row.bid_price,
-                bid_quantity: row.bid_quantity,
-                ask_price: row.ask_price,
-                ask_quantity: row.ask_quantity,
-                occurred_at: millis_to_rfc3339(row.occurred_at_ms)?,
-                updated_at: millis_to_rfc3339(row.updated_at_ms)?,
-            });
-        }
-
-        Ok(records)
     }
 
     async fn query_backtest_rows(&self, sql: &str) -> Result<Vec<StoredBacktestRun>> {

@@ -1,5 +1,3 @@
-import { randomUUID } from "node:crypto";
-
 import type { Pool, QueryResultRow } from "pg";
 
 export type BacktestJobStatus =
@@ -7,17 +5,6 @@ export type BacktestJobStatus =
   | "running"
   | "completed"
   | "failed";
-
-export type BacktestJobInput = {
-  analysisSettingId: string;
-  riskProfileName?: string;
-  symbolCode?: string;
-  timeframeCode?: string;
-  strategyName?: string;
-  startTime?: number;
-  endTime?: number;
-  warmupCandles?: number;
-};
 
 export type BacktestJobRecord = {
   id: string;
@@ -350,7 +337,6 @@ export const ensureOpsSchema = async (pool: Pool): Promise<void> => {
       details TEXT,
       kline_json JSONB,
       trades_json JSONB,
-      book_tickers_json JSONB,
       source_event_id TEXT NOT NULL,
       source_occurred_at TIMESTAMPTZ NOT NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -359,6 +345,11 @@ export const ensureOpsSchema = async (pool: Pool): Promise<void> => {
       CONSTRAINT ops_data_readiness_status_valid
         CHECK (status IN ('ready', 'partial', 'missing', 'error'))
     );
+  `);
+
+  await pool.query(`
+    ALTER TABLE ops_data_readiness
+      DROP COLUMN IF EXISTS book_tickers_json
   `);
 
   await pool.query(`
@@ -434,243 +425,6 @@ export const listBacktestBatches = async (
   );
 
   return result.rows.map(mapBacktestBatchRow);
-};
-
-export const getBacktestJob = async (
-  pool: Pool,
-  id: string,
-): Promise<BacktestJobRecord | null> => {
-  const result = await pool.query(
-    `
-      SELECT
-        id,
-        status,
-        analysis_setting_id,
-        risk_profile_name,
-        symbol_code,
-        timeframe_code,
-        strategy_name,
-        start_time,
-        end_time,
-        warmup_candles,
-        backtest_id,
-        error_message,
-        stage,
-        progress_percent,
-        result_json,
-        created_at,
-        updated_at,
-        started_at,
-        finished_at
-      FROM ops_backtest_jobs
-      WHERE id = $1
-    `,
-    [id],
-  );
-
-  return result.rowCount === 0 ? null : mapBacktestJobRow(result.rows[0]);
-};
-
-export const createBacktestJob = async (
-  pool: Pool,
-  input: BacktestJobInput,
-): Promise<BacktestJobRecord> => {
-  const result = await pool.query(
-    `
-      INSERT INTO ops_backtest_jobs (
-        id,
-        status,
-        analysis_setting_id,
-        risk_profile_name,
-        symbol_code,
-        timeframe_code,
-        strategy_name,
-        start_time,
-        end_time,
-        warmup_candles,
-        stage,
-        progress_percent,
-        created_at,
-        updated_at
-      )
-      VALUES (
-        $1,
-        'queued',
-        $2,
-        $3,
-        $4,
-        $5,
-        $6,
-        $7,
-        $8,
-        $9,
-        'queued',
-        0,
-        NOW(),
-        NOW()
-      )
-      RETURNING
-        id,
-        status,
-        analysis_setting_id,
-        risk_profile_name,
-        symbol_code,
-        timeframe_code,
-        strategy_name,
-        start_time,
-        end_time,
-        warmup_candles,
-        backtest_id,
-        error_message,
-        stage,
-        progress_percent,
-        result_json,
-        created_at,
-        updated_at,
-        started_at,
-        finished_at
-    `,
-    [
-      randomUUID(),
-      input.analysisSettingId,
-      input.riskProfileName ?? null,
-      input.symbolCode ?? null,
-      input.timeframeCode ?? null,
-      input.strategyName ?? null,
-      input.startTime ?? null,
-      input.endTime ?? null,
-      input.warmupCandles ?? null,
-    ],
-  );
-
-  return mapBacktestJobRow(result.rows[0]);
-};
-
-export const markBacktestJobRunning = async (
-  pool: Pool,
-  id: string,
-): Promise<BacktestJobRecord | null> => {
-  const result = await pool.query(
-    `
-      UPDATE ops_backtest_jobs
-         SET status = 'running',
-             stage = 'retrieving-data',
-             progress_percent = 0,
-             started_at = COALESCE(started_at, NOW()),
-             updated_at = NOW(),
-             error_message = NULL
-       WHERE id = $1
-         AND status = 'queued'
-      RETURNING
-        id,
-        status,
-        analysis_setting_id,
-        risk_profile_name,
-        symbol_code,
-        timeframe_code,
-        strategy_name,
-        start_time,
-        end_time,
-        warmup_candles,
-        backtest_id,
-        error_message,
-        stage,
-        progress_percent,
-        result_json,
-        created_at,
-        updated_at,
-        started_at,
-        finished_at
-    `,
-    [id],
-  );
-
-  return result.rowCount === 0 ? null : mapBacktestJobRow(result.rows[0]);
-};
-
-export const markBacktestJobCompleted = async (
-  pool: Pool,
-  id: string,
-  payload: { backtestId: string; result: Record<string, unknown> },
-): Promise<BacktestJobRecord | null> => {
-  const result = await pool.query(
-    `
-      UPDATE ops_backtest_jobs
-         SET status = 'completed',
-             backtest_id = $2,
-             result_json = $3::jsonb,
-             stage = 'completed',
-             progress_percent = 100,
-             finished_at = NOW(),
-             updated_at = NOW(),
-             error_message = NULL
-       WHERE id = $1
-      RETURNING
-        id,
-        status,
-        analysis_setting_id,
-        risk_profile_name,
-        symbol_code,
-        timeframe_code,
-        strategy_name,
-        start_time,
-        end_time,
-        warmup_candles,
-        backtest_id,
-        error_message,
-        stage,
-        progress_percent,
-        result_json,
-        created_at,
-        updated_at,
-        started_at,
-        finished_at
-    `,
-    [id, payload.backtestId, JSON.stringify(payload.result)],
-  );
-
-  return result.rowCount === 0 ? null : mapBacktestJobRow(result.rows[0]);
-};
-
-export const markBacktestJobFailed = async (
-  pool: Pool,
-  id: string,
-  errorMessage: string,
-): Promise<BacktestJobRecord | null> => {
-  const result = await pool.query(
-    `
-      UPDATE ops_backtest_jobs
-         SET status = 'failed',
-             error_message = $2,
-             stage = 'failed',
-             finished_at = NOW(),
-             updated_at = NOW()
-       WHERE id = $1
-      RETURNING
-        id,
-        status,
-        analysis_setting_id,
-        risk_profile_name,
-        symbol_code,
-        timeframe_code,
-        strategy_name,
-        start_time,
-        end_time,
-        warmup_candles,
-        backtest_id,
-        error_message,
-        stage,
-        progress_percent,
-        result_json,
-        created_at,
-        updated_at,
-        started_at,
-        finished_at
-    `,
-    [id, errorMessage],
-  );
-
-  return result.rowCount === 0 ? null : mapBacktestJobRow(result.rows[0]);
 };
 
 export const updateBacktestJobProgress = async (

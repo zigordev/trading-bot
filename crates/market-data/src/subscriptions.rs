@@ -14,7 +14,6 @@ pub fn should_refresh_for_config_resource(resource_type: &str) -> bool {
             | "timeframes"
             | "strategies"
             | "risk_profiles"
-            | "trading_defaults"
             | "analysis_settings"
     )
 }
@@ -139,24 +138,14 @@ pub fn derive_active_subscriptions(
     })
 }
 
-pub fn build_combined_stream_url(
-    base_url: &str,
-    subscriptions: &ActiveSubscriptions,
-) -> Result<String> {
-    let mut url = url::Url::parse(base_url)?;
-    url.query_pairs_mut()
-        .append_pair("streams", &subscriptions.stream_names.join("/"));
-    Ok(url.to_string())
-}
-
 #[cfg(test)]
 mod tests {
     use serde_json::json;
 
-    use super::{build_combined_stream_url, derive_active_subscriptions};
+    use super::derive_active_subscriptions;
     use crate::models::{
         PairRecord, ResolvedAnalysisSettingsRecord, RiskProfileRecord, StrategyRecord,
-        TimeframeRecord, TradingDefaultsRecord,
+        TimeframeRecord,
     };
 
     fn resolved(id: &str, strategy_name: &str) -> ResolvedAnalysisSettingsRecord {
@@ -166,7 +155,6 @@ mod tests {
             timeframe_code: "1m".to_string(),
             strategy_name: strategy_name.to_string(),
             risk_profile_name: "default-risk".to_string(),
-            trading_defaults_name: "default-trading".to_string(),
             technical_analysis_settings: json!({ "fast": 9, "slow": 21 }),
             enabled: true,
             created_at: "2026-03-12T18:00:00Z".to_string(),
@@ -177,8 +165,6 @@ mod tests {
                 active: true,
                 base_asset: "BTC".to_string(),
                 destination_asset: "USDT".to_string(),
-                origin_asset_needed_funds: None,
-                destination_asset_needed_funds: None,
                 created_at: "2026-03-12T18:00:00Z".to_string(),
                 updated_at: "2026-03-12T18:00:00Z".to_string(),
             },
@@ -213,15 +199,6 @@ mod tests {
                 created_at: "2026-03-12T18:00:00Z".to_string(),
                 updated_at: "2026-03-12T18:00:00Z".to_string(),
             },
-            trading_defaults: TradingDefaultsRecord {
-                id: "defaults-1".to_string(),
-                name: "default-trading".to_string(),
-                description: "defaults".to_string(),
-                default_position_notional_usd: 100.0,
-                enabled: true,
-                created_at: "2026-03-12T18:00:00Z".to_string(),
-                updated_at: "2026-03-12T18:00:00Z".to_string(),
-            },
         }
     }
 
@@ -232,8 +209,6 @@ mod tests {
             active: true,
             base_asset: "BTC".to_string(),
             destination_asset: "USDT".to_string(),
-            origin_asset_needed_funds: None,
-            destination_asset_needed_funds: None,
             created_at: "2026-03-12T18:00:00Z".to_string(),
             updated_at: "2026-03-12T18:00:00Z".to_string(),
         }
@@ -282,20 +257,6 @@ mod tests {
                 .stream_names
                 .contains(&"btcusdt@aggTrade".to_string())
         );
-    }
-
-    #[test]
-    fn builds_combined_stream_url() {
-        let active = derive_active_subscriptions(
-            &[pair("BTC/USDT")],
-            &[timeframe("1m", 60_000)],
-            &[resolved("analysis-1", "ema")],
-        )
-        .unwrap();
-        let url = build_combined_stream_url("wss://stream.binance.com:9443/stream", &active)
-            .expect("url should build");
-        assert!(url.contains("streams="));
-        assert!(url.contains("btcusdt%40kline_1m"));
     }
 
     #[test]

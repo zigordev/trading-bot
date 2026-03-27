@@ -4,8 +4,7 @@ use anyhow::{Result, bail};
 use serde_json::Value;
 
 use crate::models::{
-    AnalysisSummary, MarketDataKlineEvent, PersistedKlineRecord, ResolvedAnalysisSettingsRecord,
-    StrategySignalEvent,
+    MarketDataKlineEvent, PersistedKlineRecord, ResolvedAnalysisSettingsRecord,
 };
 
 #[derive(Clone, Debug)]
@@ -20,8 +19,6 @@ pub struct AnalysisSpec {
     pub technical_analysis_settings: Value,
     pub risk_profile_name: String,
     pub risk_profile: crate::models::RiskProfileRecord,
-    pub trading_defaults_name: String,
-    pub trading_defaults: crate::models::TradingDefaultsRecord,
 }
 
 #[derive(Clone, Debug)]
@@ -114,8 +111,6 @@ pub fn build_analysis_spec(
         technical_analysis_settings: record.technical_analysis_settings.clone(),
         risk_profile_name: record.risk_profile_name.clone(),
         risk_profile: record.risk_profile.clone(),
-        trading_defaults_name: record.trading_defaults_name.clone(),
-        trading_defaults: record.trading_defaults.clone(),
     }))
 }
 
@@ -152,54 +147,6 @@ impl AnalysisEvaluator {
 
         let close_price = event.close.parse::<f64>().ok()?;
         self.apply_close(close_price, event.close_time, Some(event), true)
-    }
-
-    pub fn summary(&self) -> AnalysisSummary {
-        AnalysisSummary {
-            analysis_setting_id: self.spec.analysis_setting_id.clone(),
-            pair_code: self.spec.symbol.clone(),
-            symbol: self.spec.symbol.clone(),
-            timeframe_code: self.spec.timeframe_code.clone(),
-            strategy_name: self.spec.strategy_name.clone(),
-            strategy_kind: self.spec.strategy_kind.clone(),
-            fast_period: self.spec.fast_period,
-            slow_period: self.spec.slow_period,
-            warmed: self.last_fast_ema.is_some() && self.last_slow_ema.is_some(),
-            last_close_time: self.last_close_time,
-            last_fast_ema: self.last_fast_ema,
-            last_slow_ema: self.last_slow_ema,
-        }
-    }
-
-    pub fn to_signal_event(&self, emitted: EmittedSignal, source: &str) -> StrategySignalEvent {
-        StrategySignalEvent {
-            event_id: format!(
-                "{}:{}:{}",
-                self.spec.analysis_setting_id, emitted.close_time, emitted.signal_direction
-            ),
-            event_type: "trading-bot.strategy-engine.signal.v1".to_string(),
-            source: source.to_string(),
-            occurred_at: emitted.occurred_at,
-            exchange: emitted.exchange,
-            analysis_setting_id: self.spec.analysis_setting_id.clone(),
-            pair_code: self.spec.symbol.clone(),
-            symbol: self.spec.symbol.clone(),
-            timeframe_code: self.spec.timeframe_code.clone(),
-            strategy_name: self.spec.strategy_name.clone(),
-            strategy_kind: self.spec.strategy_kind.clone(),
-            signal_kind: "entry".to_string(),
-            signal_direction: emitted.signal_direction,
-            close_time: emitted.close_time,
-            close_price: emitted.close_price,
-            kline_event_id: emitted.kline_event_id,
-            fast_ema: emitted.fast_ema,
-            slow_ema: emitted.slow_ema,
-            risk_profile_name: self.spec.risk_profile_name.clone(),
-            risk_profile: self.spec.risk_profile.clone(),
-            trading_defaults_name: self.spec.trading_defaults_name.clone(),
-            trading_defaults: self.spec.trading_defaults.clone(),
-            technical_analysis_settings: self.spec.technical_analysis_settings.clone(),
-        }
     }
 
     fn apply_close(
@@ -299,17 +246,16 @@ mod tests {
     use super::{AnalysisEvaluator, build_analysis_spec};
     use crate::models::{
         MarketDataKlineEvent, PairRecord, ResolvedAnalysisSettingsRecord, RiskProfileRecord,
-        StrategyRecord, TimeframeRecord, TradingDefaultsRecord,
+        StrategyRecord, TimeframeRecord,
     };
 
     fn record_with_kind(kind: &str) -> ResolvedAnalysisSettingsRecord {
         ResolvedAnalysisSettingsRecord {
             id: "analysis-1".to_string(),
-            pair_code: "BTCUSDT".to_string(),
+            symbol: "BTCUSDT".to_string(),
             timeframe_code: "1m".to_string(),
             strategy_name: "ema-cross".to_string(),
             risk_profile_name: "default-risk".to_string(),
-            trading_defaults_name: "default-trading".to_string(),
             technical_analysis_settings: json!({"fastPeriod": 2, "slowPeriod": 3}),
             enabled: true,
             created_at: "2026-01-01T00:00:00Z".to_string(),
@@ -320,8 +266,6 @@ mod tests {
                 active: true,
                 base_asset: "BTC".to_string(),
                 destination_asset: "USDT".to_string(),
-                origin_asset_needed_funds: None,
-                destination_asset_needed_funds: None,
                 created_at: "2026-01-01T00:00:00Z".to_string(),
                 updated_at: "2026-01-01T00:00:00Z".to_string(),
             },
@@ -352,15 +296,6 @@ mod tests {
                 minimum_stop_loss: 1.0,
                 swing_gap: 1.5,
                 rrr: 2.0,
-                enabled: true,
-                created_at: "2026-01-01T00:00:00Z".to_string(),
-                updated_at: "2026-01-01T00:00:00Z".to_string(),
-            },
-            trading_defaults: TradingDefaultsRecord {
-                id: "trading-1".to_string(),
-                name: "default-trading".to_string(),
-                description: "trading".to_string(),
-                default_position_notional_usd: 100.0,
                 enabled: true,
                 created_at: "2026-01-01T00:00:00Z".to_string(),
                 updated_at: "2026-01-01T00:00:00Z".to_string(),

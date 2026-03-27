@@ -28,18 +28,6 @@ export const configResources = {
         placeholder: "USDT",
       },
       { name: "active", label: "Active", kind: "boolean" },
-      {
-        name: "originAssetNeededFunds",
-        label: "Origin asset needed funds",
-        kind: "number",
-        optional: true,
-      },
-      {
-        name: "destinationAssetNeededFunds",
-        label: "Destination asset needed funds",
-        kind: "number",
-        optional: true,
-      },
     ],
   },
   timeframes: {
@@ -92,35 +80,13 @@ export const configResources = {
       { name: "enabled", label: "Enabled", kind: "boolean" },
     ],
   },
-  "trading-defaults": {
-    label: "Trading Defaults",
-    endpoint: "trading-defaults",
-    titleField: "name",
-    fields: [
-      { name: "name", label: "Name", kind: "text" },
-      { name: "description", label: "Description", kind: "text" },
-      {
-        name: "defaultPositionNotionalUsd",
-        label: "Default position notional USD",
-        kind: "number",
-      },
-      { name: "enabled", label: "Enabled", kind: "boolean" },
-    ],
-  },
   "analysis-settings": {
     label: "Analysis Settings",
     endpoint: "analysis-settings",
-    titleField: "symbolCode",
+    titleField: "name",
     fields: [
-      { name: "symbolCode", label: "Symbol", kind: "text" },
-      { name: "timeframeCode", label: "Timeframe code", kind: "text" },
+      { name: "name", label: "Name", kind: "text" },
       { name: "strategyName", label: "Strategy name", kind: "text" },
-      { name: "riskProfileName", label: "Risk profile name", kind: "text" },
-      {
-        name: "tradingDefaultsName",
-        label: "Trading defaults name",
-        kind: "text",
-      },
       {
         name: "technicalAnalysisSettings",
         label: "Technical analysis settings JSON",

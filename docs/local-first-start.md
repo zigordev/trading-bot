@@ -11,7 +11,6 @@ When this runbook is complete, you will have:
 - a local ClickHouse historian for `trading-bot` on `localhost:18123`
 - the `control-plane` API running on `http://localhost:3020`
 - the Rust `market-data` service running on `http://localhost:3030`
-- the Rust `strategy-engine` service running on `http://localhost:3040`
 - the Rust `research-backtesting` service running on `http://localhost:3050`
 - a local Alloy sidecar shipping container logs into the shared Loki stack
 - a local OpenBao secret path and app token ready for `trading-bot`
@@ -19,7 +18,7 @@ When this runbook is complete, you will have:
 - the shared local observability stack running in `platform-ops`
 
 At this stage the application includes the first control-plane slice, the first market-data
-runtime slice, the first strategy-engine slice, and the first research/backtesting slice.
+runtime slice, and the first research/backtesting slice.
 Order execution and deeper order-book-aware backtesting are still not implemented yet.
 
 ## 2. Prerequisites
@@ -106,14 +105,6 @@ Set or review these values:
   - keep the default if you use the shared Redpanda broker from `platform-ops`
 - `CONFIG_CHANGE_EVENTS_TOPIC`
   - keep the default unless you intentionally want a different local topic name
-- `MARKET_DATA_KLINES_TOPIC`
-  - keep the default unless you intentionally want a different normalized kline topic
-- `MARKET_DATA_TRADES_TOPIC`
-  - keep the default unless you intentionally want a different aggregate-trade topic
-- `MARKET_DATA_BOOK_TICKERS_TOPIC`
-  - keep the default unless you intentionally want a different book-ticker topic
-- `STRATEGY_SIGNALS_TOPIC`
-  - keep the default unless you intentionally want a different strategy-signal topic
 - `HISTORICAL_STORE_USER`
   - keep the default for the local ClickHouse container unless you intentionally change it
 - `HISTORICAL_STORE_PASSWORD`
@@ -145,13 +136,8 @@ Set or review these values:
 - `HISTORICAL_TRADE_RETENTION_DAYS`
   - keep the default unless you want a different ClickHouse TTL for aggregate trades
 - `HISTORICAL_BOOK_TICKER_RETENTION_DAYS`
-  - keep the default unless you want a different ClickHouse TTL for book tickers
 - `MARKET_EVENT_DEDUP_CAPACITY`
   - keep the default unless you need a larger in-memory dedup window
-- `MARKET_DATA_REQUEST_TIMEOUT_MS`
-  - keep the default unless the strategy-engine needs a different timeout for recent-kline warmup
-- `STRATEGY_WARMUP_HISTORY_LIMIT`
-  - keep the default unless you want a larger or smaller in-memory warmup window
 - `READINESS_MAX_DEPENDENCY_AGE_MS`
   - keep the default unless the research-backtesting readiness check should tolerate older dependency checks
 - `BACKTEST_WARMUP_MULTIPLIER`
@@ -160,7 +146,6 @@ Set or review these values:
   - keep the default unless you need wider replay windows than the local safety cap allows
 - `BACKTEST_MAX_TRADES`
   - keep the default unless you need wider aggregate-trade replay windows than the local safety cap allows
-- `BACKTEST_MAX_BOOK_TICKERS`
   - keep the default unless a busy pair needs a wider quote replay window for quote-aware backtests
 - `BACKTEST_RESULT_RETENTION_DAYS`
   - keep the default unless persisted backtest runs should live shorter or longer in ClickHouse
@@ -236,16 +221,8 @@ Useful endpoints from the shared stack:
 - Market-data runtime status: `http://localhost:3030/v1/status`
 - Market-data recent klines example: `http://localhost:3030/v1/klines/BTCUSDT/1m`
 - Market-data recent trades example: `http://localhost:3030/v1/trades/BTCUSDT`
-- Market-data recent book tickers example: `http://localhost:3030/v1/book-tickers/BTCUSDT`
 - Market-data replay klines example: `http://localhost:3030/v1/replay/klines/BTCUSDT/1m?limit=100`
 - Market-data replay trades example: `http://localhost:3030/v1/replay/trades/BTCUSDT?limit=100`
-- Market-data replay book tickers example: `http://localhost:3030/v1/replay/book-tickers/BTCUSDT?limit=100`
-- Strategy-engine liveness: `http://localhost:3040/health/liveness`
-- Strategy-engine readiness: `http://localhost:3040/health/readiness`
-- Strategy-engine metrics: `http://localhost:3040/metrics`
-- Strategy-engine info: `http://localhost:3040/v1/info`
-- Strategy-engine runtime status: `http://localhost:3040/v1/status`
-- Strategy-engine analyses: `http://localhost:3040/v1/analyses`
 - Research-backtesting liveness: `http://localhost:3050/health/liveness`
 - Research-backtesting readiness: `http://localhost:3050/health/readiness`
 - Research-backtesting metrics: `http://localhost:3050/metrics`
@@ -278,25 +255,14 @@ What happens after a successful config mutation now:
 - on startup or refresh, the market-data service also repairs missing active kline tails through
   bounded Binance REST backfill and stores klines in ClickHouse database
   `HISTORICAL_STORE_DATABASE`, table `market_data_klines`
-- live aggregate trades and live book tickers are also stored in ClickHouse tables
-  `market_data_trades` and `market_data_book_tickers`
-- the strategy-engine consumes the same config-change topic, refreshes its active analyses, warms
-  them from `market-data`, and waits for live closed kline events before emitting signals
+- the market-data service consumes the same config-change topic and refreshes its active retrieval set
 - the research-backtesting service reads runtime-config on demand, then
   replays historical klines directly from ClickHouse through the shared `emaCross` logic (time window duration comes from `BACKTEST_TIMERANGE_MS_BY_TIMEFRAME`)
 - completed backtest runs are also stored in ClickHouse table `research_backtest_runs`
 
 You do not need to create the Redpanda topics manually for the default local setup. The
-control-plane, market-data, and strategy-engine ensure their configured topics exist during
+control-plane, market-data, and research-backtesting ensure their configured topics exist during
 startup.
-
-What else is required before the strategy-engine emits anything useful:
-
-- create an active strategy whose kind resolves to `emaCross`
-- provide valid `fastPeriod` and `slowPeriod`
-  - either in `strategies.parameters`
-  - or in `analysis-settings.technicalAnalysisSettings`
-- create at least one enabled `analysis-settings` binding for an operable pair/timeframe
 
 ## 9. Daily Commands
 
@@ -360,19 +326,16 @@ curl -fsS http://localhost:3030/v1/subscriptions | jq
 curl -fsS http://localhost:3030/v1/status | jq
 ```
 
-3. Confirm recent candles, trades, and book tickers can be read back through `market-data`:
 
 ```bash
 curl -fsS "http://localhost:3030/v1/klines/BTCUSDT/1m?limit=5" | jq
 curl -fsS "http://localhost:3030/v1/trades/BTCUSDT?limit=5" | jq
-curl -fsS "http://localhost:3030/v1/book-tickers/BTCUSDT?limit=5" | jq
 ```
 
 4. Confirm the historian tables are populated in ClickHouse:
 
 ```bash
 docker compose --env-file docker/.env.app.local -f docker/compose.app.local.yml exec -T historical-store \
-  clickhouse-client --query "SELECT 'klines' AS dataset, countDistinct(open_time) AS rows FROM trading_bot_market_data.market_data_klines WHERE pair_code = 'BTCUSDT' AND timeframe_code = '1m' UNION ALL SELECT 'trades' AS dataset, count(*) AS rows FROM trading_bot_market_data.market_data_trades WHERE pair_code = 'BTCUSDT' UNION ALL SELECT 'book_tickers' AS dataset, count(*) AS rows FROM trading_bot_market_data.market_data_book_tickers WHERE pair_code = 'BTCUSDT';"
 ```
 
 5. Confirm the replay-oriented endpoints can read ascending historian windows:
@@ -380,7 +343,6 @@ docker compose --env-file docker/.env.app.local -f docker/compose.app.local.yml 
 ```bash
 curl -fsS "http://localhost:3030/v1/replay/klines/BTCUSDT/1m?limit=5" | jq
 curl -fsS "http://localhost:3030/v1/replay/trades/BTCUSDT?limit=5" | jq
-curl -fsS "http://localhost:3030/v1/replay/book-tickers/BTCUSDT?limit=5" | jq
 ```
 
 6. Confirm the old PostgreSQL kline table is not present:
@@ -396,7 +358,6 @@ Expected results:
 - `/v1/status` shows a live Binance stream and a recent `lastBackfillAt`
 - `/v1/klines/...` returns candles with `ingestionMode` values such as `backfill` and `live`
 - `/v1/trades/...` returns aggregate trades
-- `/v1/book-tickers/...` returns book tickers
 - replay endpoints return ascending windows
 - ClickHouse returns non-zero counts for the populated historian tables
 - PostgreSQL returns an empty result for `to_regclass(...)`
@@ -476,7 +437,6 @@ docker compose --env-file docker/.env.app.local -f docker/compose.app.local.yml 
 Retention rule for this implemented slice:
 
 - required history = `BACKTEST_TIMERANGE_MS_BY_TIMEFRAME` window for the timeframe + indicator warmup +
-  aggregate-trade coverage + book-ticker coverage for the same replay window
 - default warmup = `slowPeriod * BACKTEST_WARMUP_MULTIPLIER`
 - because the window values are milliseconds and keyed by timeframe, the amount of data required
   really does vary by timeframe, just like in the legacy system
@@ -556,18 +516,9 @@ docker compose --env-file docker/.env.app.local -f docker/compose.app.local.yml 
     LIMIT 20;
 
     SELECT pair_code, order_book_update_id, occurred_at_ms
-    FROM trading_bot_market_data.market_data_book_tickers
     ORDER BY occurred_at_ms DESC
     LIMIT 20;
   "
-```
-
-The strategy-engine does not start:
-
-- inspect strategy-engine logs:
-
-```bash
-docker compose --env-file docker/.env.app.local -f docker/compose.app.local.yml logs --no-color strategy-engine
 ```
 
 The research-backtesting service does not start:

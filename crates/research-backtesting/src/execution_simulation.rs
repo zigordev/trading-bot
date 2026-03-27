@@ -1,8 +1,10 @@
 use anyhow::Result;
 use trading_bot_market_data::models::PersistedTradeRecord;
-use trading_bot_strategy_engine::models::{PersistedKlineRecord, ResolvedAnalysisSettingsRecord};
+use trading_bot_strategy_engine::models::ResolvedAnalysisSettingsRecord;
 
 use crate::models::{BacktestSignalRecord, PositionDirection, SimulatedTradeRecord};
+
+const DEFAULT_POSITION_NOTIONAL_USD: f64 = 100.0;
 
 #[derive(Clone, Debug)]
 pub struct TradeReplayStats {
@@ -47,102 +49,7 @@ struct TradeThresholds {
 #[derive(Clone, Debug)]
 enum PositionResolution {
     Closed(SimulatedTradeRecord),
-    StillOpen(OpenPosition, Option<Fill>),
-}
-
-pub fn simulate_trade_replay(
-    signals: &[BacktestSignalRecord],
-    replay_trades: &[PersistedTradeRecord],
-    analysis: &ResolvedAnalysisSettingsRecord,
-    last_kline: Option<&PersistedKlineRecord>,
-    config: SimulationConfig,
-) -> Result<Vec<SimulatedTradeRecord>> {
-    let mut trades = Vec::new();
-    let mut open_position: Option<OpenPosition> = None;
-    let mut trade_cursor = 0usize;
-
-    for signal in signals {
-        if let Some(position) = open_position.take() {
-            match resolve_until_time(
-                &position,
-                replay_trades,
-                &mut trade_cursor,
-                signal.close_time,
-                config,
-            )? {
-                PositionResolution::Closed(trade) => {
-                    trades.push(trade);
-                }
-                PositionResolution::StillOpen(position, _) => {
-                    open_position = Some(position);
-                }
-            }
-        }
-
-        let next_direction = signal_direction(signal);
-        match &open_position {
-            None => {
-                open_position = open_position_from_signal(
-                    signal,
-                    next_direction,
-                    replay_trades,
-                    &mut trade_cursor,
-                    analysis,
-                    config,
-                )?;
-            }
-            Some(position) if position.direction == next_direction => {}
-            Some(position) => {
-                let exit_fill = fill_at_or_after(
-                    replay_trades,
-                    &mut trade_cursor,
-                    signal.close_time,
-                    signal.close_price,
-                    next_direction,
-                    false,
-                    config.slippage_bps,
-                );
-                let closed_trade = close_position(
-                    trades.len() + 1,
-                    position,
-                    signal.close_time,
-                    Some(signal.sequence),
-                    exit_fill,
-                    "reversal",
-                    config.fee_bps,
-                );
-                trades.push(closed_trade);
-                open_position = open_position_from_signal(
-                    signal,
-                    next_direction,
-                    replay_trades,
-                    &mut trade_cursor,
-                    analysis,
-                    config,
-                )?;
-            }
-        }
-    }
-
-    if let Some(position) = open_position.take() {
-        match resolve_until_time(
-            &position,
-            replay_trades,
-            &mut trade_cursor,
-            i64::MAX,
-            config,
-        )? {
-            PositionResolution::Closed(trade) => {
-                trades.push(trade);
-            }
-            PositionResolution::StillOpen(position, last_fill_before_end) => {
-                // Open positions are intentionally left unclosed at the end of the window.
-                // That means they don't contribute to `trades`/PnL aggregation.
-            }
-        }
-    }
-
-    Ok(trades)
+    StillOpen(OpenPosition),
 }
 
 struct TradePager<F>
@@ -263,7 +170,7 @@ where
                 config,
             )? {
                 PositionResolution::Closed(trade) => trades.push(trade),
-                PositionResolution::StillOpen(position, _) => open_position = Some(position),
+                PositionResolution::StillOpen(position) => open_position = Some(position),
             }
         }
 
@@ -328,7 +235,7 @@ where
             config,
         )? {
             PositionResolution::Closed(trade) => trades.push(trade),
-            PositionResolution::StillOpen(_, _) => {}
+            PositionResolution::StillOpen(_) => {}
         }
     }
 
@@ -342,8 +249,6 @@ fn resolve_until_time(
     end_time_exclusive: i64,
     config: SimulationConfig,
 ) -> Result<PositionResolution> {
-    let mut last_fill_before_end = None;
-
     loop {
         let Some(next_event_time) = replay_trades.get(*trade_cursor).map(|record| record.trade_time) else {
             break;
@@ -372,9 +277,7 @@ fn resolve_until_time(
             ),
             source: "aggTrade",
         };
-
         *trade_cursor += 1;
-        last_fill_before_end = Some(fill.clone());
 
         if hit_stop {
             return Ok(PositionResolution::Closed(close_position(
@@ -401,10 +304,7 @@ fn resolve_until_time(
         }
     }
 
-    Ok(PositionResolution::StillOpen(
-        position.clone(),
-        last_fill_before_end,
-    ))
+    Ok(PositionResolution::StillOpen(position.clone()))
 }
 
 fn open_position_from_signal(
@@ -428,7 +328,7 @@ fn open_position_from_signal(
         return Ok(None);
     };
 
-    let notional_usd = analysis.trading_defaults.default_position_notional_usd;
+    let notional_usd = DEFAULT_POSITION_NOTIONAL_USD;
     let quantity = if fill.effective_price > 0.0 {
         notional_usd / fill.effective_price
     } else {
@@ -627,7 +527,7 @@ fn signal_direction(signal: &BacktestSignalRecord) -> PositionDirection {
 mod tests {
     use serde_json::json;
     use trading_bot_strategy_engine::models::{
-        PairRecord, RiskProfileRecord, StrategyRecord, TimeframeRecord, TradingDefaultsRecord,
+        PairRecord, RiskProfileRecord, StrategyRecord, TimeframeRecord,
     };
 
     use super::*;
@@ -640,7 +540,6 @@ mod tests {
             timeframe_code: "1m".to_string(),
             strategy_name: "emaCross".to_string(),
             risk_profile_name: "default".to_string(),
-            trading_defaults_name: "default".to_string(),
             technical_analysis_settings: json!({
                 "fastPeriod": 2,
                 "slowPeriod": 3
@@ -654,8 +553,6 @@ mod tests {
                 active: true,
                 base_asset: "BTC".to_string(),
                 destination_asset: "USDT".to_string(),
-                origin_asset_needed_funds: Some(1000.0),
-                destination_asset_needed_funds: Some(1000.0),
                 created_at: "2026-01-01T00:00:00Z".to_string(),
                 updated_at: "2026-01-01T00:00:00Z".to_string(),
             },
@@ -694,15 +591,6 @@ mod tests {
                 created_at: "2026-01-01T00:00:00Z".to_string(),
                 updated_at: "2026-01-01T00:00:00Z".to_string(),
             },
-            trading_defaults: TradingDefaultsRecord {
-                id: "td-1".to_string(),
-                name: "default".to_string(),
-                description: "default".to_string(),
-                default_position_notional_usd: 100.0,
-                enabled: true,
-                created_at: "2026-01-01T00:00:00Z".to_string(),
-                updated_at: "2026-01-01T00:00:00Z".to_string(),
-            },
         }
     }
 
@@ -732,8 +620,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn simulate_trade_replay_uses_trade_tape_for_take_profit_and_reversal() {
+    #[tokio::test]
+    async fn simulate_trade_replay_uses_trade_tape_for_take_profit_and_reversal() {
         let analysis = analysis_record();
         let signals = vec![
             signal(1, "long", 1000, 100.0),
@@ -747,16 +635,37 @@ mod tests {
             trade(5, 6000, 100.0),
         ];
 
-        let result = simulate_trade_replay(
+        let (result, _stats) = simulate_trade_replay_paged(
             &signals,
-            &replay_trades,
             &analysis,
-            None,
             SimulationConfig {
                 fee_bps: 0.0,
                 slippage_bps: 0.0,
             },
+            7_000,
+            replay_trades.len(),
+            move |cursor_key, remaining| {
+                let replay_trades = replay_trades.clone();
+                Box::pin(async move {
+                    let start_index = cursor_key
+                        .and_then(|(trade_time, aggregate_trade_id)| {
+                            replay_trades.iter().position(|record| {
+                                record.trade_time == trade_time
+                                    && record.aggregate_trade_id == aggregate_trade_id
+                            })
+                        })
+                        .map(|index| index + 1)
+                        .unwrap_or(0);
+                    let take_count = remaining.max(0) as usize;
+                    Ok(replay_trades
+                        .into_iter()
+                        .skip(start_index)
+                        .take(take_count)
+                        .collect())
+                })
+            },
         )
+        .await
         .expect("simulation should succeed");
 
         assert_eq!(result.len(), 1);

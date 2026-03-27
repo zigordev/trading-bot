@@ -12,8 +12,6 @@ export type SymbolInput = {
   active: boolean;
   baseAsset: string;
   destinationAsset: string;
-  originAssetNeededFunds?: number;
-  destinationAssetNeededFunds?: number;
 };
 
 export type SymbolRecord = SymbolInput & {
@@ -65,35 +63,14 @@ export type RiskProfileRecord = RiskProfileInput & {
   updatedAt: string;
 };
 
-export type TradingDefaultsInput = {
-  name: string;
-  description: string;
-  defaultPositionNotionalUsd: number;
-  enabled: boolean;
-};
-
-export type TradingDefaultsRecord = TradingDefaultsInput & {
-  id: string;
-  createdAt: string;
-  updatedAt: string;
-};
-
 export type AnalysisSettingsInput = {
-  symbolCode: string;
-  timeframeCode: string;
+  name: string;
   strategyName: string;
-  riskProfileName: string;
-  tradingDefaultsName: string;
   technicalAnalysisSettings: Record<string, unknown>;
   enabled: boolean;
 };
 
-export type AnalysisSettingsRecord = Omit<
-  AnalysisSettingsInput,
-  "tradingDefaultsName"
-> & {
-  tradingDefaultsName: string | null;
-} & {
+export type AnalysisSettingsRecord = AnalysisSettingsInput & {
   id: string;
   createdAt: string;
   updatedAt: string;
@@ -101,11 +78,11 @@ export type AnalysisSettingsRecord = Omit<
 
 export type ResolvedAnalysisSettingsRecord = {
   id: string;
+  name: string;
   symbolCode: string;
   timeframeCode: string;
   strategyName: string;
   riskProfileName: string;
-  tradingDefaultsName: string;
   technicalAnalysisSettings: Record<string, unknown>;
   enabled: boolean;
   createdAt: string;
@@ -114,12 +91,10 @@ export type ResolvedAnalysisSettingsRecord = {
   timeframe: TimeframeRecord;
   strategy: StrategyRecord;
   riskProfile: RiskProfileRecord;
-  tradingDefaults: TradingDefaultsRecord;
 };
 
 type CrudStore<TInput, TRecord> = {
   list(): Promise<TRecord[]>;
-  getById(id: string): Promise<TRecord | null>;
   create(input: TInput): Promise<TRecord>;
   update(id: string, input: TInput): Promise<TRecord | null>;
   delete(id: string): Promise<boolean>;
@@ -160,12 +135,6 @@ const parseJsonObject = (value: unknown): Record<string, unknown> => {
   }
 
   return {};
-};
-
-const toPositiveInteger = (value: unknown): number => {
-  const parsed = Number(value);
-
-  return Number.isInteger(parsed) && parsed > 0 ? parsed : 0;
 };
 
 const deriveAssetsFromSymbolCode = (
@@ -231,14 +200,6 @@ const mapSymbolRow = (row: QueryResultRow): SymbolRecord => ({
   active: Boolean(row.active),
   baseAsset: String(row.base_asset),
   destinationAsset: String(row.destination_asset),
-  originAssetNeededFunds:
-    row.origin_asset_needed_funds === null
-      ? undefined
-      : Number(row.origin_asset_needed_funds),
-  destinationAssetNeededFunds:
-    row.destination_asset_needed_funds === null
-      ? undefined
-      : Number(row.destination_asset_needed_funds),
   createdAt: toIsoString(row.created_at),
   updatedAt: toIsoString(row.updated_at),
 });
@@ -277,24 +238,10 @@ const mapRiskProfileRow = (row: QueryResultRow): RiskProfileRecord => ({
   updatedAt: toIsoString(row.updated_at),
 });
 
-const mapTradingDefaultsRow = (row: QueryResultRow): TradingDefaultsRecord => ({
-  id: String(row.id),
-  name: String(row.name),
-  description: String(row.description),
-  defaultPositionNotionalUsd: Number(row.default_position_notional_usd),
-  enabled: Boolean(row.enabled),
-  createdAt: toIsoString(row.created_at),
-  updatedAt: toIsoString(row.updated_at),
-});
-
 const mapAnalysisSettingsRow = (row: QueryResultRow): AnalysisSettingsRecord => ({
   id: String(row.id),
-  symbolCode: String(row.symbol_code),
-  timeframeCode: String(row.timeframe_code),
+  name: String(row.name),
   strategyName: String(row.strategy_name),
-  riskProfileName: String(row.risk_profile_name),
-  tradingDefaultsName:
-    row.trading_defaults_name === null ? null : String(row.trading_defaults_name),
   technicalAnalysisSettings: parseJsonObject(row.technical_analysis_settings),
   enabled: Boolean(row.enabled),
   createdAt: toIsoString(row.created_at),
@@ -305,11 +252,11 @@ const mapResolvedAnalysisSettingsRow = (
   row: QueryResultRow,
 ): ResolvedAnalysisSettingsRecord => ({
   id: String(row.analysis_id),
+  name: String(row.analysis_name),
   symbolCode: String(row.analysis_symbol_code),
   timeframeCode: String(row.analysis_timeframe_code),
   strategyName: String(row.analysis_strategy_name),
   riskProfileName: String(row.analysis_risk_profile_name),
-  tradingDefaultsName: String(row.analysis_trading_defaults_name),
   technicalAnalysisSettings: parseJsonObject(
     row.analysis_technical_analysis_settings,
   ),
@@ -320,8 +267,8 @@ const mapResolvedAnalysisSettingsRow = (
     id: row.symbol_id,
     code: row.symbol_entity_code,
     active: row.symbol_active,
-    origin_asset_needed_funds: row.symbol_origin_asset_needed_funds,
-    destination_asset_needed_funds: row.symbol_destination_asset_needed_funds,
+    base_asset: row.symbol_base_asset,
+    destination_asset: row.symbol_destination_asset,
     created_at: row.symbol_created_at,
     updated_at: row.symbol_updated_at,
   } as QueryResultRow),
@@ -356,16 +303,6 @@ const mapResolvedAnalysisSettingsRow = (
     created_at: row.risk_profile_created_at,
     updated_at: row.risk_profile_updated_at,
   } as QueryResultRow),
-  tradingDefaults: mapTradingDefaultsRow({
-    id: row.trading_defaults_id,
-    name: row.trading_defaults_entity_name,
-    description: row.trading_defaults_description,
-    default_position_notional_usd:
-      row.trading_defaults_default_position_notional_usd,
-    enabled: row.trading_defaults_enabled,
-    created_at: row.trading_defaults_created_at,
-    updated_at: row.trading_defaults_updated_at,
-  } as QueryResultRow),
 });
 
 class PostgresCrudStore<TInput, TRecord> implements CrudStore<TInput, TRecord> {
@@ -391,17 +328,6 @@ class PostgresCrudStore<TInput, TRecord> implements CrudStore<TInput, TRecord> {
     );
 
     return result.rows.map((row) => this.#definition.toRecord(row));
-  }
-
-  async getById(id: string): Promise<TRecord | null> {
-    const result = await this.#pool.query(
-      `SELECT ${this.#definition.selectColumns.join(", ")}
-         FROM ${this.#definition.tableName}
-        WHERE id = $1`,
-      [id],
-    );
-
-    return result.rowCount === 0 ? null : this.#definition.toRecord(result.rows[0]);
   }
 
   async create(input: TInput): Promise<TRecord> {
@@ -566,17 +492,8 @@ const symbolDefinition: ResourceDefinition<SymbolInput, SymbolRecord> = {
       active BOOLEAN NOT NULL DEFAULT FALSE,
       base_asset TEXT NOT NULL,
       destination_asset TEXT NOT NULL,
-      origin_asset_needed_funds DOUBLE PRECISION,
-      destination_asset_needed_funds DOUBLE PRECISION,
       created_at TIMESTAMPTZ NOT NULL,
-      updated_at TIMESTAMPTZ NOT NULL,
-      CONSTRAINT symbols_origin_asset_needed_funds_nonnegative
-        CHECK (origin_asset_needed_funds IS NULL OR origin_asset_needed_funds >= 0),
-      CONSTRAINT symbols_destination_asset_needed_funds_nonnegative
-        CHECK (
-          destination_asset_needed_funds IS NULL
-          OR destination_asset_needed_funds >= 0
-        )
+      updated_at TIMESTAMPTZ NOT NULL
     );
   `,
   listOrderBy: "code ASC",
@@ -586,29 +503,13 @@ const symbolDefinition: ResourceDefinition<SymbolInput, SymbolRecord> = {
     "active",
     "base_asset",
     "destination_asset",
-    "origin_asset_needed_funds",
-    "destination_asset_needed_funds",
     "created_at",
     "updated_at",
   ],
-  insertColumns: [
-    "code",
-    "active",
-    "base_asset",
-    "destination_asset",
-    "origin_asset_needed_funds",
-    "destination_asset_needed_funds",
-  ],
+  insertColumns: ["code", "active", "base_asset", "destination_asset"],
   uniqueFieldName: "code",
   uniqueFieldValue: (input) => input.code,
-  toInsertValues: (input) => [
-    input.code,
-    input.active,
-    input.baseAsset,
-    input.destinationAsset,
-    input.originAssetNeededFunds ?? null,
-    input.destinationAssetNeededFunds ?? null,
-  ],
+  toInsertValues: (input) => [input.code, input.active, input.baseAsset, input.destinationAsset],
   toRecord: mapSymbolRow,
 };
 
@@ -759,125 +660,46 @@ const riskProfileDefinition: ResourceDefinition<RiskProfileInput, RiskProfileRec
     toRecord: mapRiskProfileRow,
   };
 
-const tradingDefaultsDefinition: ResourceDefinition<
-  TradingDefaultsInput,
-  TradingDefaultsRecord
-> = {
-  tableName: "trading_defaults",
-  resourceType: "trading_defaults",
-  createTableSql: `
-    CREATE TABLE IF NOT EXISTS trading_defaults (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL UNIQUE,
-      description TEXT NOT NULL,
-      default_position_notional_usd DOUBLE PRECISION NOT NULL,
-      enabled BOOLEAN NOT NULL DEFAULT TRUE,
-      created_at TIMESTAMPTZ NOT NULL,
-      updated_at TIMESTAMPTZ NOT NULL,
-      CONSTRAINT trading_defaults_default_position_notional_positive
-        CHECK (default_position_notional_usd > 0)
-    );
-  `,
-  listOrderBy: "name ASC",
-  selectColumns: [
-    "id",
-    "name",
-    "description",
-    "default_position_notional_usd",
-    "enabled",
-    "created_at",
-    "updated_at",
-  ],
-  insertColumns: [
-    "name",
-    "description",
-    "default_position_notional_usd",
-    "enabled",
-  ],
-  uniqueFieldName: "name",
-  uniqueFieldValue: (input) => input.name,
-  toInsertValues: (input) => [
-    input.name,
-    input.description,
-    input.defaultPositionNotionalUsd,
-    input.enabled,
-  ],
-  toRecord: mapTradingDefaultsRow,
-};
-
 const analysisSettingsDefinition: ResourceDefinition<AnalysisSettingsInput, AnalysisSettingsRecord> = {
   tableName: "analysis_settings",
   resourceType: "analysis_settings",
   createTableSql: `
     CREATE TABLE IF NOT EXISTS analysis_settings (
       id TEXT PRIMARY KEY,
-      symbol_code TEXT NOT NULL
-        REFERENCES symbols(code)
-        ON UPDATE CASCADE
-        ON DELETE RESTRICT,
-      timeframe_code TEXT NOT NULL
-        REFERENCES timeframes(code)
-        ON UPDATE CASCADE
-        ON DELETE RESTRICT,
+      name TEXT NOT NULL UNIQUE,
       strategy_name TEXT NOT NULL
         REFERENCES strategies(name)
-        ON UPDATE CASCADE
-        ON DELETE RESTRICT,
-      risk_profile_name TEXT NOT NULL
-        REFERENCES risk_profiles(name)
-        ON UPDATE CASCADE
-        ON DELETE RESTRICT,
-      trading_defaults_name TEXT NOT NULL
-        REFERENCES trading_defaults(name)
         ON UPDATE CASCADE
         ON DELETE RESTRICT,
       technical_analysis_settings JSONB NOT NULL DEFAULT '{}'::jsonb,
       enabled BOOLEAN NOT NULL DEFAULT TRUE,
       created_at TIMESTAMPTZ NOT NULL,
-      updated_at TIMESTAMPTZ NOT NULL,
-      CONSTRAINT analysis_settings_binding_unique
-        UNIQUE (
-          symbol_code,
-          timeframe_code,
-          strategy_name,
-          risk_profile_name,
-          trading_defaults_name,
-          technical_analysis_settings
-        )
+      updated_at TIMESTAMPTZ NOT NULL
     );
   `,
-  listOrderBy: "symbol_code ASC, timeframe_code ASC, strategy_name ASC",
+  listOrderBy: "name ASC, strategy_name ASC",
   selectColumns: [
     "id",
-    "symbol_code",
-    "timeframe_code",
+    "name",
     "strategy_name",
-    "risk_profile_name",
-    "trading_defaults_name",
     "technical_analysis_settings",
     "enabled",
     "created_at",
     "updated_at",
   ],
   insertColumns: [
-    "symbol_code",
-    "timeframe_code",
+    "name",
     "strategy_name",
-    "risk_profile_name",
-    "trading_defaults_name",
     "technical_analysis_settings",
     "enabled",
   ],
   uniqueFieldName:
-    "symbolCode/timeframeCode/strategyName/riskProfileName/tradingDefaultsName/technicalAnalysisSettings",
+    "name",
   uniqueFieldValue: (input) =>
-    `${input.symbolCode}/${input.timeframeCode}/${input.strategyName}/${input.riskProfileName}/${input.tradingDefaultsName}/${JSON.stringify(input.technicalAnalysisSettings)}`,
+    input.name,
   toInsertValues: (input) => [
-    input.symbolCode,
-    input.timeframeCode,
+    input.name,
     input.strategyName,
-    input.riskProfileName,
-    input.tradingDefaultsName,
     JSON.stringify(input.technicalAnalysisSettings),
     input.enabled,
   ],
@@ -889,7 +711,6 @@ const resourceDefinitions = [
   timeframeDefinition,
   strategyDefinition,
   riskProfileDefinition,
-  tradingDefaultsDefinition,
   analysisSettingsDefinition,
 ] as const;
 
@@ -986,20 +807,21 @@ export const ensureControlPlaneSchema = async (pool: Pool): Promise<void> => {
     DO $$
     BEGIN
       IF EXISTS (
+        SELECT 1 FROM information_schema.tables
+        WHERE table_schema = 'public' AND table_name = 'analysis_settings'
+      ) AND EXISTS (
         SELECT 1 FROM information_schema.columns
-        WHERE table_schema = 'public' AND table_name = 'analysis_settings' AND column_name = 'pair_code'
-      ) AND NOT EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_schema = 'public' AND table_name = 'analysis_settings' AND column_name = 'symbol_code'
+        WHERE table_schema = 'public' AND table_name = 'analysis_settings' AND column_name IN ('pair_code', 'symbol_code', 'timeframe_code', 'risk_profile_name')
       ) THEN
-        ALTER TABLE analysis_settings RENAME COLUMN pair_code TO symbol_code;
+        ALTER TABLE analysis_settings RENAME TO analysis_settings_legacy;
       END IF;
     END $$;
   `);
 
-  for (const definition of resourceDefinitions.slice(2)) {
+  for (const definition of resourceDefinitions.slice(2, 5)) {
     await pool.query(definition.createTableSql);
   }
+  await pool.query(analysisSettingsDefinition.createTableSql);
 
   await pool.query("DROP TABLE IF EXISTS config_change_outbox");
 
@@ -1049,87 +871,87 @@ export const ensureControlPlaneSchema = async (pool: Pool): Promise<void> => {
   `);
   await pool.query("ALTER TABLE timeframes ALTER COLUMN period_ms SET NOT NULL");
 
-  // Existing local DBs may already have analysis_settings without trading_defaults_name.
-  await pool.query(
-    "ALTER TABLE analysis_settings ADD COLUMN IF NOT EXISTS trading_defaults_name TEXT",
-  );
-  await pool.query(`
-    DO $$
-    BEGIN
-      IF NOT EXISTS (
-        SELECT 1
-        FROM pg_constraint
-        WHERE conname = 'analysis_settings_trading_defaults_name_fkey'
-      ) THEN
-        ALTER TABLE analysis_settings
-          ADD CONSTRAINT analysis_settings_trading_defaults_name_fkey
-          FOREIGN KEY (trading_defaults_name)
-          REFERENCES trading_defaults(name)
-          ON UPDATE CASCADE
-          ON DELETE RESTRICT;
-      END IF;
-    END
-    $$;
-  `);
-  await pool.query(`
-    DO $$
-    BEGIN
-      IF EXISTS (
-        SELECT 1
-        FROM information_schema.columns
-        WHERE table_schema = current_schema()
-          AND table_name = 'analysis_settings'
-          AND column_name = 'trading_defaults_name'
-          AND is_nullable = 'YES'
-      )
-      AND NOT EXISTS (
-        SELECT 1
-        FROM analysis_settings
-        WHERE trading_defaults_name IS NULL
-      ) THEN
-        ALTER TABLE analysis_settings
-          ALTER COLUMN trading_defaults_name SET NOT NULL;
-      END IF;
-    END
-    $$;
+  const legacyAnalysisSettingsExists = await pool.query<{ exists: boolean }>(`
+    SELECT EXISTS (
+      SELECT 1
+      FROM information_schema.tables
+      WHERE table_schema = 'public'
+        AND table_name = 'analysis_settings_legacy'
+    ) AS exists
   `);
 
-  await pool.query(
-    "ALTER TABLE analysis_settings DROP CONSTRAINT IF EXISTS analysis_settings_binding_unique",
-  );
-  await pool.query(`
-    DO $$
-    BEGIN
-      IF NOT EXISTS (
-        SELECT 1
-        FROM pg_constraint
-        WHERE conname = 'analysis_settings_binding_unique'
-          AND conrelid = 'analysis_settings'::regclass
-      ) THEN
-        ALTER TABLE analysis_settings
-          ADD CONSTRAINT analysis_settings_binding_unique
-          UNIQUE (
-            symbol_code,
-            timeframe_code,
+  if (legacyAnalysisSettingsExists.rows[0]?.exists) {
+    const legacyRows = await pool.query<{
+      strategy_name: string;
+      technical_analysis_settings: Record<string, unknown> | string | null;
+      enabled: boolean;
+      created_at: Date | string;
+      updated_at: Date | string;
+    }>(`
+        SELECT DISTINCT ON (
+          strategy_name,
+          technical_analysis_settings
+        )
+        strategy_name,
+        technical_analysis_settings,
+        enabled,
+        created_at,
+        updated_at
+      FROM analysis_settings_legacy
+      ORDER BY
+        strategy_name,
+        technical_analysis_settings,
+        created_at ASC,
+        id ASC
+    `);
+
+    for (const [index, row] of legacyRows.rows.entries()) {
+      const technicalSettings = parseJsonObject(row.technical_analysis_settings);
+      const fastPeriod = technicalSettings.fastPeriod;
+      const slowPeriod = technicalSettings.slowPeriod;
+      const generatedName =
+        typeof fastPeriod === "number" && typeof slowPeriod === "number"
+          ? `${row.strategy_name}-${fastPeriod}-${slowPeriod}`
+          : `${row.strategy_name}-${index + 1}`;
+
+      await pool.query(
+        `
+          INSERT INTO analysis_settings (
+            id,
+            name,
             strategy_name,
-            risk_profile_name,
-            trading_defaults_name,
-            technical_analysis_settings
-          );
-      END IF;
-    END
-    $$;
-  `);
+            technical_analysis_settings,
+            enabled,
+            created_at,
+            updated_at
+          )
+          VALUES ($1, $2, $3, $4::jsonb, $5, $6::timestamptz, $7::timestamptz)
+          ON CONFLICT (name) DO NOTHING
+        `,
+        [
+          randomUUID(),
+          generatedName,
+          row.strategy_name,
+          JSON.stringify(technicalSettings),
+          row.enabled,
+          toIsoString(row.created_at),
+          toIsoString(row.updated_at),
+        ],
+      );
+    }
+
+    await pool.query("DROP TABLE analysis_settings_legacy");
+  }
 
   // Cleanup from the earlier experimental secret-reference slice. Binance credentials
   // now come directly from OpenBao app config rather than through DB indirection.
-  await pool.query(
-    "ALTER TABLE trading_defaults DROP CONSTRAINT IF EXISTS trading_defaults_exchange_secret_reference_name_fkey",
-  );
-  await pool.query(
-    "ALTER TABLE trading_defaults DROP COLUMN IF EXISTS exchange_secret_reference_name",
-  );
   await pool.query("DROP TABLE IF EXISTS exchange_secret_references");
+  await pool.query("ALTER TABLE analysis_settings DROP COLUMN IF EXISTS trading_defaults_name");
+  await pool.query("DROP TABLE IF EXISTS trading_defaults");
+  await pool.query("ALTER TABLE symbols DROP COLUMN IF EXISTS origin_asset_needed_funds");
+  await pool.query(
+    "ALTER TABLE symbols DROP COLUMN IF EXISTS destination_asset_needed_funds",
+  );
 };
 
 export const createConfigStores = (
@@ -1140,7 +962,6 @@ export const createConfigStores = (
   timeframes: new PostgresCrudStore(pool, timeframeDefinition, eventPublisher),
   strategies: new PostgresCrudStore(pool, strategyDefinition, eventPublisher),
   riskProfiles: new PostgresCrudStore(pool, riskProfileDefinition, eventPublisher),
-  tradingDefaults: new PostgresCrudStore(pool, tradingDefaultsDefinition, eventPublisher),
   analysisSettings: new PostgresCrudStore(
     pool,
     analysisSettingsDefinition,
@@ -1163,8 +984,6 @@ export const symbolBodySchema = {
     active: { type: "boolean" },
     baseAsset: { type: "string", minLength: 1 },
     destinationAsset: { type: "string", minLength: 1 },
-    originAssetNeededFunds: { type: "number" },
-    destinationAssetNeededFunds: { type: "number" },
   },
   required: ["code", "active", "baseAsset", "destinationAsset"],
 } as const;
@@ -1177,8 +996,6 @@ export const symbolRecordSchema = {
     active: { type: "boolean" },
     baseAsset: { type: "string" },
     destinationAsset: { type: "string" },
-    originAssetNeededFunds: { type: "number", nullable: true },
-    destinationAssetNeededFunds: { type: "number", nullable: true },
     createdAt: { type: "string", format: "date-time" },
     updatedAt: { type: "string", format: "date-time" },
   },
@@ -1327,54 +1144,12 @@ export const riskProfileRecordSchema = {
   ],
 } as const;
 
-export const tradingDefaultsBodySchema = {
-  type: "object",
-  additionalProperties: false,
-  properties: {
-    name: { type: "string", minLength: 1 },
-    description: { type: "string", minLength: 1 },
-    defaultPositionNotionalUsd: { type: "number", exclusiveMinimum: 0 },
-    enabled: { type: "boolean" },
-  },
-  required: [
-    "name",
-    "description",
-    "defaultPositionNotionalUsd",
-    "enabled",
-  ],
-} as const;
-
-export const tradingDefaultsRecordSchema = {
-  type: "object",
-  properties: {
-    id: { type: "string" },
-    name: { type: "string" },
-    description: { type: "string" },
-    defaultPositionNotionalUsd: { type: "number" },
-    enabled: { type: "boolean" },
-    createdAt: { type: "string", format: "date-time" },
-    updatedAt: { type: "string", format: "date-time" },
-  },
-  required: [
-    "id",
-    "name",
-    "description",
-    "defaultPositionNotionalUsd",
-    "enabled",
-    "createdAt",
-    "updatedAt",
-  ],
-} as const;
-
 export const analysisSettingsBodySchema = {
   type: "object",
   additionalProperties: false,
   properties: {
-    symbolCode: { type: "string", minLength: 1 },
-    timeframeCode: { type: "string", minLength: 1 },
+    name: { type: "string", minLength: 1 },
     strategyName: { type: "string", minLength: 1 },
-    riskProfileName: { type: "string", minLength: 1 },
-    tradingDefaultsName: { type: "string", minLength: 1 },
     technicalAnalysisSettings: {
       type: "object",
       additionalProperties: true,
@@ -1382,11 +1157,8 @@ export const analysisSettingsBodySchema = {
     enabled: { type: "boolean" },
   },
   required: [
-    "symbolCode",
-    "timeframeCode",
+    "name",
     "strategyName",
-    "riskProfileName",
-    "tradingDefaultsName",
     "technicalAnalysisSettings",
     "enabled",
   ],
@@ -1396,11 +1168,8 @@ export const analysisSettingsRecordSchema = {
   type: "object",
   properties: {
     id: { type: "string" },
-    symbolCode: { type: "string" },
-    timeframeCode: { type: "string" },
+    name: { type: "string" },
     strategyName: { type: "string" },
-    riskProfileName: { type: "string" },
-    tradingDefaultsName: { type: "string", nullable: true },
     technicalAnalysisSettings: {
       type: "object",
       additionalProperties: true,
@@ -1411,11 +1180,8 @@ export const analysisSettingsRecordSchema = {
   },
   required: [
     "id",
-    "symbolCode",
-    "timeframeCode",
+    "name",
     "strategyName",
-    "riskProfileName",
-    "tradingDefaultsName",
     "technicalAnalysisSettings",
     "enabled",
     "createdAt",
@@ -1427,11 +1193,11 @@ export const resolvedAnalysisSettingsRecordSchema = {
   type: "object",
   properties: {
     id: { type: "string" },
+    name: { type: "string" },
     symbolCode: { type: "string" },
     timeframeCode: { type: "string" },
     strategyName: { type: "string" },
     riskProfileName: { type: "string" },
-    tradingDefaultsName: { type: "string" },
     technicalAnalysisSettings: {
       type: "object",
       additionalProperties: true,
@@ -1443,15 +1209,14 @@ export const resolvedAnalysisSettingsRecordSchema = {
     timeframe: timeframeRecordSchema,
     strategy: strategyRecordSchema,
     riskProfile: riskProfileRecordSchema,
-    tradingDefaults: tradingDefaultsRecordSchema,
   },
   required: [
     "id",
+    "name",
     "symbolCode",
     "timeframeCode",
     "strategyName",
     "riskProfileName",
-    "tradingDefaultsName",
     "technicalAnalysisSettings",
     "enabled",
     "createdAt",
@@ -1460,7 +1225,6 @@ export const resolvedAnalysisSettingsRecordSchema = {
     "timeframe",
     "strategy",
     "riskProfile",
-    "tradingDefaults",
   ],
 } as const;
 
@@ -1470,11 +1234,11 @@ export const listResolvedAnalysisSettings = async (
   const result = await pool.query(`
     SELECT
       a.id AS analysis_id,
-      a.symbol_code AS analysis_symbol_code,
-      a.timeframe_code AS analysis_timeframe_code,
+      a.name AS analysis_name,
+      s2.code AS analysis_symbol_code,
+      t.code AS analysis_timeframe_code,
       a.strategy_name AS analysis_strategy_name,
-      a.risk_profile_name AS analysis_risk_profile_name,
-      a.trading_defaults_name AS analysis_trading_defaults_name,
+      r.name AS analysis_risk_profile_name,
       a.technical_analysis_settings AS analysis_technical_analysis_settings,
       a.enabled AS analysis_enabled,
       a.created_at AS analysis_created_at,
@@ -1482,8 +1246,8 @@ export const listResolvedAnalysisSettings = async (
       s2.id AS symbol_id,
       s2.code AS symbol_entity_code,
       s2.active AS symbol_active,
-      s2.origin_asset_needed_funds AS symbol_origin_asset_needed_funds,
-      s2.destination_asset_needed_funds AS symbol_destination_asset_needed_funds,
+      s2.base_asset AS symbol_base_asset,
+      s2.destination_asset AS symbol_destination_asset,
       s2.created_at AS symbol_created_at,
       s2.updated_at AS symbol_updated_at,
       t.id AS timeframe_id,
@@ -1510,28 +1274,15 @@ export const listResolvedAnalysisSettings = async (
       r.rrr AS risk_profile_rrr,
       r.enabled AS risk_profile_enabled,
       r.created_at AS risk_profile_created_at,
-      r.updated_at AS risk_profile_updated_at,
-      td.id AS trading_defaults_id,
-      td.name AS trading_defaults_entity_name,
-      td.description AS trading_defaults_description,
-      td.default_position_notional_usd
-        AS trading_defaults_default_position_notional_usd,
-      td.enabled AS trading_defaults_enabled,
-      td.created_at AS trading_defaults_created_at,
-      td.updated_at AS trading_defaults_updated_at
+      r.updated_at AS risk_profile_updated_at
     FROM analysis_settings a
-    INNER JOIN symbols s2 ON s2.code = a.symbol_code
-    INNER JOIN timeframes t ON t.code = a.timeframe_code
+    INNER JOIN symbols s2 ON s2.active = TRUE
+    INNER JOIN timeframes t ON t.active = TRUE
     INNER JOIN strategies s ON s.name = a.strategy_name
-    INNER JOIN risk_profiles r ON r.name = a.risk_profile_name
-    INNER JOIN trading_defaults td ON td.name = a.trading_defaults_name
+    INNER JOIN risk_profiles r ON r.enabled = TRUE
     WHERE a.enabled = TRUE
-      AND s2.active = TRUE
-      AND t.active = TRUE
       AND s.activated = TRUE
-      AND r.enabled = TRUE
-      AND td.enabled = TRUE
-    ORDER BY a.symbol_code ASC, a.timeframe_code ASC, a.strategy_name ASC
+    ORDER BY s2.code ASC, t.code ASC, a.name ASC, r.name ASC
   `);
 
   return result.rows.map((row) => mapResolvedAnalysisSettingsRow(row));

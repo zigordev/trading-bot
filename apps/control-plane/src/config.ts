@@ -16,7 +16,6 @@ export type AppConfig = {
   dataReadinessEventsTopic: string;
   dataReadinessEventsConsumerGroupId: string;
   marketDataBaseUrl: string;
-  strategyEngineBaseUrl: string;
   researchBacktestingBaseUrl: string;
   upstreamRequestTimeoutMs: number;
   opsStreamIntervalMs: number;
@@ -95,8 +94,6 @@ export const loadConfig = (): AppConfig => {
       "trading-bot-control-plane-data-readiness-projection-v1",
     marketDataBaseUrl:
       process.env.MARKET_DATA_BASE_URL ?? "http://trading-bot-market-data:8090",
-    strategyEngineBaseUrl:
-      process.env.STRATEGY_ENGINE_BASE_URL ?? "http://trading-bot-strategy-engine:8100",
     researchBacktestingBaseUrl:
       process.env.RESEARCH_BACKTESTING_BASE_URL ??
       "http://research-backtesting:8110",
