@@ -13,6 +13,7 @@ pub struct AppConfig {
     pub data_readiness_events_consumer_group_id: String,
     pub scheduled_backtests_enabled: bool,
     pub scheduled_backtests_interval_seconds: u64,
+    pub binance_reference_base_url: String,
     pub control_plane_base_url: String,
     pub control_plane_request_timeout_ms: u64,
     pub historical_store_host: String,
@@ -189,6 +190,10 @@ pub fn load_config() -> Result<AppConfig> {
             "SCHEDULED_BACKTESTS_INTERVAL_SECONDS",
             3600,
         )?,
+        binance_reference_base_url: env_or_default(
+            "BINANCE_REFERENCE_BASE_URL",
+            "https://api.binance.com",
+        ),
         control_plane_base_url: env_or_default(
             "CONTROL_PLANE_BASE_URL",
             "http://trading-bot-api:8080",
@@ -242,6 +247,7 @@ mod tests {
         );
         assert!(config.scheduled_backtests_enabled);
         assert_eq!(config.scheduled_backtests_interval_seconds, 3600);
+        assert_eq!(config.binance_reference_base_url, "https://api.binance.com");
         assert_eq!(config.backtest_warmup_candles, 200);
         assert_eq!(config.max_backtest_trades, 1_000_000);
         assert_eq!(config.backtest_result_retention_days, 365);
