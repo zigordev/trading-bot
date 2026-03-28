@@ -2,7 +2,7 @@ import { MaterialIcons } from "@expo/vector-icons";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
-import Svg, { Circle } from "react-native-svg";
+import Svg, { Circle, Line, Path, Text as SvgText } from "react-native-svg";
 
 import { AppShell } from "@/src/components/app-shell";
 import { Card } from "@/src/components/card";
@@ -52,6 +52,7 @@ export default function BacktestingScreen() {
   const [symbolFilter, setSymbolFilter] = useState<string[]>([]);
   const [timeframeFilter, setTimeframeFilter] = useState<string[]>([]);
   const [expandedSymbols, setExpandedSymbols] = useState<string[]>([]);
+  const [expandedHistorySymbols, setExpandedHistorySymbols] = useState<string[]>([]);
   const [expandedReadinessSymbols, setExpandedReadinessSymbols] = useState<string[]>([]);
 
   const backtestsQuery = useQuery({
@@ -155,6 +156,16 @@ export default function BacktestingScreen() {
       }
       return true;
     }) ?? [];
+  const filteredRecentRuns =
+    backtestsQuery.data?.recentRuns.filter((run) => {
+      if (symbolFilter.length > 0 && !symbolFilter.includes(run.symbol)) {
+        return false;
+      }
+      if (timeframeFilter.length > 0 && !timeframeFilter.includes(run.timeframeCode)) {
+        return false;
+      }
+      return true;
+    }) ?? [];
   const filteredBatches =
     backtestsQuery.data?.batches.filter((batch) => {
       if (symbolFilter.length > 0 && !symbolFilter.includes(batch.symbolCode)) {
@@ -178,6 +189,10 @@ export default function BacktestingScreen() {
       return true;
     }) ?? [];
   const latestBacktestGroups = groupLatestBacktestsBySymbol(filteredRuns);
+  const backtestHistoryGroups = groupBacktestHistoryBySymbol(
+    filteredRecentRuns,
+    analysisDetailById,
+  );
   const readinessGroups = groupDataReadinessBySymbol(filteredReadinessItems);
 
   const toggleExpandedSymbol = (symbolCode: string) => {
@@ -190,6 +205,14 @@ export default function BacktestingScreen() {
 
   const toggleExpandedReadinessSymbol = (symbolCode: string) => {
     setExpandedReadinessSymbols((current) =>
+      current.includes(symbolCode)
+        ? current.filter((value) => value !== symbolCode)
+        : [...current, symbolCode],
+    );
+  };
+
+  const toggleExpandedHistorySymbol = (symbolCode: string) => {
+    setExpandedHistorySymbols((current) =>
       current.includes(symbolCode)
         ? current.filter((value) => value !== symbolCode)
         : [...current, symbolCode],
@@ -531,6 +554,132 @@ export default function BacktestingScreen() {
                     })
                   )}
                 </View>
+
+                <View style={{ gap: 12 }}>
+                  <Text style={{ fontSize: 18, fontWeight: "700", color: "#101828" }}>
+                    PnL evolution
+                  </Text>
+                  {backtestHistoryGroups.length === 0 ? (
+                    <Text style={{ color: "#475467" }}>
+                      No backtest history matches the current filters.
+                    </Text>
+                  ) : (
+                    backtestHistoryGroups.map((group) => {
+                      const expanded = expandedHistorySymbols.includes(group.symbol);
+                      return (
+                        <Card key={`history:${group.symbol}`}>
+                          <Pressable
+                            onPress={() => toggleExpandedHistorySymbol(group.symbol)}
+                            style={{ gap: 14 }}
+                          >
+                            <View
+                              style={{
+                                flexDirection: "row",
+                                alignItems: "flex-start",
+                                justifyContent: "space-between",
+                                gap: 16,
+                                flexWrap: "wrap",
+                              }}
+                            >
+                              <View style={{ flex: 1, minWidth: 240, gap: 6 }}>
+                                <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                                  <SymbolAvatar
+                                    baseAsset={symbolBaseAssets.get(group.symbol)}
+                                    destinationAsset={symbolDestinationAssets.get(group.symbol)}
+                                    size={34}
+                                  />
+                                  <Text
+                                    style={{ fontSize: 20, fontWeight: "700", color: "#101828" }}
+                                  >
+                                    {group.symbol}
+                                  </Text>
+                                </View>
+                                <Text style={{ color: "#475467" }}>
+                                  {group.combinationCount.toLocaleString()} combination
+                                  {group.combinationCount === 1 ? "" : "s"} ·{" "}
+                                  {group.runCount.toLocaleString()} run
+                                  {group.runCount === 1 ? "" : "s"}
+                                </Text>
+                                <Text style={{ color: "#475467" }}>
+                                  Last finished: {new Date(group.latestFinishedAt).toLocaleString()}
+                                </Text>
+                              </View>
+
+                              <View style={{ alignItems: "flex-end", gap: 10 }}>
+                                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                                  <Text style={{ color: "#475467", fontWeight: "700" }}>
+                                    {expanded ? "Hide charts" : "Show charts"}
+                                  </Text>
+                                  <MaterialIcons
+                                    name={expanded ? "expand-less" : "expand-more"}
+                                    size={20}
+                                    color="#475467"
+                                  />
+                                </View>
+                              </View>
+                            </View>
+                          </Pressable>
+
+                          {expanded ? (
+                            <View style={{ marginTop: 14, gap: 14 }}>
+                              {group.combinations.map((combination) => (
+                                <View
+                                  key={combination.key}
+                                  style={{
+                                    borderWidth: 1,
+                                    borderColor: "#eaecf0",
+                                    borderRadius: 16,
+                                    padding: 14,
+                                    gap: 12,
+                                    backgroundColor: "#fcfcfd",
+                                  }}
+                                >
+                                  <View
+                                    style={{
+                                      flexDirection: "row",
+                                      alignItems: "flex-start",
+                                      justifyContent: "space-between",
+                                      gap: 12,
+                                      flexWrap: "wrap",
+                                    }}
+                                  >
+                                    <View style={{ flex: 1, minWidth: 220, gap: 4 }}>
+                                      <Text
+                                        style={{
+                                          color: "#101828",
+                                          fontWeight: "800",
+                                          fontSize: 15,
+                                        }}
+                                      >
+                                        {combination.analysisLabel}
+                                      </Text>
+                                      <Text style={{ color: "#475467" }}>
+                                        {combination.timeframeCode} · {combination.riskProfileName} ·{" "}
+                                        {combination.strategyName}
+                                      </Text>
+                                    </View>
+                                    <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
+                                      <MetricBadge
+                                        label="Runs"
+                                        value={combination.runs.length.toLocaleString()}
+                                      />
+                                      <MetricBadge
+                                        label="Best"
+                                        value={`${combination.bestPnlPercent.toFixed(2)}%`}
+                                      />
+                                    </View>
+                                  </View>
+
+                                  <PnlHistoryChart runs={combination.runs} />
+                                </View>
+                              ))}
+                            </View>
+                          ) : null}
+                        </Card>
+                      );
+                    })
+                  )}
+                </View>
               </>
             )}
           </View>
@@ -718,6 +867,189 @@ function MetricBadge({
   );
 }
 
+function PnlHistoryChart({
+  runs,
+}: {
+  runs: RecentBacktestRun[];
+}) {
+  const width = 360;
+  const height = 220;
+  const paddingLeft = 44;
+  const paddingRight = 16;
+  const paddingTop = 14;
+  const paddingBottom = 42;
+  const chartWidth = width - paddingLeft - paddingRight;
+  const chartHeight = height - paddingTop - paddingBottom;
+  const safeRuns = [...runs].sort(
+    (left, right) => Date.parse(left.finishedAt) - Date.parse(right.finishedAt),
+  );
+  const yValues = safeRuns.map((run) => run.totalPnlPercent);
+  const minY = Math.min(0, ...yValues);
+  const maxY = Math.max(0, ...yValues);
+  const ySpan = maxY - minY || 1;
+  const strokeColor =
+    safeRuns[safeRuns.length - 1]?.totalPnlPercent >= 0 ? "#157f3b" : "#b42318";
+  const yTickCount = 5;
+  const yTicks = Array.from({ length: yTickCount }, (_, index) => {
+    const ratio = index / (yTickCount - 1);
+    const value = maxY - ratio * ySpan;
+    const y = paddingTop + ratio * chartHeight;
+    return {
+      value,
+      y,
+      label: `${value >= 0 ? "+" : ""}${value.toFixed(1)}%`,
+    };
+  });
+  const xLabelIndexes = buildXAxisLabelIndexes(safeRuns.length);
+
+  const points = safeRuns.map((run, index) => {
+    const x =
+      safeRuns.length === 1
+        ? paddingLeft + chartWidth / 2
+        : paddingLeft + (index / (safeRuns.length - 1)) * chartWidth;
+    const y = paddingTop + ((maxY - run.totalPnlPercent) / ySpan) * chartHeight;
+    return { x, y };
+  });
+
+  const path = points
+    .map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`)
+    .join(" ");
+
+  const firstLabel =
+    safeRuns[0] === undefined
+      ? ""
+      : new Date(safeRuns[0].finishedAt).toLocaleDateString(undefined, {
+          month: "short",
+          day: "numeric",
+        });
+  const lastLabel =
+    safeRuns[safeRuns.length - 1] === undefined
+      ? ""
+      : new Date(safeRuns[safeRuns.length - 1].finishedAt).toLocaleDateString(undefined, {
+          month: "short",
+          day: "numeric",
+        });
+
+  return (
+    <View
+      style={{
+        borderRadius: 14,
+        backgroundColor: "#ffffff",
+        borderWidth: 1,
+        borderColor: "#eaecf0",
+        padding: 12,
+        gap: 8,
+      }}
+    >
+      {safeRuns.length === 0 ? (
+        <Text style={{ color: "#475467" }}>No completed runs available.</Text>
+      ) : (
+        <>
+          <Svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`}>
+            {yTicks.map((tick) => (
+              <Line
+                key={`line:${tick.label}`}
+                x1={paddingLeft}
+                x2={width - paddingRight}
+                y1={tick.y}
+                y2={tick.y}
+                stroke={Math.abs(tick.value) < 0.05 ? "#98a2b3" : "#d0d5dd"}
+                strokeWidth={1}
+                strokeDasharray="4 4"
+              />
+            ))}
+            {yTicks.map((tick) => (
+              <SvgText
+                key={`label:${tick.label}`}
+                x={paddingLeft - 8}
+                y={tick.y + 4}
+                fontSize="10"
+                fill="#475467"
+                textAnchor="end"
+              >
+                {tick.label}
+              </SvgText>
+            ))}
+            <Line
+              x1={paddingLeft}
+              x2={width - paddingRight}
+              y1={paddingTop + chartHeight}
+              y2={paddingTop + chartHeight}
+              stroke="#98a2b3"
+              strokeWidth={1}
+            />
+            <Path d={path} fill="none" stroke={strokeColor} strokeWidth={3} strokeLinecap="round" />
+            {points.map((point, index) => (
+              <Circle
+                key={`${safeRuns[index]?.backtestId ?? index}`}
+                cx={point.x}
+                cy={point.y}
+                r={4}
+                fill={strokeColor}
+                stroke="#ffffff"
+                strokeWidth={2}
+              />
+            ))}
+            {xLabelIndexes.map((index) => {
+              const point = points[index];
+              const run = safeRuns[index];
+              if (!point || !run) {
+                return null;
+              }
+
+              return (
+                <SvgText
+                  key={`x:${run.backtestId}`}
+                  x={point.x}
+                  y={height - 12}
+                  fontSize="10"
+                  fill="#475467"
+                  textAnchor="middle"
+                >
+                  {formatXAxisDate(run.finishedAt)}
+                </SvgText>
+              );
+            })}
+          </Svg>
+
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "space-between",
+            }}
+          >
+            <Text style={{ color: "#475467", fontSize: 12 }}>{firstLabel}</Text>
+            <Text style={{ color: "#475467", fontSize: 12 }}>Backtest date</Text>
+            <Text style={{ color: "#475467", fontSize: 12 }}>{lastLabel}</Text>
+          </View>
+        </>
+      )}
+    </View>
+  );
+}
+
+function buildXAxisLabelIndexes(length: number) {
+  if (length <= 4) {
+    return Array.from({ length }, (_, index) => index);
+  }
+
+  const indexes = new Set<number>([0, length - 1]);
+  const desiredLabels = 4;
+  for (let step = 1; step < desiredLabels - 1; step += 1) {
+    indexes.add(Math.round((step / (desiredLabels - 1)) * (length - 1)));
+  }
+
+  return [...indexes].sort((left, right) => left - right);
+}
+
+function formatXAxisDate(value: string) {
+  return new Date(value).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+  });
+}
+
 function groupRunningBatchesBySymbol(
   batches: BacktestBatch[],
 ) {
@@ -821,6 +1153,102 @@ function groupLatestBacktestsBySymbol(runs: RecentBacktestRun[]) {
       runs: [...group.runs].sort(
         (left, right) => Date.parse(right.finishedAt) - Date.parse(left.finishedAt),
       ),
+    }))
+    .sort((left, right) => left.symbol.localeCompare(right.symbol));
+}
+
+function groupBacktestHistoryBySymbol(
+  runs: RecentBacktestRun[],
+  analysisDetailById: Map<string, string>,
+) {
+  const groups = new Map<
+    string,
+    {
+      symbol: string;
+      runCount: number;
+      combinationCount: number;
+      latestFinishedAt: string;
+      combinations: {
+        key: string;
+        analysisLabel: string;
+        timeframeCode: string;
+        riskProfileName: string;
+        strategyName: string;
+        bestPnlPercent: number;
+        latestFinishedAt: string;
+        runs: RecentBacktestRun[];
+      }[];
+    }
+  >();
+
+  for (const run of runs) {
+    const combinationKey = [
+      run.symbol,
+      run.timeframeCode,
+      run.analysisSettingId,
+      run.riskProfileName,
+      run.strategyName,
+    ].join(":");
+    const current =
+      groups.get(run.symbol) ??
+      {
+        symbol: run.symbol,
+        runCount: 0,
+        combinationCount: 0,
+        latestFinishedAt: run.finishedAt,
+        combinations: [],
+      };
+
+    current.runCount += 1;
+    if (Date.parse(run.finishedAt) > Date.parse(current.latestFinishedAt)) {
+      current.latestFinishedAt = run.finishedAt;
+    }
+
+    const existingCombination = current.combinations.find(
+      (combination) => combination.key === combinationKey,
+    );
+
+    if (existingCombination) {
+      existingCombination.runs.push(run);
+      existingCombination.bestPnlPercent = Math.max(
+        existingCombination.bestPnlPercent,
+        run.totalPnlPercent,
+      );
+      if (Date.parse(run.finishedAt) > Date.parse(existingCombination.latestFinishedAt)) {
+        existingCombination.latestFinishedAt = run.finishedAt;
+      }
+    } else {
+      current.combinations.push({
+        key: combinationKey,
+        analysisLabel:
+          analysisDetailById.get(run.analysisSettingId) ?? run.analysisSettingId,
+        timeframeCode: run.timeframeCode,
+        riskProfileName: run.riskProfileName,
+        strategyName: run.strategyName,
+        bestPnlPercent: run.totalPnlPercent,
+        latestFinishedAt: run.finishedAt,
+        runs: [run],
+      });
+    }
+
+    groups.set(run.symbol, current);
+  }
+
+  return [...groups.values()]
+    .map((group) => ({
+      ...group,
+      combinationCount: group.combinations.length,
+      combinations: group.combinations
+        .map((combination) => ({
+          ...combination,
+          runs: [...combination.runs].sort(
+            (left, right) => Date.parse(left.finishedAt) - Date.parse(right.finishedAt),
+          ),
+        }))
+        .sort(
+          (left, right) =>
+            Date.parse(right.latestFinishedAt) - Date.parse(left.latestFinishedAt),
+        ),
     }))
     .sort((left, right) => left.symbol.localeCompare(right.symbol));
 }

@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
-import { Pressable, Text, View } from "react-native";
+import { Pressable, ScrollView, Text, View } from "react-native";
 
 import { AppShell } from "@/src/components/app-shell";
 import { Card } from "@/src/components/card";
@@ -132,21 +132,21 @@ export default function OverviewScreen() {
     ]),
   );
   const analysisDetailById = buildAnalysisDetailMap(runtimeAnalysesQuery.data ?? []);
-  const topSymbols = [...(symbolsQuery.data ?? [])]
+  const activeSymbols = [...(symbolsQuery.data ?? [])]
+    .filter((record) => Boolean(record.active))
     .sort((left, right) => String(left.code ?? "").localeCompare(String(right.code ?? "")))
-    .slice(0, 3);
-  const topTimeframes = [...(timeframesQuery.data ?? [])]
+  const activeTimeframes = [...(timeframesQuery.data ?? [])]
+    .filter((record) => Boolean(record.active))
     .sort((left, right) => Number(left.periodMs ?? 0) - Number(right.periodMs ?? 0))
-    .slice(0, 3);
-  const topStrategies = [...(strategiesQuery.data ?? [])]
+  const activeStrategies = [...(strategiesQuery.data ?? [])]
+    .filter((record) => Boolean(record.activated))
     .sort((left, right) => String(left.name ?? "").localeCompare(String(right.name ?? "")))
-    .slice(0, 3);
-  const topRiskProfiles = [...(riskProfilesQuery.data ?? [])]
+  const activeRiskProfiles = [...(riskProfilesQuery.data ?? [])]
+    .filter((record) => Boolean(record.enabled))
     .sort((left, right) => String(left.name ?? "").localeCompare(String(right.name ?? "")))
-    .slice(0, 3);
-  const topAnalysisSettings = [...(analysisSettingsQuery.data ?? [])]
+  const activeAnalysisSettings = [...(analysisSettingsQuery.data ?? [])]
+    .filter((record) => Boolean(record.enabled))
     .sort((left, right) => String(left.name ?? "").localeCompare(String(right.name ?? "")))
-    .slice(0, 3);
   const readinessBySymbol = [...new Map(
     (dataReadinessQuery.data?.items ?? []).map((item) => [
       item.symbolCode,
@@ -189,7 +189,7 @@ export default function OverviewScreen() {
               {analysisSettingsQuery.isLoading ? "…" : enabledAnalysisSettingsCount.toLocaleString()}
             </Text>
             <OverviewList>
-              {topAnalysisSettings.map((record) => (
+              {activeAnalysisSettings.map((record) => (
                 <OverviewListRow
                   key={String(record.id)}
                   title={String(record.name ?? "n/a")}
@@ -215,7 +215,7 @@ export default function OverviewScreen() {
               {strategiesQuery.isLoading ? "…" : activeStrategyCount.toLocaleString()}
             </Text>
             <OverviewList>
-              {topStrategies.map((record) => (
+              {activeStrategies.map((record) => (
                 <OverviewListRow
                   key={String(record.id)}
                   title={String(record.name ?? "n/a")}
@@ -241,7 +241,7 @@ export default function OverviewScreen() {
               {symbolsQuery.isLoading ? "…" : activeSymbolCount.toLocaleString()}
             </Text>
             <OverviewList>
-              {topSymbols.map((record) => (
+              {activeSymbols.map((record) => (
                 <OverviewListRow
                   key={String(record.id)}
                   avatar={
@@ -274,7 +274,7 @@ export default function OverviewScreen() {
               {timeframesQuery.isLoading ? "…" : activeTimeframeCount.toLocaleString()}
             </Text>
             <OverviewList>
-              {topTimeframes.map((record) => (
+              {activeTimeframes.map((record) => (
                 <OverviewListRow
                   key={String(record.id)}
                   title={String(record.code ?? "n/a")}
@@ -300,7 +300,7 @@ export default function OverviewScreen() {
               {riskProfilesQuery.isLoading ? "…" : enabledRiskProfileCount.toLocaleString()}
             </Text>
             <OverviewList>
-              {topRiskProfiles.map((record) => (
+              {activeRiskProfiles.map((record) => (
                 <OverviewListRow
                   key={String(record.id)}
                   title={String(record.name ?? "n/a")}
@@ -479,7 +479,16 @@ function buildEditablePayload(
 }
 
 function OverviewList({ children }: { children: React.ReactNode }) {
-  return <View style={{ gap: 10, marginTop: 12 }}>{children}</View>;
+  return (
+    <ScrollView
+      style={{ marginTop: 12, height: 144, flexGrow: 0 }}
+      contentContainerStyle={{ gap: 10, paddingRight: 4 }}
+      nestedScrollEnabled
+      showsVerticalScrollIndicator
+    >
+      {children}
+    </ScrollView>
+  );
 }
 
 function OverviewListRow({
