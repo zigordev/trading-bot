@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::collections::BTreeSet;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
@@ -284,6 +285,29 @@ struct ControlPlaneDataReadinessRecord {
     requested_end_time: i64,
 }
 
+#[derive(Clone, Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ControlPlaneDataReadinessResponse {
+    items: Vec<ControlPlaneDataReadinessRecord>,
+}
+
+#[derive(Clone, Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BinanceAggTradeBoundaryRow {
+    #[serde(alias = "a")]
+    aggregate_trade_id: i64,
+    #[serde(alias = "T")]
+    trade_time: i64,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct TrueTradeWindowBoundaries {
+    first_aggregate_trade_id: i64,
+    last_aggregate_trade_id: i64,
+    first_trade_time: i64,
+    last_trade_time: i64,
+}
+
 #[derive(Clone)]
 struct TradeWindowCache {
     pair_code: String,
@@ -453,11 +477,23 @@ impl ResearchBacktestingService {
             return Ok(());
         }
 
-        for item in envelope.data.items {
-            if item.status != "ready" {
-                continue;
-            }
+        let candidate_symbols = envelope
+            .data
+            .items
+            .into_iter()
+            .filter(|item| item.status == "ready")
+            .map(|item| item.symbol_code)
+            .collect::<BTreeSet<_>>();
 
+        if candidate_symbols.is_empty() {
+            return Ok(());
+        }
+
+        let ready_items = self
+            .fetch_symbol_ready_datasets_from_control_plane(candidate_symbols.iter())
+            .await?;
+
+        for item in ready_items {
             if let Err(error) = self
                 .trigger_backtests_for_ready_dataset(&item, &envelope.event_id)
                 .await
@@ -493,6 +529,28 @@ impl ResearchBacktestingService {
     async fn fetch_ready_datasets_from_control_plane(
         &self,
     ) -> Result<Vec<DataReadinessSnapshotItem>> {
+        let rows = self.fetch_data_readiness_from_control_plane().await?;
+        Ok(filter_symbol_complete_ready_items(rows))
+    }
+
+    async fn fetch_symbol_ready_datasets_from_control_plane<'a>(
+        &self,
+        symbols: impl IntoIterator<Item = &'a String>,
+    ) -> Result<Vec<DataReadinessSnapshotItem>> {
+        let wanted = symbols
+            .into_iter()
+            .cloned()
+            .collect::<BTreeSet<String>>();
+        let rows = self.fetch_data_readiness_from_control_plane().await?;
+        Ok(filter_symbol_complete_ready_items(rows)
+            .into_iter()
+            .filter(|item| wanted.contains(&item.symbol_code))
+            .collect())
+    }
+
+    async fn fetch_data_readiness_from_control_plane(
+        &self,
+    ) -> Result<Vec<ControlPlaneDataReadinessRecord>> {
         let response = self
             .inner
             .control_plane_client
@@ -504,21 +562,9 @@ impl ResearchBacktestingService {
             .await?;
         let response = response.error_for_status()?;
         let rows = response
-            .json::<Vec<ControlPlaneDataReadinessRecord>>()
+            .json::<ControlPlaneDataReadinessResponse>()
             .await?;
-
-        Ok(rows
-            .into_iter()
-            .filter(|row| row.status == "ready")
-            .map(|row| DataReadinessSnapshotItem {
-                status: row.status,
-                symbol_code: row.symbol_code,
-                timeframe_code: row.timeframe_code,
-                analysis_setting_ids: row.analysis_setting_ids,
-                requested_start_time: row.requested_start_time,
-                requested_end_time: row.requested_end_time,
-            })
-            .collect())
+        Ok(rows.items)
     }
 
     pub fn metrics_text(&self) -> Result<String> {
@@ -1372,6 +1418,8 @@ impl ResearchBacktestingService {
         // not just the presence of at least one trade somewhere inside it.
         let tolerance = self.inner.config.trade_coverage_tolerance_ms as i64;
         let trade_coverage_blocker = trade_coverage_blocker_from_store(
+            &self.inner.control_plane_client,
+            &self.inner.config.binance_reference_base_url,
             &self.inner.historical_store,
             &analysis.symbol,
             time_window.requested_start_time,
@@ -1824,47 +1872,9 @@ async fn kline_coverage_blocker_from_store(
     Ok(kline_coverage_blocker(required_klines, &coverage))
 }
 
-fn trade_coverage_blocker(
-    requested_start_time: i64,
-    requested_end_time: i64,
-    tolerance_ms: i64,
-    coverage: &trading_bot_market_data::db::WindowCoverage,
-    gaps: &[trading_bot_market_data::db::AggregateTradeIdGap],
-) -> Option<String> {
-    let edge_ready = match (coverage.min_time, coverage.max_time) {
-        (Some(min_t), Some(max_t)) => {
-            let latest_acceptable_min = requested_start_time.saturating_add(tolerance_ms);
-            let earliest_acceptable_max = requested_end_time
-                .saturating_sub(1)
-                .saturating_sub(tolerance_ms);
-            min_t <= latest_acceptable_min && max_t >= earliest_acceptable_max
-        }
-        _ => false,
-    };
-
-    if !edge_ready {
-        return Some(format!(
-            "trade coverage incomplete (row_count={}, min_time={:?}, max_time={:?})",
-            coverage.row_count, coverage.min_time, coverage.max_time
-        ));
-    }
-
-    if let Some(gap) = gaps.first() {
-        return Some(format!(
-            "trade coverage contains aggregate trade id hole (prev_id={}, next_id={}, missing_count={}, gap_start={}, gap_end={}, gap_ms={})",
-            gap.previous_aggregate_trade_id,
-            gap.next_aggregate_trade_id,
-            gap.missing_aggregate_trade_count,
-            gap.start_time,
-            gap.end_time,
-            gap.gap_ms
-        ));
-    }
-
-    None
-}
-
 async fn trade_coverage_blocker_from_store(
+    client: &reqwest::Client,
+    binance_reference_base_url: &str,
     historical_store: &Database,
     pair_code: &str,
     requested_start_time: i64,
@@ -1874,22 +1884,223 @@ async fn trade_coverage_blocker_from_store(
     let coverage = historical_store
         .trade_window_coverage_in_range(pair_code, requested_start_time, requested_end_time)
         .await?;
-    let gaps = historical_store
-        .aggregate_trade_id_gaps_in_range(
+    let aggregate_trade_id_coverage = historical_store
+        .trade_aggregate_id_coverage_in_range(
             pair_code,
             requested_start_time,
             requested_end_time,
-            1,
+        )
+        .await?;
+    let true_boundaries = fetch_true_trade_window_boundaries(
+        client,
+        binance_reference_base_url,
+        pair_code,
+        requested_start_time,
+        requested_end_time,
+    )
+    .await?;
+
+    Ok(trade_coverage_blocker(
+        tolerance_ms,
+        &coverage,
+        &aggregate_trade_id_coverage,
+        true_boundaries,
+    ))
+}
+
+fn trade_coverage_blocker(
+    tolerance_ms: i64,
+    coverage: &trading_bot_market_data::db::WindowCoverage,
+    aggregate_trade_id_coverage: &trading_bot_market_data::db::AggregateTradeIdCoverage,
+    true_boundaries: Option<TrueTradeWindowBoundaries>,
+) -> Option<String> {
+    let Some(boundaries) = true_boundaries else {
+        return Some(format!(
+            "trade coverage incomplete (row_count={}, min_time={:?}, max_time={:?}, missing_trades=0, no true trade boundaries found)",
+            coverage.row_count, coverage.min_time, coverage.max_time
+        ));
+    };
+
+    let edge_ready = match (coverage.min_time, coverage.max_time) {
+        (Some(min_t), Some(max_t)) => {
+            let latest_acceptable_min = boundaries.first_trade_time.saturating_add(tolerance_ms);
+            let earliest_acceptable_max = boundaries.last_trade_time.saturating_sub(tolerance_ms);
+            min_t <= latest_acceptable_min && max_t >= earliest_acceptable_max
+        }
+        _ => false,
+    };
+
+    let expected_trade_count = boundaries
+        .last_aggregate_trade_id
+        .saturating_sub(boundaries.first_aggregate_trade_id)
+        .saturating_add(1) as u64;
+    let present_trade_count = aggregate_trade_id_coverage
+        .distinct_trade_count
+        .max(coverage.row_count);
+    let missing_trade_count = expected_trade_count.saturating_sub(present_trade_count);
+
+    if !edge_ready || missing_trade_count > 0 {
+        return Some(format!(
+            "trade coverage incomplete (row_count={}, min_time={:?}, max_time={:?}, expected_trades={}, present_trades={}, missing_trades={}, true_first_trade_time={}, true_last_trade_time={})",
+            coverage.row_count,
+            coverage.min_time,
+            coverage.max_time,
+            expected_trade_count,
+            present_trade_count,
+            missing_trade_count,
+            boundaries.first_trade_time,
+            boundaries.last_trade_time,
+        ));
+    }
+
+    None
+}
+
+async fn fetch_true_trade_window_boundaries(
+    client: &reqwest::Client,
+    binance_reference_base_url: &str,
+    pair_code: &str,
+    start_time: i64,
+    end_time: i64,
+) -> Result<Option<TrueTradeWindowBoundaries>> {
+    let Some(first_row) =
+        fetch_first_agg_trade_in_window(client, binance_reference_base_url, pair_code, start_time, end_time)
+            .await?
+    else {
+        return Ok(None);
+    };
+    let Some(last_row) =
+        fetch_last_agg_trade_in_window(client, binance_reference_base_url, pair_code, start_time, end_time)
+            .await?
+    else {
+        return Ok(None);
+    };
+
+    if last_row.aggregate_trade_id < first_row.aggregate_trade_id {
+        return Ok(None);
+    }
+
+    Ok(Some(TrueTradeWindowBoundaries {
+        first_aggregate_trade_id: first_row.aggregate_trade_id,
+        last_aggregate_trade_id: last_row.aggregate_trade_id,
+        first_trade_time: first_row.trade_time,
+        last_trade_time: last_row.trade_time,
+    }))
+}
+
+async fn fetch_first_agg_trade_in_window(
+    client: &reqwest::Client,
+    binance_reference_base_url: &str,
+    pair_code: &str,
+    start_time: i64,
+    end_time: i64,
+) -> Result<Option<BinanceAggTradeBoundaryRow>> {
+    let symbol = to_binance_symbol(pair_code)?;
+    let rows = fetch_binance_json::<Vec<BinanceAggTradeBoundaryRow>>(
+        client,
+        binance_reference_base_url,
+        "/api/v3/aggTrades",
+        &[
+            ("symbol", symbol),
+            ("startTime", start_time.to_string()),
+            ("endTime", end_time.saturating_sub(1).to_string()),
+            ("limit", "1".to_string()),
+        ],
+    )
+    .await?;
+    Ok(rows.into_iter().next())
+}
+
+async fn fetch_last_agg_trade_in_window(
+    client: &reqwest::Client,
+    binance_reference_base_url: &str,
+    pair_code: &str,
+    start_time: i64,
+    end_time: i64,
+) -> Result<Option<BinanceAggTradeBoundaryRow>> {
+    let symbol = to_binance_symbol(pair_code)?;
+    let rows = fetch_binance_json::<Vec<BinanceAggTradeBoundaryRow>>(
+        client,
+        binance_reference_base_url,
+        "/api/v3/aggTrades",
+        &[
+            ("symbol", symbol.clone()),
+            ("startTime", start_time.to_string()),
+            ("endTime", end_time.saturating_sub(1).to_string()),
+            ("limit", "1000".to_string()),
+        ],
+    )
+    .await?;
+    let Some(best_trade) = rows.into_iter().max_by_key(|row| (row.trade_time, row.aggregate_trade_id)) else {
+        return Ok(None);
+    };
+
+    let mut last_trade = best_trade.clone();
+    let mut next_from_id = best_trade.aggregate_trade_id;
+
+    loop {
+        let rows = fetch_binance_json::<Vec<BinanceAggTradeBoundaryRow>>(
+            client,
+            binance_reference_base_url,
+            "/api/v3/aggTrades",
+            &[
+                ("symbol", symbol.clone()),
+                ("fromId", next_from_id.to_string()),
+                ("limit", "1000".to_string()),
+            ],
         )
         .await?;
 
-    Ok(trade_coverage_blocker(
-        requested_start_time,
-        requested_end_time,
-        tolerance_ms,
-        &coverage,
-        &gaps,
-    ))
+        if rows.is_empty() {
+            break;
+        }
+
+        let mut advanced = false;
+        for row in rows {
+            if row.trade_time != best_trade.trade_time {
+                return Ok(Some(last_trade));
+            }
+            if row.aggregate_trade_id >= last_trade.aggregate_trade_id {
+                next_from_id = row.aggregate_trade_id.saturating_add(1);
+                last_trade = row;
+                advanced = true;
+            }
+        }
+
+        if !advanced {
+            break;
+        }
+    }
+
+    Ok(Some(last_trade))
+}
+
+async fn fetch_binance_json<T: serde::de::DeserializeOwned>(
+    client: &reqwest::Client,
+    binance_reference_base_url: &str,
+    path: &str,
+    query: &[(&str, String)],
+) -> Result<T> {
+    let response = client
+        .get(format!(
+            "{}{}",
+            binance_reference_base_url.trim_end_matches('/'),
+            path
+        ))
+        .query(query)
+        .send()
+        .await?
+        .error_for_status()?;
+
+    Ok(response.json::<T>().await?)
+}
+
+fn to_binance_symbol(pair_code: &str) -> Result<String> {
+    let symbol = pair_code.trim().to_uppercase();
+    if symbol.is_empty() {
+        bail!("pair_code must not be empty");
+    }
+    Ok(symbol)
 }
 
 async fn fetch_trade_window_cache(
@@ -1980,6 +2191,37 @@ fn replay_trades_page_from_cache(
 
     let take_until = cursor_idx.saturating_add(limit).min(end_idx);
     trades[cursor_idx..take_until].to_vec()
+}
+
+fn filter_symbol_complete_ready_items(
+    rows: Vec<ControlPlaneDataReadinessRecord>,
+) -> Vec<DataReadinessSnapshotItem> {
+    let mut rows_by_symbol = std::collections::BTreeMap::<
+        String,
+        Vec<ControlPlaneDataReadinessRecord>,
+    >::new();
+
+    for row in rows {
+        rows_by_symbol
+            .entry(row.symbol_code.clone())
+            .or_default()
+            .push(row);
+    }
+
+    rows_by_symbol
+        .into_values()
+        .filter(|rows| !rows.is_empty() && rows.iter().all(|row| row.status == "ready"))
+        .flat_map(|rows| {
+            rows.into_iter().map(|row| DataReadinessSnapshotItem {
+                status: row.status,
+                symbol_code: row.symbol_code,
+                timeframe_code: row.timeframe_code,
+                analysis_setting_ids: row.analysis_setting_ids,
+                requested_start_time: row.requested_start_time,
+                requested_end_time: row.requested_end_time,
+            })
+        })
+        .collect()
 }
 
 async fn execute_backtest(
