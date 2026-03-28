@@ -151,12 +151,6 @@ pub struct AggregateTradeIdGap {
     pub missing_aggregate_trade_count: i64,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
-pub struct TimeInterval {
-    pub start_time: i64,
-    pub end_time: i64,
-}
-
 #[derive(Serialize)]
 struct HistoricalKlineWriteRow<'a> {
     pair_code: &'a str,
@@ -243,18 +237,6 @@ pub struct StoredBacktestRunSummary {
 pub struct StoredBacktestRun {
     pub summary: StoredBacktestRunSummary,
     pub response_json: String,
-}
-
-#[derive(Serialize)]
-struct TradeCoverageStateWriteRow<'a> {
-    pair_code: &'a str,
-    intervals_json: &'a str,
-    updated_at_ms: i64,
-}
-
-#[derive(Deserialize)]
-struct TradeCoverageStateRow {
-    intervals_json: String,
 }
 
 #[derive(Serialize)]
@@ -393,22 +375,6 @@ impl Database {
             "#,
             sql_ident(&self.database),
             self.historical_trade_retention_days
-        ))
-        .await?;
-
-        self.execute_sql(&format!(
-            r#"
-            CREATE TABLE IF NOT EXISTS {}.market_data_trade_coverage_state
-            (
-              pair_code LowCardinality(String),
-              intervals_json String,
-              updated_at_ms Int64
-            )
-            ENGINE = ReplacingMergeTree(updated_at_ms)
-            ORDER BY (pair_code)
-            SETTINGS index_granularity = 8192
-            "#,
-            sql_ident(&self.database)
         ))
         .await?;
 
@@ -1278,52 +1244,6 @@ impl Database {
         }
     }
 
-    pub async fn trade_coverage_intervals(&self, pair_code: &str) -> Result<Vec<TimeInterval>> {
-        let sql = format!(
-            r#"
-            SELECT
-              argMax(intervals_json, updated_at_ms) AS intervals_json
-            FROM {}.market_data_trade_coverage_state
-            WHERE pair_code = '{}'
-            GROUP BY pair_code
-            FORMAT JSONEachRow
-            "#,
-            sql_ident(&self.database),
-            sql_string(pair_code)
-        );
-
-        let body = self.query_text(&sql).await?;
-        let trimmed = body.trim();
-        if trimmed.is_empty() {
-            return Ok(Vec::new());
-        }
-
-        let row = serde_json::from_str::<TradeCoverageStateRow>(trimmed)?;
-        let intervals = serde_json::from_str::<Vec<TimeInterval>>(&row.intervals_json)
-            .context("failed to parse trade coverage intervals_json")?;
-        Ok(intervals)
-    }
-
-    pub async fn replace_trade_coverage_intervals(
-        &self,
-        pair_code: &str,
-        intervals: &[TimeInterval],
-    ) -> Result<()> {
-        let intervals_json = serde_json::to_string(intervals)?;
-        let updated_at_ms = Utc::now().timestamp_millis();
-        let row = TradeCoverageStateWriteRow {
-            pair_code,
-            intervals_json: &intervals_json,
-            updated_at_ms,
-        };
-
-        self.insert_json_each_row(
-            "market_data_trade_coverage_state",
-            &format!("{}\n", serde_json::to_string(&row)?),
-        )
-        .await
-    }
-
     pub async fn upsert_kline(&self, event: &NormalizedKlineEvent) -> Result<()> {
         let occurred_at_ms = parse_rfc3339_to_millis(&event.occurred_at)?;
         let updated_at_ms = Utc::now().timestamp_millis();
@@ -1501,6 +1421,25 @@ impl Database {
         Ok(rows_to_insert.len())
     }
 
+    pub async fn insert_trades_batch_fast(
+        &self,
+        events: &[NormalizedTradeEvent],
+        use_rowbinary: bool,
+    ) -> Result<usize> {
+        let rows_to_insert = dedupe_trade_events(events);
+        if rows_to_insert.is_empty() {
+            return Ok(0);
+        }
+
+        if use_rowbinary {
+            self.upsert_trades_batch_rowbinary(&rows_to_insert).await?;
+        } else {
+            self.upsert_trades_batch(&rows_to_insert).await?;
+        }
+
+        Ok(rows_to_insert.len())
+    }
+
     pub async fn insert_backtest_run(&self, run: &StoredBacktestRunWrite) -> Result<()> {
         let row = StoredBacktestRunWriteRow {
             backtest_id: &run.backtest_id,
@@ -1542,23 +1481,7 @@ impl Database {
             return Ok(Vec::new());
         }
 
-        let mut unique_by_id: HashMap<i64, NormalizedTradeEvent> =
-            HashMap::with_capacity(events.len());
-        for event in events {
-            match unique_by_id.get_mut(&event.aggregate_trade_id) {
-                Some(existing) => {
-                    if event.trade_time > existing.trade_time {
-                        *existing = event;
-                    }
-                }
-                None => {
-                    unique_by_id.insert(event.aggregate_trade_id, event);
-                }
-            }
-        }
-
-        let mut deduped = unique_by_id.into_values().collect::<Vec<_>>();
-        deduped.sort_by_key(|event| (event.trade_time, event.aggregate_trade_id));
+        let deduped = dedupe_trade_events(&events);
 
         let min_trade_time = deduped.first().map(|event| event.trade_time).unwrap_or(0);
         let max_trade_time = deduped.last().map(|event| event.trade_time).unwrap_or(0);
@@ -1631,6 +1554,8 @@ impl Database {
 
         Ok(ids)
     }
+
+    
 
     // latest_research_backtest_runs has been removed; callers should query
     // research_backtest_runs directly for latest-per-key projections.
@@ -2268,6 +2193,38 @@ impl Database {
         let body = response.text().await.unwrap_or_default();
         bail!("historical store request failed with status {status}: {body}");
     }
+}
+
+fn dedupe_trade_events(events: &[NormalizedTradeEvent]) -> Vec<NormalizedTradeEvent> {
+    if events.is_empty() {
+        return Vec::new();
+    }
+
+    let mut unique_by_pair_and_id: HashMap<(String, i64), NormalizedTradeEvent> =
+        HashMap::with_capacity(events.len());
+    for event in events {
+        let key = (event.pair_code.clone(), event.aggregate_trade_id);
+        match unique_by_pair_and_id.get_mut(&key) {
+            Some(existing) => {
+                if event.trade_time > existing.trade_time {
+                    *existing = event.clone();
+                }
+            }
+            None => {
+                unique_by_pair_and_id.insert(key, event.clone());
+            }
+        }
+    }
+
+    let mut deduped = unique_by_pair_and_id.into_values().collect::<Vec<_>>();
+    deduped.sort_by_key(|event| {
+        (
+            event.pair_code.clone(),
+            event.trade_time,
+            event.aggregate_trade_id,
+        )
+    });
+    deduped
 }
 
 fn sql_ident(value: &str) -> String {
