@@ -14,6 +14,10 @@ pub struct BacktestRequest {
     pub batch_completed_count: Option<usize>,
     pub analysis_setting_id: String,
     #[serde(default)]
+    pub symbol_code: Option<String>,
+    #[serde(default)]
+    pub timeframe_code: Option<String>,
+    #[serde(default)]
     pub risk_profile_name: Option<String>,
     pub start_time: Option<i64>,
     pub end_time: Option<i64>,

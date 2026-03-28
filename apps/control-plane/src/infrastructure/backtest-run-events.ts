@@ -9,6 +9,7 @@ import {
   type BacktestRunProjectionInput,
   upsertBacktestRunProjection,
 } from "../features/ops.js";
+import { publishOpsEvent } from "./ops-events.js";
 
 export type BacktestCompletedEventEnvelope = {
   eventId: string;
@@ -286,6 +287,13 @@ export const createBacktestRunProjectionConsumer = (
                 backtestId: envelope.data.backtestId,
               });
             }
+            publishOpsEvent({
+              type: "ops.backtests.updated",
+              payload: {
+                symbols: [envelope.data.symbol],
+                timeframeCodes: [envelope.data.timeframeCode],
+              },
+            });
           } catch (error) {
             logger.error(
               { err: error, rawValue },

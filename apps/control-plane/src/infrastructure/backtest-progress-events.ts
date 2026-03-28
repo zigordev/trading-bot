@@ -7,6 +7,7 @@ import {
   upsertBacktestBatchFromProgressEvent,
   upsertBacktestJobFromProgressEvent,
 } from "../features/ops.js";
+import { publishOpsEvent } from "./ops-events.js";
 
 type KafkaAdmin = Pick<
   ReturnType<Kafka["admin"]>,
@@ -221,6 +222,13 @@ export const createBacktestProgressConsumer = (
                 stage: envelope.data.stage,
                 progressPercent: envelope.data.progressPercent,
               });
+              publishOpsEvent({
+                type: "ops.backtests.updated",
+                payload: {
+                  symbols: [envelope.data.symbol],
+                  timeframeCodes: [envelope.data.timeframeCode],
+                },
+              });
             } else {
               await upsertBacktestBatchFromProgressEvent(pool, {
                 batchId: envelope.data.batchId,
@@ -233,6 +241,13 @@ export const createBacktestProgressConsumer = (
                 totalCount: envelope.data.totalCount,
                 completedCount: envelope.data.completedCount,
                 runningCount: envelope.data.runningCount,
+              });
+              publishOpsEvent({
+                type: "ops.backtests.updated",
+                payload: {
+                  symbols: [envelope.data.symbol],
+                  timeframeCodes: [envelope.data.timeframeCode],
+                },
               });
             }
           } catch (error) {

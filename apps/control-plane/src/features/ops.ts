@@ -79,7 +79,6 @@ export type DataReadinessProjectionRecord = {
   requestedStartTime: number;
   requestedEndTime: number;
   requiredHistoryMs: number;
-  completenessPercent: number;
   details: string | null;
   kline: Record<string, unknown> | null;
   trades: Record<string, unknown> | null;
@@ -93,6 +92,33 @@ export type DataReadinessProjectionInput = Omit<
   DataReadinessProjectionRecord,
   "createdAt" | "updatedAt"
 >;
+
+const isZeroReadinessDimension = (
+  value: Record<string, unknown> | null,
+): boolean => {
+  if (value === null) {
+    return false;
+  }
+
+  return (
+    Number(value.rowCount ?? 0) === 0 &&
+    Number(value.missingCount ?? 0) === 0 &&
+    Number(value.coveragePercent ?? 0) === 0 &&
+    value.minTime === null &&
+    value.maxTime === null &&
+    value.latestTime === null &&
+    value.complete === false
+  );
+};
+
+const isEmptyBootstrapLikeDataReadinessProjection = (
+  item: DataReadinessProjectionInput,
+): boolean =>
+  (item.status === "partial"
+    ? item.details === null
+    : item.status === "error") &&
+  isZeroReadinessDimension(item.kline) &&
+  isZeroReadinessDimension(item.trades);
 
 const parseJsonObject = (value: unknown): Record<string, unknown> | null => {
   if (value === null || value === undefined) {
@@ -220,7 +246,6 @@ const mapDataReadinessProjectionRow = (
   requestedStartTime: Number(row.requested_start_time),
   requestedEndTime: Number(row.requested_end_time),
   requiredHistoryMs: Number(row.required_history_ms),
-  completenessPercent: Number(row.completeness_percent),
   details: row.details === null ? null : String(row.details),
   kline: parseJsonObject(row.kline_json),
   trades: parseJsonObject(row.trades_json),
@@ -333,7 +358,6 @@ export const ensureOpsSchema = async (pool: Pool): Promise<void> => {
       requested_start_time BIGINT NOT NULL,
       requested_end_time BIGINT NOT NULL,
       required_history_ms BIGINT NOT NULL,
-      completeness_percent DOUBLE PRECISION NOT NULL,
       details TEXT,
       kline_json JSONB,
       trades_json JSONB,
@@ -345,6 +369,11 @@ export const ensureOpsSchema = async (pool: Pool): Promise<void> => {
       CONSTRAINT ops_data_readiness_status_valid
         CHECK (status IN ('ready', 'partial', 'missing', 'error'))
     );
+  `);
+
+  await pool.query(`
+    ALTER TABLE ops_data_readiness
+      DROP COLUMN IF EXISTS completeness_percent
   `);
 
   await pool.query(`
@@ -849,9 +878,15 @@ export const replaceDataReadinessProjections = async (
 
   try {
     await client.query("BEGIN");
-    await client.query("DELETE FROM ops_data_readiness");
+
+    if (items.length === 0) {
+      await client.query("DELETE FROM ops_data_readiness");
+      await client.query("COMMIT");
+      return;
+    }
 
     for (const item of items) {
+      const isPlaceholder = isEmptyBootstrapLikeDataReadinessProjection(item);
       await client.query(
         `
           INSERT INTO ops_data_readiness (
@@ -862,7 +897,6 @@ export const replaceDataReadinessProjections = async (
             requested_start_time,
             requested_end_time,
             required_history_ms,
-            completeness_percent,
             details,
             kline_json,
             trades_json,
@@ -878,12 +912,31 @@ export const replaceDataReadinessProjections = async (
             $6,
             $7,
             $8,
-            $9,
+            $9::jsonb,
             $10::jsonb,
-            $11::jsonb,
-            $12,
-            $13::timestamptz
+            $11,
+            $12::timestamptz
           )
+          ON CONFLICT (symbol_code, timeframe_code) DO UPDATE
+             SET status = EXCLUDED.status,
+                 analysis_setting_ids_json = EXCLUDED.analysis_setting_ids_json,
+                 requested_start_time = EXCLUDED.requested_start_time,
+                 requested_end_time = EXCLUDED.requested_end_time,
+                 required_history_ms = EXCLUDED.required_history_ms,
+                 details = EXCLUDED.details,
+                 kline_json = EXCLUDED.kline_json,
+                 trades_json = EXCLUDED.trades_json,
+                 source_event_id = EXCLUDED.source_event_id,
+                 source_occurred_at = EXCLUDED.source_occurred_at,
+                 updated_at = NOW()
+           WHERE ops_data_readiness.source_occurred_at <= EXCLUDED.source_occurred_at
+             AND (
+               NOT $13::boolean
+               OR (
+                 COALESCE((ops_data_readiness.kline_json->>'rowCount')::bigint, 0) = 0
+                 AND COALESCE((ops_data_readiness.trades_json->>'rowCount')::bigint, 0) = 0
+               )
+             )
         `,
         [
           item.symbolCode,
@@ -893,12 +946,12 @@ export const replaceDataReadinessProjections = async (
           item.requestedStartTime,
           item.requestedEndTime,
           item.requiredHistoryMs,
-          item.completenessPercent,
           item.details,
           item.kline === null ? null : JSON.stringify(item.kline),
           item.trades === null ? null : JSON.stringify(item.trades),
           item.sourceEventId,
           item.sourceOccurredAt,
+          isPlaceholder,
         ],
       );
     }
@@ -925,7 +978,6 @@ export const listDataReadinessProjections = async (
         requested_start_time,
         requested_end_time,
         required_history_ms,
-        completeness_percent,
         details,
         kline_json,
         trades_json,

@@ -32,7 +32,7 @@ export const testConfig: AppConfig = {
   researchBacktestingBaseUrl: "http://research-backtesting:8110",
   upstreamRequestTimeoutMs: 5_000,
   opsStreamIntervalMs: 5_000,
-  backtestWarmupMultiplier: 5,
+  backtestWarmupCandles: 200,
   backtestTimerangeMsByTimeframe: {
     "1m": 600_000_000,
     "3m": 1_800_000_000,

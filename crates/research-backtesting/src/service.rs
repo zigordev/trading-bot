@@ -272,6 +272,18 @@ struct DataReadinessSnapshotItem {
     requested_end_time: i64,
 }
 
+#[derive(Clone, Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ControlPlaneDataReadinessRecord {
+    status: String,
+    symbol_code: String,
+    timeframe_code: String,
+    #[serde(default)]
+    analysis_setting_ids: Vec<String>,
+    requested_start_time: i64,
+    requested_end_time: i64,
+}
+
 #[derive(Clone)]
 struct TradeWindowCache {
     pair_code: String,
@@ -348,6 +360,7 @@ impl ResearchBacktestingService {
         }
 
         service.start_data_readiness_consumer();
+        service.start_scheduled_backtests_loop();
 
         Ok(service)
     }
@@ -362,6 +375,30 @@ impl ResearchBacktestingService {
         tokio::spawn(async move {
             if let Err(error) = service.consume_data_readiness_events().await {
                 error!(error = %error, "data-readiness trigger consumer stopped");
+            }
+        });
+    }
+
+    fn start_scheduled_backtests_loop(&self) {
+        if !self.inner.config.scheduled_backtests_enabled {
+            return;
+        }
+
+        let service = self.clone();
+        tokio::spawn(async move {
+            if let Err(error) = service.run_scheduled_backtest_scan("startup").await {
+                warn!(error = %error, "scheduled backtest startup scan failed");
+            }
+
+            loop {
+                tokio::time::sleep(Self::duration_until_next_scheduled_backtest_run(
+                    service.inner.config.scheduled_backtests_interval_seconds,
+                ))
+                .await;
+
+                if let Err(error) = service.run_scheduled_backtest_scan("periodic").await {
+                    warn!(error = %error, "scheduled backtest periodic scan failed");
+                }
             }
         });
     }
@@ -437,6 +474,51 @@ impl ResearchBacktestingService {
         }
 
         Ok(())
+    }
+
+    async fn run_scheduled_backtest_scan(&self, reason: &str) -> Result<usize> {
+        let ready_items = self.fetch_ready_datasets_from_control_plane().await?;
+        let mut started = 0usize;
+
+        for item in ready_items {
+            started = started.saturating_add(
+                self.trigger_backtests_for_ready_dataset(&item, reason).await?,
+            );
+        }
+
+        info!(reason, started, "scheduled backtest scan processed ready datasets");
+        Ok(started)
+    }
+
+    async fn fetch_ready_datasets_from_control_plane(
+        &self,
+    ) -> Result<Vec<DataReadinessSnapshotItem>> {
+        let response = self
+            .inner
+            .control_plane_client
+            .get(format!(
+                "{}/v1/ops/data-readiness",
+                self.inner.config.control_plane_base_url
+            ))
+            .send()
+            .await?;
+        let response = response.error_for_status()?;
+        let rows = response
+            .json::<Vec<ControlPlaneDataReadinessRecord>>()
+            .await?;
+
+        Ok(rows
+            .into_iter()
+            .filter(|row| row.status == "ready")
+            .map(|row| DataReadinessSnapshotItem {
+                status: row.status,
+                symbol_code: row.symbol_code,
+                timeframe_code: row.timeframe_code,
+                analysis_setting_ids: row.analysis_setting_ids,
+                requested_start_time: row.requested_start_time,
+                requested_end_time: row.requested_end_time,
+            })
+            .collect())
     }
 
     pub fn metrics_text(&self) -> Result<String> {
@@ -895,6 +977,8 @@ impl ResearchBacktestingService {
                 batch_total_count: Some(total_count),
                 batch_completed_count: Some(started),
                 analysis_setting_id: analysis.id.clone(),
+                symbol_code: Some(analysis.symbol.clone()),
+                timeframe_code: Some(analysis.timeframe_code.clone()),
                 risk_profile_name: Some(analysis.risk_profile_name.clone()),
                 start_time: Some(item.requested_start_time),
                 end_time: Some(item.requested_end_time),
@@ -1154,7 +1238,17 @@ impl ResearchBacktestingService {
         let analyses = self.fetch_runtime_analysis_settings().await?;
         let base_analysis = analyses
             .into_iter()
-            .find(|record| record.id == request.analysis_setting_id)
+            .find(|record| {
+                record.id == request.analysis_setting_id
+                    && match request.symbol_code.as_ref() {
+                        Some(symbol_code) => record.symbol == *symbol_code,
+                        None => true,
+                    }
+                    && match request.timeframe_code.as_ref() {
+                        Some(timeframe_code) => record.timeframe_code == *timeframe_code,
+                        None => true,
+                    }
+            })
             .with_context(|| {
                 format!(
                     "analysis setting {} was not found in the resolved runtime config",
@@ -1186,7 +1280,7 @@ impl ResearchBacktestingService {
             &analysis,
             request,
             &spec,
-            self.inner.config.default_warmup_multiplier,
+            self.inner.config.backtest_warmup_candles,
             &self.inner.config.backtesting_timerange_ms_by_timeframe,
         )?;
         let replay_trade_start_time = time_window.requested_start_time;
@@ -1419,6 +1513,17 @@ impl ResearchBacktestingService {
             .filter(|profile| profile.enabled)
             .collect())
     }
+
+    fn duration_until_next_scheduled_backtest_run(interval_seconds: u64) -> StdDuration {
+        let interval_ms = (interval_seconds.max(1) as i64).saturating_mul(1000);
+        let now_ms = Utc::now().timestamp_millis();
+        let next_ms = now_ms
+            .div_euclid(interval_ms)
+            .saturating_add(1)
+            .saturating_mul(interval_ms)
+            .max(now_ms.saturating_add(1));
+        StdDuration::from_millis(next_ms.saturating_sub(now_ms) as u64)
+    }
 }
 
 fn apply_risk_profile(
@@ -1568,8 +1673,8 @@ fn readiness_run_key(
 fn resolve_time_window(
     analysis: &ResolvedAnalysisSettingsRecord,
     request: &BacktestRequest,
-    spec: &AnalysisSpec,
-    default_warmup_multiplier: usize,
+    _spec: &AnalysisSpec,
+    backtest_warmup_candles: usize,
     backtesting_timerange_ms_by_timeframe: &std::collections::BTreeMap<String, i64>,
 ) -> Result<BacktestTimeWindow> {
     let configured_duration_ms = configured_duration_ms(
@@ -1606,11 +1711,7 @@ fn resolve_time_window(
             }
         };
 
-    let effective_warmup_candles = request.warmup_candles.unwrap_or_else(|| {
-        spec.slow_period
-            .saturating_mul(default_warmup_multiplier)
-            .max(spec.slow_period)
-    });
+    let effective_warmup_candles = request.warmup_candles.unwrap_or(backtest_warmup_candles);
     let warmup_ms = (effective_warmup_candles as i64)
         .checked_mul(analysis.timeframe.period_ms)
         .context("warmup window overflowed i64")?;
@@ -2409,6 +2510,8 @@ mod tests {
             batch_total_count: None,
             batch_completed_count: None,
             analysis_setting_id: analysis.id.clone(),
+            symbol_code: Some(analysis.symbol.clone()),
+            timeframe_code: Some(analysis.timeframe_code.clone()),
             risk_profile_name: None,
             start_time: Some(1_000_000),
             end_time: None,
