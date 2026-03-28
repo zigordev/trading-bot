@@ -231,7 +231,7 @@ pub fn load_config() -> Result<AppConfig> {
         ),
         data_readiness_publish_interval_ms: parse_u64(
             "DATA_READINESS_PUBLISH_INTERVAL_MS",
-            60_000,
+            10_000,
         )?,
         config_refresh_debounce_ms: parse_u64("CONFIG_REFRESH_DEBOUNCE_MS", 500)?,
         readiness_max_config_age_ms: parse_u64("READINESS_MAX_CONFIG_AGE_MS", 120000)?,
@@ -385,7 +385,7 @@ mod tests {
             config.data_readiness_events_topic,
             "trading-bot.market-data.data-readiness-snapshot.v1"
         );
-        assert_eq!(config.data_readiness_publish_interval_ms, 60_000);
+        assert_eq!(config.data_readiness_publish_interval_ms, 10_000);
         assert_eq!(config.binance_rest_max_retries, 5);
         assert_eq!(config.binance_rest_retry_backoff_ms, 500);
         assert_eq!(config.binance_rest_request_weight_limit_per_minute, 6000);
