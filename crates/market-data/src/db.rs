@@ -97,6 +97,19 @@ struct WindowCoverageRow {
 }
 
 #[derive(Debug, Deserialize)]
+struct AggregateTradeIdCoverageRow {
+    first_aggregate_trade_id: Option<i64>,
+    last_aggregate_trade_id: Option<i64>,
+    distinct_trade_count: u64,
+}
+
+#[derive(Debug, Deserialize)]
+struct AggregateTradeIdGapSummaryRow {
+    gap_count: usize,
+    missing_trade_count: i64,
+}
+
+#[derive(Debug, Deserialize)]
 struct AggregateTradeIdRow {
     aggregate_trade_id: i64,
 }
@@ -106,6 +119,19 @@ pub struct WindowCoverage {
     pub row_count: u64,
     pub min_time: Option<i64>,
     pub max_time: Option<i64>,
+}
+
+#[derive(Clone, Debug)]
+pub struct AggregateTradeIdCoverage {
+    pub first_aggregate_trade_id: Option<i64>,
+    pub last_aggregate_trade_id: Option<i64>,
+    pub distinct_trade_count: u64,
+}
+
+#[derive(Clone, Debug)]
+pub struct AggregateTradeIdGapSummary {
+    pub gap_count: usize,
+    pub missing_trade_count: i64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -783,6 +809,60 @@ impl Database {
         Ok(gaps)
     }
 
+    pub async fn kline_gap_count_in_range(
+        &self,
+        pair_code: &str,
+        timeframe_code: &str,
+        start_time: i64,
+        end_time: i64,
+        period_ms: i64,
+    ) -> Result<usize> {
+        let safe_period_ms = period_ms.max(1);
+        let sql = format!(
+            r#"
+            SELECT count() AS gap_count
+            FROM
+            (
+              SELECT
+                open_time,
+                nullIf(
+                  lagInFrame(open_time) OVER (
+                    ORDER BY open_time ASC
+                    ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+                  ),
+                  0
+                ) AS prev_open_time
+              FROM
+              (
+                SELECT DISTINCT open_time
+                FROM {}.market_data_klines
+                WHERE pair_code = '{}'
+                  AND timeframe_code = '{}'
+                  AND open_time >= {}
+                  AND open_time <= {}
+              )
+            )
+            WHERE prev_open_time IS NOT NULL
+              AND (open_time - prev_open_time) > {}
+            FORMAT JSONEachRow
+            "#,
+            sql_ident(&self.database),
+            sql_string(pair_code),
+            sql_string(timeframe_code),
+            start_time,
+            end_time,
+            safe_period_ms
+        );
+
+        #[derive(Deserialize)]
+        struct GapCountRow {
+            gap_count: usize,
+        }
+
+        let row = serde_json::from_str::<GapCountRow>(self.query_text(&sql).await?.trim())?;
+        Ok(row.gap_count)
+    }
+
     pub async fn trade_window_coverage_in_range(
         &self,
         pair_code: &str,
@@ -807,6 +887,40 @@ impl Database {
         );
 
         self.query_window_coverage(&sql).await
+    }
+
+    pub async fn trade_aggregate_id_coverage_in_range(
+        &self,
+        pair_code: &str,
+        start_time: i64,
+        end_time: i64,
+    ) -> Result<AggregateTradeIdCoverage> {
+        let sql = format!(
+            r#"
+            SELECT
+              min(aggregate_trade_id) AS first_aggregate_trade_id,
+              max(aggregate_trade_id) AS last_aggregate_trade_id,
+              count(DISTINCT aggregate_trade_id) AS distinct_trade_count
+            FROM {}.market_data_trades
+            WHERE pair_code = '{}'
+              AND trade_time >= {}
+              AND trade_time < {}
+            FORMAT JSONEachRow
+            "#,
+            sql_ident(&self.database),
+            sql_string(pair_code),
+            start_time,
+            end_time
+        );
+
+        let row = serde_json::from_str::<AggregateTradeIdCoverageRow>(
+            self.query_text(&sql).await?.trim(),
+        )?;
+        Ok(AggregateTradeIdCoverage {
+            first_aggregate_trade_id: row.first_aggregate_trade_id,
+            last_aggregate_trade_id: row.last_aggregate_trade_id,
+            distinct_trade_count: row.distinct_trade_count,
+        })
     }
 
     pub async fn trade_time_gaps_in_range(
@@ -882,6 +996,58 @@ impl Database {
             });
         }
         Ok(gaps)
+    }
+
+    pub async fn trade_time_gap_count_in_range(
+        &self,
+        pair_code: &str,
+        start_time: i64,
+        end_time: i64,
+        min_gap_ms: i64,
+    ) -> Result<usize> {
+        let safe_min_gap_ms = min_gap_ms.max(1);
+        let sql = format!(
+            r#"
+            SELECT count() AS gap_count
+            FROM
+            (
+              SELECT
+                trade_time,
+                nullIf(
+                  lagInFrame(trade_time) OVER (
+                    ORDER BY trade_time ASC
+                    ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+                  ),
+                  0
+                ) AS prev_trade_time
+              FROM
+              (
+                SELECT DISTINCT
+                  trade_time
+                FROM {}.market_data_trades
+                WHERE pair_code = '{}'
+                  AND trade_time >= {}
+                  AND trade_time < {}
+              )
+            )
+            WHERE prev_trade_time IS NOT NULL
+              AND (trade_time - prev_trade_time) > {}
+            FORMAT JSONEachRow
+            "#,
+            sql_ident(&self.database),
+            sql_string(pair_code),
+            start_time,
+            end_time,
+            safe_min_gap_ms
+        );
+
+        #[derive(Deserialize)]
+        struct GapCountRow {
+            gap_count: usize,
+        }
+
+        let row = serde_json::from_str::<GapCountRow>(self.query_text(&sql).await?.trim())?;
+        Ok(row.gap_count)
     }
 
     pub async fn aggregate_trade_id_gaps_in_range(
@@ -973,6 +1139,108 @@ impl Database {
             });
         }
         Ok(gaps)
+    }
+
+    pub async fn aggregate_trade_id_gap_count_in_range(
+        &self,
+        pair_code: &str,
+        start_time: i64,
+        end_time: i64,
+    ) -> Result<usize> {
+        let sql = format!(
+            r#"
+            SELECT count() AS gap_count
+            FROM
+            (
+              SELECT
+                aggregate_trade_id,
+                nullIf(
+                  lagInFrame(aggregate_trade_id) OVER (
+                    ORDER BY aggregate_trade_id ASC
+                    ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+                  ),
+                  0
+                ) AS prev_aggregate_trade_id
+              FROM
+              (
+                SELECT
+                  aggregate_trade_id
+                FROM {}.market_data_trades
+                WHERE pair_code = '{}'
+                  AND trade_time >= {}
+                  AND trade_time < {}
+                GROUP BY aggregate_trade_id
+              )
+            )
+            WHERE prev_aggregate_trade_id IS NOT NULL
+              AND (aggregate_trade_id - prev_aggregate_trade_id) > 1
+            FORMAT JSONEachRow
+            "#,
+            sql_ident(&self.database),
+            sql_string(pair_code),
+            start_time,
+            end_time
+        );
+
+        #[derive(Deserialize)]
+        struct GapCountRow {
+            gap_count: usize,
+        }
+
+        let row = serde_json::from_str::<GapCountRow>(self.query_text(&sql).await?.trim())?;
+        Ok(row.gap_count)
+    }
+
+    pub async fn aggregate_trade_id_gap_summary_in_range(
+        &self,
+        pair_code: &str,
+        start_time: i64,
+        end_time: i64,
+    ) -> Result<AggregateTradeIdGapSummary> {
+        let sql = format!(
+            r#"
+            SELECT
+              count() AS gap_count,
+              coalesce(sum(aggregate_trade_id - prev_aggregate_trade_id - 1), 0) AS missing_trade_count
+            FROM
+            (
+              SELECT
+                aggregate_trade_id,
+                nullIf(
+                  lagInFrame(aggregate_trade_id) OVER (
+                    ORDER BY aggregate_trade_id ASC
+                    ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+                  ),
+                  0
+                ) AS prev_aggregate_trade_id
+              FROM
+              (
+                SELECT
+                  aggregate_trade_id
+                FROM {}.market_data_trades
+                WHERE pair_code = '{}'
+                  AND trade_time >= {}
+                  AND trade_time < {}
+                GROUP BY aggregate_trade_id
+              )
+            )
+            WHERE prev_aggregate_trade_id IS NOT NULL
+              AND (aggregate_trade_id - prev_aggregate_trade_id) > 1
+            FORMAT JSONEachRow
+            "#,
+            sql_ident(&self.database),
+            sql_string(pair_code),
+            start_time,
+            end_time
+        );
+
+        let row = serde_json::from_str::<AggregateTradeIdGapSummaryRow>(
+            self.query_text(&sql).await?.trim(),
+        )?;
+        Ok(AggregateTradeIdGapSummary {
+            gap_count: row.gap_count,
+            missing_trade_count: row.missing_trade_count,
+        })
     }
 
     pub async fn latest_trade_checkpoint(

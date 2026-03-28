@@ -11,6 +11,8 @@ pub struct AppConfig {
     pub backtest_progress_events_topic: String,
     pub data_readiness_events_topic: String,
     pub data_readiness_events_consumer_group_id: String,
+    pub scheduled_backtests_enabled: bool,
+    pub scheduled_backtests_interval_seconds: u64,
     pub control_plane_base_url: String,
     pub control_plane_request_timeout_ms: u64,
     pub historical_store_host: String,
@@ -20,7 +22,7 @@ pub struct AppConfig {
     pub historical_store_user: Option<String>,
     pub historical_store_password: Option<String>,
     pub readiness_max_dependency_age_ms: u64,
-    pub default_warmup_multiplier: usize,
+    pub backtest_warmup_candles: usize,
     pub max_backtest_klines: usize,
     pub max_backtest_trades: usize,
     /// Size of each ClickHouse replay page when loading trades for a backtest.
@@ -78,6 +80,15 @@ fn parse_usize(key: &str, default: usize) -> Result<usize> {
     }
 
     Ok(parsed)
+}
+
+fn parse_bool(key: &str, default: bool) -> Result<bool> {
+    let raw = env_or_default(key, if default { "true" } else { "false" });
+    match raw.to_ascii_lowercase().as_str() {
+        "1" | "true" | "yes" | "on" => Ok(true),
+        "0" | "false" | "no" | "off" => Ok(false),
+        _ => bail!("{key} must be a valid boolean"),
+    }
 }
 
 fn parse_f64(key: &str, default: f64) -> Result<f64> {
@@ -173,6 +184,11 @@ pub fn load_config() -> Result<AppConfig> {
                 "trading-bot-research-backtesting-data-readiness-trigger-v1",
             )
         }),
+        scheduled_backtests_enabled: parse_bool("SCHEDULED_BACKTESTS_ENABLED", true)?,
+        scheduled_backtests_interval_seconds: parse_u64(
+            "SCHEDULED_BACKTESTS_INTERVAL_SECONDS",
+            3600,
+        )?,
         control_plane_base_url: env_or_default(
             "CONTROL_PLANE_BASE_URL",
             "http://trading-bot-api:8080",
@@ -191,7 +207,7 @@ pub fn load_config() -> Result<AppConfig> {
         historical_store_user,
         historical_store_password,
         readiness_max_dependency_age_ms: parse_u64("READINESS_MAX_DEPENDENCY_AGE_MS", 120000)?,
-        default_warmup_multiplier: parse_usize("BACKTEST_WARMUP_MULTIPLIER", 5)?,
+        backtest_warmup_candles: parse_usize("BACKTEST_WARMUP_CANDLES", 200)?,
         max_backtest_klines: parse_usize("BACKTEST_MAX_KLINES", 100000)?,
         max_backtest_trades: parse_usize("BACKTEST_MAX_TRADES", 1000000)?,
         backtest_trade_replay_page_ms: parse_u64("BACKTEST_TRADE_REPLAY_PAGE_MS", 3_600_000)?,
@@ -213,7 +229,7 @@ mod tests {
     fn load_config_uses_defaults() {
         unsafe {
             std::env::remove_var("SERVICE_NAME");
-            std::env::remove_var("BACKTEST_WARMUP_MULTIPLIER");
+            std::env::remove_var("BACKTEST_WARMUP_CANDLES");
             std::env::remove_var("BACKTEST_TIMERANGE_MS_BY_TIMEFRAME");
         }
 
@@ -224,7 +240,9 @@ mod tests {
             config.data_readiness_events_topic,
             "trading-bot.market-data.data-readiness-snapshot.v1"
         );
-        assert_eq!(config.default_warmup_multiplier, 5);
+        assert!(config.scheduled_backtests_enabled);
+        assert_eq!(config.scheduled_backtests_interval_seconds, 3600);
+        assert_eq!(config.backtest_warmup_candles, 200);
         assert_eq!(config.max_backtest_trades, 1_000_000);
         assert_eq!(config.backtest_result_retention_days, 365);
         assert_eq!(config.default_fee_bps, 0.0);

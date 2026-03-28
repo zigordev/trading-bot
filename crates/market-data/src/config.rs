@@ -70,7 +70,7 @@ pub struct AppConfig {
     /// If true, historical trade backfill flushes into ClickHouse using
     /// `INSERT ... FORMAT RowBinary` (faster than JSONEachRow for large batches).
     pub historical_trade_backfill_use_rowbinary_insert: bool,
-    pub default_warmup_multiplier: usize,
+    pub backtest_warmup_candles: usize,
     /// Extra completed klines kept beyond the nominal backtest window plus
     /// warmup so market-data retention matches research-backtesting's replay
     /// cushion when validating/reading kline windows.
@@ -299,7 +299,7 @@ pub fn load_config() -> Result<AppConfig> {
             "HISTORICAL_TRADE_BACKFILL_USE_ROW_BINARY_INSERT",
             true,
         )?,
-        default_warmup_multiplier: parse_usize("BACKTEST_WARMUP_MULTIPLIER", 5)?,
+        backtest_warmup_candles: parse_usize("BACKTEST_WARMUP_CANDLES", 200)?,
         backtest_kline_headroom_candles: parse_usize("BACKTEST_KLINE_HEADROOM_CANDLES", 4)?,
         scheduled_backtest_history_headroom_ms: parse_u64(
             "SCHEDULED_BACKTEST_HISTORY_HEADROOM_MS",
@@ -364,6 +364,7 @@ mod tests {
             std::env::remove_var("HISTORICAL_TRADE_BACKFILL_MAX_BATCHES");
             std::env::remove_var("HISTORICAL_BACKFILL_MAX_IN_FLIGHT_TRADE_ROWS");
             std::env::remove_var("BACKTEST_KLINE_HEADROOM_CANDLES");
+            std::env::remove_var("BACKTEST_WARMUP_CANDLES");
             std::env::remove_var("SCHEDULED_BACKTEST_HISTORY_HEADROOM_MS");
         }
 
@@ -392,6 +393,7 @@ mod tests {
         assert_eq!(config.binance_rest_warn_utilization_percent, 85);
         assert_eq!(config.historical_trade_backfill_limit, 1000);
         assert_eq!(config.historical_trade_backfill_max_batches, 100);
+        assert_eq!(config.backtest_warmup_candles, 200);
         assert_eq!(config.backtest_kline_headroom_candles, 4);
         assert_eq!(config.scheduled_backtest_history_headroom_ms, 172_800_000);
     }

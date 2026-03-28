@@ -7,6 +7,7 @@ import {
   replaceDataReadinessProjections,
   type DataReadinessProjectionInput,
 } from "../features/ops.js";
+import { publishOpsEvent } from "./ops-events.js";
 
 type KafkaAdmin = Pick<
   ReturnType<Kafka["admin"]>,
@@ -88,7 +89,6 @@ const parseEnvelope = (value: string): DataReadinessSnapshotEnvelope | null => {
           requestedStartTime: Number(item.requestedStartTime ?? 0),
           requestedEndTime: Number(item.requestedEndTime ?? 0),
           requiredHistoryMs: Number(item.requiredHistoryMs ?? 0),
-          completenessPercent: Number(item.completenessPercent ?? 0),
           details: typeof item.details === "string" ? item.details : null,
           kline:
             item.kline && typeof item.kline === "object" && !Array.isArray(item.kline)
@@ -179,6 +179,15 @@ export const createDataReadinessProjectionConsumer = (
                 sourceOccurredAt: envelope.occurredAt,
               })),
             );
+            publishOpsEvent({
+              type: "ops.data-readiness.updated",
+              payload: {
+                symbols: [...new Set(envelope.data.items.map((item) => item.symbolCode))],
+                timeframeCodes: [
+                  ...new Set(envelope.data.items.map((item) => item.timeframeCode)),
+                ],
+              },
+            });
           } catch (error) {
             logger.error(
               { err: error, rawValue },

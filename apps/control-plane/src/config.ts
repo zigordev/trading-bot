@@ -18,8 +18,9 @@ export type AppConfig = {
   marketDataBaseUrl: string;
   researchBacktestingBaseUrl: string;
   upstreamRequestTimeoutMs: number;
+  binanceReferenceBaseUrl: string;
   opsStreamIntervalMs: number;
-  backtestWarmupMultiplier: number;
+  backtestWarmupCandles: number;
   backtestTimerangeMsByTimeframe: Record<string, number>;
 };
 
@@ -101,13 +102,15 @@ export const loadConfig = (): AppConfig => {
       process.env.UPSTREAM_REQUEST_TIMEOUT_MS,
       5000,
     ),
+    binanceReferenceBaseUrl:
+      process.env.BINANCE_REFERENCE_BASE_URL ?? "https://api.binance.com",
     opsStreamIntervalMs: parsePositiveInteger(
       process.env.OPS_STREAM_INTERVAL_MS,
       5000,
     ),
-    backtestWarmupMultiplier: parsePositiveInteger(
-      process.env.BACKTEST_WARMUP_MULTIPLIER,
-      5,
+    backtestWarmupCandles: parsePositiveInteger(
+      process.env.BACKTEST_WARMUP_CANDLES,
+      200,
     ),
     backtestTimerangeMsByTimeframe: parseTimerangeMap(
       process.env.BACKTEST_TIMERANGE_MS_BY_TIMEFRAME,
