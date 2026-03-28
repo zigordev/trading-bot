@@ -25,6 +25,7 @@ import {
   createDataReadinessProjectionConsumer,
 } from "./infrastructure/data-readiness-events.js";
 import { createPool } from "./infrastructure/database.js";
+import { closeOpsSockets } from "./infrastructure/ops-events.js";
 import { registerConfigurationRoutes } from "./routes/configuration.js";
 import { registerHealthRoutes } from "./routes/health.js";
 import { registerOpsRoutes } from "./routes/ops.js";
@@ -113,11 +114,12 @@ await app.register(fastifySwaggerUi, {
 
 await app.register(fastifyCors, {
   origin: true,
+  methods: ["GET", "HEAD", "POST", "PUT", "DELETE", "OPTIONS"],
 });
 await app.register(fastifyWebsocket);
 
 registerHealthRoutes(app, pool, databaseReadinessGauge, config);
-registerConfigurationRoutes(app, stores);
+registerConfigurationRoutes(app, config, stores);
 registerRuntimeConfigRoutes(app, pool);
 registerOpsRoutes(app, config, pool);
 await configChangePublisher.start();
@@ -165,6 +167,7 @@ app.setErrorHandler((error, _request, reply) => {
 });
 
 const close = async () => {
+  closeOpsSockets();
   await backtestRunProjectionConsumer.stop();
   await backtestProgressConsumer.stop();
   await dataReadinessProjectionConsumer.stop();

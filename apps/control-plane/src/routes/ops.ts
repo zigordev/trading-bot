@@ -1,5 +1,3 @@
-import { randomUUID } from "node:crypto";
-
 import type { FastifyInstance } from "fastify";
 import type { Pool } from "pg";
 
@@ -18,6 +16,7 @@ import {
   type BacktestRunProjectionRecord,
   type DataReadinessProjectionRecord,
 } from "../features/ops.js";
+import { addOpsSocket } from "../infrastructure/ops-events.js";
 
 type ServiceCheckStatus = "up" | "down" | "unknown";
 
@@ -31,14 +30,6 @@ type FetchJson = (
   url: string,
   init?: RequestInit,
 ) => Promise<unknown>;
-
-type OpsSocket = {
-  readonly OPEN: number;
-  readonly readyState: number;
-  send(payload: string): void;
-  close(): void;
-  on(event: "close", listener: () => void): void;
-};
 
 const defaultFetchJson = (config: AppConfig): FetchJson => async (url, init) => {
   const controller = new AbortController();
@@ -91,27 +82,6 @@ const buildServiceChecks = (config: AppConfig) => [
   },
 ] as const;
 
-const asObject = (value: unknown): Record<string, unknown> | null =>
-  typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
-
-const asNumber = (value: unknown): number | null => {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : null;
-};
-
-const resolveSlowPeriod = (analysis: ResolvedAnalysisSettingsRecord): number => {
-  const strategyParameters = asObject(analysis.strategy.parameters);
-  const technicalAnalysisSettings = asObject(analysis.technicalAnalysisSettings);
-
-  return (
-    asNumber(technicalAnalysisSettings?.slowPeriod) ??
-    asNumber(strategyParameters?.slowPeriod) ??
-    21
-  );
-};
-
 const deriveRequiredHistory = (
   analysis: ResolvedAnalysisSettingsRecord,
   config: AppConfig,
@@ -120,9 +90,7 @@ const deriveRequiredHistory = (
     config.backtestTimerangeMsByTimeframe[analysis.timeframeCode] ??
     config.backtestTimerangeMsByTimeframe["1m"] ??
     600_000_000;
-  const slowPeriod = resolveSlowPeriod(analysis);
-  const warmupMs =
-    slowPeriod * config.backtestWarmupMultiplier * analysis.timeframe.periodMs;
+  const warmupMs = config.backtestWarmupCandles * analysis.timeframe.periodMs;
   const now = Date.now();
   const requestedEndTime = now;
   const requestedStartTime = now - configuredDurationMs;
@@ -132,18 +100,6 @@ const deriveRequiredHistory = (
     requestedEndTime,
     requiredHistoryMs: configuredDurationMs + warmupMs,
   };
-};
-
-const broadcastPayload = (
-  sockets: Set<OpsSocket>,
-  payload: Record<string, unknown>,
-): void => {
-  const message = JSON.stringify(payload);
-  for (const socket of sockets) {
-    if (socket.readyState === socket.OPEN) {
-      socket.send(message);
-    }
-  }
 };
 
 export const registerOpsRoutes = (
@@ -175,19 +131,6 @@ export const registerOpsRoutes = (
     options?.listBacktestRunProjectionsFn ?? listBacktestRunProjections;
   const listDataReadinessProjectionsFn =
     options?.listDataReadinessProjectionsFn ?? listDataReadinessProjections;
-  const sockets = new Set<OpsSocket>();
-
-  const broadcastInvalidate = (reason: string): void => {
-    broadcastPayload(sockets, {
-      eventId: randomUUID(),
-      type: "ops.invalidate",
-      occurredAt: new Date().toISOString(),
-      payload: {
-        reason,
-        queries: ["ops-overview", "ops-backtests-summary", "ops-data-readiness"],
-      },
-    });
-  };
 
   const buildOverview = async () => {
     const [services, analyses, jobs] = await Promise.all([
@@ -264,18 +207,6 @@ export const registerOpsRoutes = (
     };
   };
 
-  const interval = setInterval(() => {
-    broadcastInvalidate("periodic-refresh");
-  }, config.opsStreamIntervalMs);
-
-  app.addHook("onClose", async () => {
-    clearInterval(interval);
-    for (const socket of sockets) {
-      socket.close();
-    }
-    sockets.clear();
-  });
-
   app.get("/v1/ops/overview", {
     schema: {
       tags: ["ops"],
@@ -304,21 +235,7 @@ export const registerOpsRoutes = (
     "/ws/ops",
     { websocket: true },
     (socket) => {
-      const client = socket as unknown as OpsSocket;
-      sockets.add(client);
-      client.send(
-        JSON.stringify({
-          eventId: randomUUID(),
-          type: "ops.connected",
-          occurredAt: new Date().toISOString(),
-          payload: {
-            queries: ["ops-overview", "ops-backtests-summary", "ops-data-readiness"],
-          },
-        }),
-      );
-      client.on("close", () => {
-        sockets.delete(client);
-      });
+      addOpsSocket(socket as never);
     },
   );
 };

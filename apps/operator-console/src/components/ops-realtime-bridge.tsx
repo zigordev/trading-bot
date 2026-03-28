@@ -1,19 +1,22 @@
 import { useEffect, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
 
 import { OPS_WS_URL } from "@/src/lib/api";
+import {
+  emitOpsRealtimeEvent,
+  parseOpsRealtimeEvent,
+} from "@/src/lib/ops-events";
 
 export function OpsRealtimeBridge() {
-  const queryClient = useQueryClient();
   const [socket, setSocket] = useState<WebSocket | null>(null);
 
   useEffect(() => {
     const connection = new WebSocket(OPS_WS_URL);
 
-    connection.onmessage = () => {
-      void queryClient.invalidateQueries({ queryKey: ["ops-overview"] });
-      void queryClient.invalidateQueries({ queryKey: ["ops-backtests-summary"] });
-      void queryClient.invalidateQueries({ queryKey: ["ops-data-readiness"] });
+    connection.onmessage = (event) => {
+      const parsed = parseOpsRealtimeEvent(String(event.data ?? ""));
+      if (parsed) {
+        emitOpsRealtimeEvent(parsed);
+      }
     };
 
     connection.onclose = () => {
@@ -25,7 +28,7 @@ export function OpsRealtimeBridge() {
     return () => {
       connection.close();
     };
-  }, [queryClient]);
+  }, []);
 
   useEffect(() => {
     return () => {

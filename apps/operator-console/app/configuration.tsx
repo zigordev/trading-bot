@@ -8,6 +8,7 @@ import { Card } from "@/src/components/card";
 import { SymbolAvatar } from "@/src/components/symbol-avatar";
 import {
   deleteConfigResource,
+  getBinanceSymbolReferences,
   getConfigResourceRecords,
   saveConfigResource,
 } from "@/src/lib/api";
@@ -18,13 +19,18 @@ import {
   serializeConfigPayload,
   type ConfigResourceKey,
 } from "@/src/lib/configuration";
+import { subscribeOpsRealtimeEvent } from "@/src/lib/ops-events";
 
 export default function ConfigurationScreen() {
   const queryClient = useQueryClient();
   const [resourceKey, setResourceKey] = useState<ConfigResourceKey>("symbols");
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [pendingDelete, setPendingDelete] = useState<Record<string, unknown> | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<{
+    resourceKey: ConfigResourceKey;
+    record: Record<string, unknown>;
+  } | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const [symbolReferenceSearch, setSymbolReferenceSearch] = useState("");
   const [formState, setFormState] = useState<Record<string, string>>(
     createEmptyFormState("symbols"),
   );
@@ -34,12 +40,31 @@ export default function ConfigurationScreen() {
     setEditingId(null);
     setPendingDelete(null);
     setShowForm(false);
+    setSymbolReferenceSearch("");
     setFormState(createEmptyFormState(resourceKey));
   }, [resourceKey]);
+
+  useEffect(
+    () =>
+      subscribeOpsRealtimeEvent((event) => {
+        if (
+          event.type === "config.resource.updated" &&
+          event.payload.resource === resourceKey
+        ) {
+          void queryClient.invalidateQueries({ queryKey: ["config-resource", resourceKey] });
+        }
+      }),
+    [queryClient, resourceKey],
+  );
 
   const recordsQuery = useQuery({
     queryKey: ["config-resource", resourceKey],
     queryFn: () => getConfigResourceRecords(resourceKey),
+  });
+  const symbolReferencesQuery = useQuery({
+    queryKey: ["binance-symbol-references", symbolReferenceSearch],
+    queryFn: () => getBinanceSymbolReferences(symbolReferenceSearch),
+    enabled: showForm && resourceKey === "symbols",
   });
 
   const saveMutation = useMutation({
@@ -52,16 +77,28 @@ export default function ConfigurationScreen() {
     onSuccess: async () => {
       setEditingId(null);
       setShowForm(false);
+      setSymbolReferenceSearch("");
       setFormState(createEmptyFormState(resourceKey));
       await queryClient.invalidateQueries({ queryKey: ["config-resource", resourceKey] });
     },
   });
 
   const deleteMutation = useMutation({
-    mutationFn: async (id: string) => deleteConfigResource(resourceKey, id),
+    mutationFn: async ({
+      resourceKey: deleteResourceKey,
+      id,
+    }: {
+      resourceKey: ConfigResourceKey;
+      id: string;
+    }) => deleteConfigResource(deleteResourceKey, id),
     onSuccess: async () => {
+      const deletedResourceKey = deleteMutation.variables?.resourceKey;
       setPendingDelete(null);
-      await queryClient.invalidateQueries({ queryKey: ["config-resource", resourceKey] });
+      if (deletedResourceKey) {
+        await queryClient.invalidateQueries({
+          queryKey: ["config-resource", deletedResourceKey],
+        });
+      }
     },
   });
 
@@ -79,10 +116,7 @@ export default function ConfigurationScreen() {
     }) =>
       saveConfigResource(
         resourceKey,
-        {
-          ...record,
-          [field]: nextValue,
-        },
+        buildEditablePayload(resource.fields, record, field, nextValue),
         id,
       ),
     onSuccess: async () => {
@@ -168,6 +202,7 @@ export default function ConfigurationScreen() {
                 setShowForm((current) => {
                   const next = !current;
                   if (next) {
+                    setSymbolReferenceSearch("");
                     setFormState(createEmptyFormState(resourceKey));
                   }
                   return next;
@@ -240,6 +275,7 @@ export default function ConfigurationScreen() {
                       onPress={() => {
                         setEditingId(String(record.id));
                         setShowForm(true);
+                        setSymbolReferenceSearch(String(record.code ?? ""));
                         setFormState(createFormStateFromRecord(resource.fields, record));
                       }}
                       style={secondaryButtonStyle}
@@ -250,7 +286,7 @@ export default function ConfigurationScreen() {
                       </View>
                     </Pressable>
                     <Pressable
-                      onPress={() => setPendingDelete(record)}
+                      onPress={() => setPendingDelete({ resourceKey, record })}
                       style={dangerButtonStyle}
                     >
                       <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
@@ -317,6 +353,22 @@ export default function ConfigurationScreen() {
               </View>
 
               <ScrollView style={{ marginTop: 12 }} contentContainerStyle={{ gap: 10 }}>
+                {resourceKey === "symbols" ? (
+                  <BinanceSymbolPicker
+                    search={symbolReferenceSearch}
+                    onSearchChange={setSymbolReferenceSearch}
+                    loading={symbolReferencesQuery.isLoading}
+                    options={symbolReferencesQuery.data ?? []}
+                    onSelect={(option) => {
+                      setFormState((current) => ({
+                        ...current,
+                        code: option.symbol,
+                        baseAsset: option.baseAsset,
+                        destinationAsset: option.destinationAsset,
+                      }));
+                    }}
+                  />
+                ) : null}
                 {resource.fields
                   .filter((field) => field.kind !== "boolean")
                   .map((field) => (
@@ -345,10 +397,11 @@ export default function ConfigurationScreen() {
                   </Pressable>
                   <Pressable
                     onPress={() => {
-                      setEditingId(null);
-                      setShowForm(false);
-                      setFormState(createEmptyFormState(resourceKey));
-                    }}
+                    setEditingId(null);
+                    setShowForm(false);
+                    setSymbolReferenceSearch("");
+                    setFormState(createEmptyFormState(resourceKey));
+                  }}
                     style={secondaryButtonStyle}
                   >
                     <Text style={{ color: "#344054", fontWeight: "700" }}>Cancel</Text>
@@ -390,10 +443,14 @@ export default function ConfigurationScreen() {
                 <Text style={{ color: "#475467", lineHeight: 20 }}>
                   Delete{" "}
                   <Text style={{ fontWeight: "700", color: "#101828" }}>
-                    {pendingDelete?.[resource.titleField]
-                      ? String(pendingDelete[resource.titleField])
-                      : pendingDelete?.id
-                        ? String(pendingDelete.id)
+                    {pendingDelete?.record[configResources[pendingDelete.resourceKey].titleField]
+                      ? String(
+                          pendingDelete.record[
+                            configResources[pendingDelete.resourceKey].titleField
+                          ],
+                        )
+                      : pendingDelete?.record.id
+                        ? String(pendingDelete.record.id)
                         : "this record"}
                   </Text>
                   ?
@@ -407,8 +464,11 @@ export default function ConfigurationScreen() {
                   </Pressable>
                   <Pressable
                     onPress={() => {
-                      if (pendingDelete?.id) {
-                        deleteMutation.mutate(String(pendingDelete.id));
+                      if (pendingDelete?.record.id) {
+                        deleteMutation.mutate({
+                          resourceKey: pendingDelete.resourceKey,
+                          id: String(pendingDelete.record.id),
+                        });
                       }
                     }}
                     style={dangerButtonStyle}
@@ -430,6 +490,105 @@ export default function ConfigurationScreen() {
       </Modal>
     </AppShell>
   );
+}
+
+function BinanceSymbolPicker({
+  search,
+  onSearchChange,
+  loading,
+  options,
+  onSelect,
+}: {
+  search: string;
+  onSearchChange: (value: string) => void;
+  loading: boolean;
+  options: Array<{ symbol: string; baseAsset: string; destinationAsset: string }>;
+  onSelect: (option: { symbol: string; baseAsset: string; destinationAsset: string }) => void;
+}) {
+  return (
+    <View style={{ gap: 8 }}>
+      <Text style={{ color: "#344054", fontWeight: "600" }}>Search Binance symbol</Text>
+      <TextInput
+        value={search}
+        onChangeText={onSearchChange}
+        placeholder="BTCUSDT, BTC, USDT..."
+        autoCapitalize="characters"
+        autoCorrect={false}
+        style={inputStyle}
+      />
+      <View
+        style={{
+          borderRadius: 14,
+          borderWidth: 1,
+          borderColor: "#d0d5dd",
+          backgroundColor: "#ffffff",
+          maxHeight: 220,
+          overflow: "hidden",
+        }}
+      >
+        <ScrollView contentContainerStyle={{ padding: 8, gap: 6 }}>
+          {loading ? (
+            <Text style={{ color: "#475467", paddingHorizontal: 6, paddingVertical: 4 }}>
+              Loading Binance symbols...
+            </Text>
+          ) : options.length === 0 ? (
+            <Text style={{ color: "#475467", paddingHorizontal: 6, paddingVertical: 4 }}>
+              No Binance symbols match the current search.
+            </Text>
+          ) : (
+            options.map((option) => (
+              <Pressable
+                key={option.symbol}
+                onPress={() => onSelect(option)}
+                style={{
+                  borderRadius: 12,
+                  borderWidth: 1,
+                  borderColor: "#eaecf0",
+                  backgroundColor: "#f8fafc",
+                  paddingHorizontal: 12,
+                  paddingVertical: 10,
+                  flexDirection: "row",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 10,
+                }}
+              >
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                  <SymbolAvatar
+                    baseAsset={option.baseAsset}
+                    destinationAsset={option.destinationAsset}
+                    size={28}
+                  />
+                  <View>
+                    <Text style={{ color: "#101828", fontWeight: "700" }}>{option.symbol}</Text>
+                    <Text style={{ color: "#475467" }}>
+                      {option.baseAsset} / {option.destinationAsset}
+                    </Text>
+                  </View>
+                </View>
+                <MaterialIcons name="north-west" size={18} color="#475467" />
+              </Pressable>
+            ))
+          )}
+        </ScrollView>
+      </View>
+    </View>
+  );
+}
+
+function buildEditablePayload(
+  fields: ConfigField[],
+  record: Record<string, unknown>,
+  field: string,
+  nextValue: boolean,
+): Record<string, unknown> {
+  const payload = fields.reduce<Record<string, unknown>>((accumulator, currentField) => {
+    accumulator[currentField.name] = record[currentField.name];
+    return accumulator;
+  }, {});
+
+  payload[field] = nextValue;
+  return payload;
 }
 
 const configurationIconByResourceKey: Record<ConfigResourceKey, keyof typeof MaterialIcons.glyphMap> = {

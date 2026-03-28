@@ -14,7 +14,9 @@ import {
   timeframeBodySchema,
   timeframeRecordSchema,
 } from "../features/config-resources.js";
+import type { AppConfig } from "../config.js";
 import { HttpError } from "../http-error.js";
+import { publishOpsEvent } from "../infrastructure/ops-events.js";
 
 const idParamsSchema = {
   type: "object",
@@ -97,6 +99,10 @@ const registerCrudRoutes = <TInput, TRecord>(
     handler: async (request, reply) => {
       try {
         const created = await store.create(request.body as TInput);
+        publishOpsEvent({
+          type: "config.resource.updated",
+          payload: { resource: tag as never, operation: "created", id: String((created as { id?: unknown }).id ?? "") || undefined },
+        });
         reply.code(201);
         return created;
       } catch (error) {
@@ -138,6 +144,12 @@ const registerCrudRoutes = <TInput, TRecord>(
 
       try {
         const updated = await store.update(id, request.body as TInput);
+        if (updated) {
+          publishOpsEvent({
+            type: "config.resource.updated",
+            payload: { resource: tag as never, operation: "updated", id },
+          });
+        }
         return assertFound(updated, entityName, id);
       } catch (error) {
         if (isUniqueViolation(error)) {
@@ -193,6 +205,10 @@ const registerCrudRoutes = <TInput, TRecord>(
         throw error;
       }
 
+      publishOpsEvent({
+        type: "config.resource.updated",
+        payload: { resource: tag as never, operation: "deleted", id },
+      });
       return sendNoContent(reply);
     },
   });
@@ -200,8 +216,103 @@ const registerCrudRoutes = <TInput, TRecord>(
 
 export const registerConfigurationRoutes = (
   app: FastifyInstance,
+  config: AppConfig,
   stores: ConfigStores,
 ): void => {
+  app.get("/v1/reference/binance-symbols", {
+    schema: {
+      tags: ["symbols"],
+      summary: "Search Binance spot symbols for symbol creation",
+      querystring: {
+        type: "object",
+        properties: {
+          q: { type: "string" },
+        },
+      },
+      response: {
+        200: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              symbol: { type: "string" },
+              baseAsset: { type: "string" },
+              destinationAsset: { type: "string" },
+            },
+            required: ["symbol", "baseAsset", "destinationAsset"],
+          },
+        },
+      },
+    },
+    handler: async (request) => {
+      const { q } = request.query as { q?: string };
+      const query = q?.trim().toUpperCase() ?? "";
+      const controller = new AbortController();
+      const timeout = setTimeout(
+        () => controller.abort(),
+        config.upstreamRequestTimeoutMs,
+      );
+
+      try {
+        const response = await fetch(
+          `${config.binanceReferenceBaseUrl}/api/v3/exchangeInfo?permissions=SPOT`,
+          {
+            signal: controller.signal,
+            headers: {
+              "content-type": "application/json",
+            },
+          },
+        );
+
+        if (!response.ok) {
+          throw new HttpError(
+            502,
+            `Binance symbol reference failed with status ${response.status}`,
+          );
+        }
+
+        const payload = (await response.json()) as {
+          symbols?: Array<{
+            symbol?: string;
+            baseAsset?: string;
+            quoteAsset?: string;
+            status?: string;
+            isSpotTradingAllowed?: boolean;
+          }>;
+        };
+
+        return (payload.symbols ?? [])
+          .filter((item) => item.status === "TRADING")
+          .filter((item) => item.isSpotTradingAllowed !== false)
+          .filter((item) => typeof item.symbol === "string")
+          .filter((item) =>
+            query
+              ? item.symbol!.includes(query) ||
+                String(item.baseAsset ?? "").toUpperCase().includes(query) ||
+                String(item.quoteAsset ?? "").toUpperCase().includes(query)
+              : true,
+          )
+          .slice(0, 100)
+          .map((item) => ({
+            symbol: String(item.symbol),
+            baseAsset: String(item.baseAsset ?? ""),
+            destinationAsset: String(item.quoteAsset ?? ""),
+          }));
+      } catch (error) {
+        if (error instanceof HttpError) {
+          throw error;
+        }
+
+        throw new HttpError(
+          502,
+          error instanceof Error ? error.message : "Binance symbol reference failed",
+        );
+      } finally {
+        clearTimeout(timeout);
+      }
+    },
+  });
+
   registerCrudRoutes(app, {
     path: "/v1/symbols",
     tag: "symbols",
