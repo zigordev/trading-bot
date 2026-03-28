@@ -1,6 +1,6 @@
 import { MaterialIcons } from "@expo/vector-icons";
-import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import Svg, { Circle } from "react-native-svg";
 
@@ -18,6 +18,7 @@ import {
   getDataReadiness,
   getRuntimeAnalyses,
 } from "@/src/lib/api";
+import { subscribeOpsRealtimeEvent } from "@/src/lib/ops-events";
 
 type BacktestingSection = "backtests" | "data-readiness";
 type DataReadinessItem = DataReadinessResponse["items"][number];
@@ -46,6 +47,7 @@ const formatDuration = (durationMs: number): string => {
 };
 
 export default function BacktestingScreen() {
+  const queryClient = useQueryClient();
   const [section, setSection] = useState<BacktestingSection>("data-readiness");
   const [symbolFilter, setSymbolFilter] = useState<string[]>([]);
   const [timeframeFilter, setTimeframeFilter] = useState<string[]>([]);
@@ -72,6 +74,42 @@ export default function BacktestingScreen() {
     queryKey: ["runtime-analyses"],
     queryFn: getRuntimeAnalyses,
   });
+
+  useEffect(
+    () =>
+      subscribeOpsRealtimeEvent((event) => {
+        if (event.type === "ops.backtests.updated") {
+          void queryClient.invalidateQueries({ queryKey: ["ops-backtests-summary"] });
+          return;
+        }
+
+        if (event.type === "ops.data-readiness.updated") {
+          void queryClient.invalidateQueries({ queryKey: ["ops-data-readiness"] });
+          return;
+        }
+
+        if (event.payload.resource === "symbols") {
+          void queryClient.invalidateQueries({ queryKey: ["config-resource", "symbols"] });
+          void queryClient.invalidateQueries({ queryKey: ["runtime-analyses"] });
+          return;
+        }
+
+        if (event.payload.resource === "timeframes") {
+          void queryClient.invalidateQueries({ queryKey: ["config-resource", "timeframes"] });
+          void queryClient.invalidateQueries({ queryKey: ["runtime-analyses"] });
+          return;
+        }
+
+        if (
+          event.payload.resource === "strategies" ||
+          event.payload.resource === "risk-profiles" ||
+          event.payload.resource === "analysis-settings"
+        ) {
+          void queryClient.invalidateQueries({ queryKey: ["runtime-analyses"] });
+        }
+      }),
+    [queryClient],
+  );
 
   const symbolBaseAssets = new Map(
     (symbolsQuery.data ?? []).map((record) => [
@@ -295,8 +333,7 @@ export default function BacktestingScreen() {
                               {formatBacktestStage(group.stage)}
                             </Text>
                             <Text style={{ color: "#475467" }}>
-                              {group.timeframeCount} timeframe{group.timeframeCount === 1 ? "" : "s"} ·{" "}
-                              {group.batchCount} dataset{group.batchCount === 1 ? "" : "s"}
+                              {group.timeframeCount} timeframe{group.timeframeCount === 1 ? "" : "s"}
                             </Text>
                             <Text style={{ color: "#475467" }}>
                               {group.completedCount}/{group.totalCount} finished
@@ -418,17 +455,6 @@ export default function BacktestingScreen() {
                               </View>
                             </View>
 
-                            <View
-                              style={{
-                                flexDirection: "row",
-                                flexWrap: "wrap",
-                                gap: 10,
-                              }}
-                            >
-                              <MetricBadge label="Backtests" value={group.count.toLocaleString()} />
-                              <MetricBadge label="Signals" value={group.totalSignals.toLocaleString()} />
-                              <MetricBadge label="Trades" value={group.totalTrades.toLocaleString()} />
-                            </View>
                           </Pressable>
 
                           {expanded ? (
@@ -763,8 +789,6 @@ function groupLatestBacktestsBySymbol(runs: RecentBacktestRun[]) {
       timeframeCount: number;
       bestPnlPercent: number;
       latestFinishedAt: string;
-      totalSignals: number;
-      totalTrades: number;
       runs: RecentBacktestRun[];
     }
   >();
@@ -778,8 +802,6 @@ function groupLatestBacktestsBySymbol(runs: RecentBacktestRun[]) {
         timeframeCount: 0,
         bestPnlPercent: Number.NEGATIVE_INFINITY,
         latestFinishedAt: run.finishedAt,
-        totalSignals: 0,
-        totalTrades: 0,
         runs: [],
       };
 
@@ -788,8 +810,6 @@ function groupLatestBacktestsBySymbol(runs: RecentBacktestRun[]) {
     if (Date.parse(run.finishedAt) > Date.parse(current.latestFinishedAt)) {
       current.latestFinishedAt = run.finishedAt;
     }
-    current.totalSignals += run.signalCount;
-    current.totalTrades += run.tradeCount;
     current.runs.push(run);
     groups.set(run.symbol, current);
   }
@@ -813,7 +833,6 @@ function groupDataReadinessBySymbol(items: DataReadinessItem[]) {
       count: number;
       readyCount: number;
       timeframeCount: number;
-      averageCompleteness: number;
       klineAverage: number;
       tradeAverage: number;
       totalRows: number;
@@ -828,7 +847,6 @@ function groupDataReadinessBySymbol(items: DataReadinessItem[]) {
         count: 0,
         readyCount: 0,
         timeframeCount: 0,
-        averageCompleteness: 0,
         klineAverage: 0,
         tradeAverage: 0,
         totalRows: 0,
@@ -837,7 +855,6 @@ function groupDataReadinessBySymbol(items: DataReadinessItem[]) {
 
     current.count += 1;
     current.readyCount += item.status === "ready" ? 1 : 0;
-    current.averageCompleteness += item.completenessPercent;
     current.klineAverage += Number(item.kline?.coveragePercent ?? 0);
     current.tradeAverage += Number(item.trades?.coveragePercent ?? 0);
     current.totalRows +=
@@ -850,7 +867,6 @@ function groupDataReadinessBySymbol(items: DataReadinessItem[]) {
     .map((group) => ({
       ...group,
       timeframeCount: new Set(group.items.map((item) => item.timeframeCode)).size,
-      averageCompleteness: group.count > 0 ? group.averageCompleteness / group.count : 0,
       klineAverage: group.count > 0 ? group.klineAverage / group.count : 0,
       tradeAverage: group.count > 0 ? group.tradeAverage / group.count : 0,
       items: [...group.items].sort((left, right) =>
@@ -997,7 +1013,7 @@ function DimensionSummary({
   label: string;
   dimension: {
     rowCount?: number;
-    gapCount?: number;
+    missingCount?: number;
     coveragePercent?: number;
     complete?: boolean;
   } | null;

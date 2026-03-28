@@ -75,18 +75,24 @@ export type DataReadinessResponse = {
     requestedStartTime: number;
     requestedEndTime: number;
     requiredHistoryMs: number;
-    completenessPercent: number;
     details: string | null;
     kline: Record<string, unknown> | null;
     trades: Record<string, unknown> | null;
   }[];
 };
 
+export type BinanceSymbolReference = {
+  symbol: string;
+  baseAsset: string;
+  destinationAsset: string;
+};
+
 const fetchJson = async <T>(path: string, init?: RequestInit): Promise<T> => {
+  const hasBody = init?.body !== undefined && init?.body !== null;
   const response = await fetch(`${API_BASE}${path}`, {
     ...init,
     headers: {
-      "content-type": "application/json",
+      ...(hasBody ? { "content-type": "application/json" } : {}),
       ...(init?.headers ?? {}),
     },
   });
@@ -125,6 +131,11 @@ export const getDataReadiness = (): Promise<DataReadinessResponse> =>
 export const getConfigResourceRecords = (
   resource: string,
 ): Promise<Record<string, unknown>[]> => fetchJson(`/v1/${resource}`);
+
+export const getBinanceSymbolReferences = (
+  query: string,
+): Promise<BinanceSymbolReference[]> =>
+  fetchJson(`/v1/reference/binance-symbols${query.trim() ? `?q=${encodeURIComponent(query.trim())}` : ""}`);
 
 export const saveConfigResource = (
   resource: string,

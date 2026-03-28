@@ -59,7 +59,7 @@ export function AppShell({
           >
             <Image
               source={require("@/src/assets/logo.png")}
-              style={{ width: 80, height: 80 }}
+              style={{ width: 90, height: 90 }}
               resizeMode="contain"
             />
           </View>
