@@ -4,7 +4,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use chrono::Utc;
 use futures_util::StreamExt;
 use rdkafka::{
@@ -20,12 +20,13 @@ use tokio::{
     task::JoinHandle,
     time::MissedTickBehavior,
 };
+use tokio_tungstenite::{connect_async, tungstenite::Message as WsMessage};
 use uuid::Uuid;
 
 use crate::{
     config::AppConfig,
     db::{Database, TimeGap},
-    events::{normalize_rest_kline, normalize_rest_trade},
+    events::{NormalizedWsEvent, normalize_rest_kline, normalize_rest_trade, normalize_ws_message},
     kafka_topics::ensure_topics,
     metrics::Metrics,
     models::{
@@ -423,6 +424,8 @@ impl MarketDataService {
             &[
                 &config.config_change_events_topic,
                 &config.data_readiness_events_topic,
+                &config.market_data_kline_events_topic,
+                &config.market_data_trade_events_topic,
             ],
         )
         .await?;
@@ -525,12 +528,18 @@ impl MarketDataService {
             periodic_service.periodic_refresh_loop().await;
         });
 
+        let stream_service = self.clone();
+        let stream_handle = tokio::spawn(async move {
+            stream_service.market_stream_loop().await;
+        });
+
         let mut handles = self.inner.task_handles.lock().await;
         handles.extend([
             startup_refresh_handle,
             refresh_handle,
             consumer_handle,
             periodic_handle,
+            stream_handle,
         ]);
 
         if self.inner.config.historical_store_compaction_enabled {
@@ -597,12 +606,12 @@ impl MarketDataService {
         } else {
             "down"
         };
-        let market_stream = "idle";
+        let market_stream = if status.stream.connected { "up" } else { "down" };
         let database = if db_ok { "up" } else { "down" };
         let status_text = if runtime_config == "up"
             && kafka_producer == "up"
             && kafka_consumer == "up"
-            && market_stream == "idle"
+            && market_stream == "up"
             && database == "up"
         {
             "ok"
@@ -896,6 +905,259 @@ impl MarketDataService {
                 }
             }
         }
+    }
+
+    async fn market_stream_loop(&self) {
+        let mut shutdown_rx = self.inner.shutdown_tx.subscribe();
+
+        loop {
+            let subscriptions = self.inner.runtime_status.read().await.subscriptions.clone();
+            if subscriptions.stream_names.is_empty() {
+                self.mark_stream(false, None, None, None).await;
+                tokio::select! {
+                    changed = shutdown_rx.changed() => {
+                        if changed.is_ok() {
+                            break;
+                        }
+                    }
+                    _ = tokio::time::sleep(Duration::from_secs(1)) => {}
+                }
+                continue;
+            }
+
+            let stream_names = subscriptions.stream_names.clone();
+            let stream_signature = stream_names.join("/");
+            let stream_url = format!(
+                "{}/stream?streams={}",
+                self.inner.config.binance_ws_base_url.trim_end_matches('/'),
+                stream_signature
+            );
+
+            self.mark_stream(false, Some(stream_url.clone()), None, None)
+                .await;
+
+            let ws = connect_async(&stream_url).await;
+            let (socket, _) = match ws {
+                Ok(parts) => parts,
+                Err(error) => {
+                    self.mark_stream(
+                        false,
+                        Some(stream_url.clone()),
+                        None,
+                        Some(error.to_string()),
+                    )
+                    .await;
+                    tokio::select! {
+                        changed = shutdown_rx.changed() => {
+                            if changed.is_ok() {
+                                break;
+                            }
+                        }
+                        _ = tokio::time::sleep(Duration::from_secs(2)) => {}
+                    }
+                    continue;
+                }
+            };
+
+            self.mark_stream(true, Some(stream_url.clone()), None, None)
+                .await;
+
+            let kline_by_stream = subscriptions
+                .kline_subscriptions
+                .iter()
+                .cloned()
+                .map(|subscription| (subscription.stream_name.to_lowercase(), subscription))
+                .collect::<HashMap<_, _>>();
+            let pair_by_stream = subscriptions
+                .pair_subscriptions
+                .iter()
+                .cloned()
+                .map(|subscription| (subscription.trade_stream_name.to_lowercase(), subscription))
+                .collect::<HashMap<_, _>>();
+
+            let (_, mut read) = socket.split();
+            let mut subscription_check_interval = tokio::time::interval(Duration::from_secs(1));
+            subscription_check_interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
+
+            let mut reconnect = false;
+            loop {
+                tokio::select! {
+                    changed = shutdown_rx.changed() => {
+                        if changed.is_ok() {
+                            return;
+                        }
+                    }
+                    _ = subscription_check_interval.tick() => {
+                        let latest_signature = self.inner.runtime_status.read().await.subscriptions.stream_names.join("/");
+                        if latest_signature != stream_signature {
+                            reconnect = true;
+                            break;
+                        }
+                    }
+                    message = read.next() => {
+                        match message {
+                            Some(Ok(WsMessage::Text(text))) => {
+                                let raw = text.to_string();
+                                match normalize_ws_message(
+                                    &raw,
+                                    &kline_by_stream,
+                                    &pair_by_stream,
+                                    &self.inner.config.service_name,
+                                ) {
+                                    Ok(Some(event)) => {
+                                        if let Err(error) = self.handle_live_ws_event(event).await {
+                                            self.mark_stream(
+                                                false,
+                                                Some(stream_url.clone()),
+                                                None,
+                                                Some(error.to_string()),
+                                            ).await;
+                                            reconnect = true;
+                                            break;
+                                        }
+                                    }
+                                    Ok(None) => {}
+                                    Err(error) => {
+                                        self.mark_stream(
+                                            false,
+                                            Some(stream_url.clone()),
+                                            None,
+                                            Some(error.to_string()),
+                                        ).await;
+                                        reconnect = true;
+                                        break;
+                                    }
+                                }
+                            }
+                            Some(Ok(WsMessage::Ping(_))) | Some(Ok(WsMessage::Pong(_))) => {}
+                            Some(Ok(WsMessage::Binary(_))) => {}
+                            Some(Ok(WsMessage::Frame(_))) => {}
+                            Some(Ok(WsMessage::Close(frame))) => {
+                                self.mark_stream(
+                                    false,
+                                    Some(stream_url.clone()),
+                                    None,
+                                    Some(format!("market stream closed: {frame:?}")),
+                                ).await;
+                                reconnect = true;
+                                break;
+                            }
+                            Some(Err(error)) => {
+                                self.mark_stream(
+                                    false,
+                                    Some(stream_url.clone()),
+                                    None,
+                                    Some(error.to_string()),
+                                ).await;
+                                reconnect = true;
+                                break;
+                            }
+                            None => {
+                                self.mark_stream(
+                                    false,
+                                    Some(stream_url.clone()),
+                                    None,
+                                    Some("market stream ended".to_string()),
+                                ).await;
+                                reconnect = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+
+            if reconnect {
+                tokio::select! {
+                    changed = shutdown_rx.changed() => {
+                        if changed.is_ok() {
+                            break;
+                        }
+                    }
+                    _ = tokio::time::sleep(Duration::from_secs(1)) => {}
+                }
+            }
+        }
+    }
+
+    async fn handle_live_ws_event(&self, event: NormalizedWsEvent) -> Result<()> {
+        match event {
+            NormalizedWsEvent::Kline(event) => {
+                self.inner.database.upsert_kline(&event).await?;
+                self.publish_kline_event(&event).await?;
+                self.inner.metrics.kline_publish_total.inc();
+                self.mark_stream(
+                    true,
+                    None,
+                    Some(event.occurred_at.clone()),
+                    None,
+                )
+                .await;
+            }
+            NormalizedWsEvent::Trade(event) => {
+                self.inner.database.upsert_trade(&event).await?;
+                self.publish_trade_event(&event).await?;
+                self.inner.metrics.trade_publish_total.inc();
+                self.mark_stream(
+                    true,
+                    None,
+                    Some(event.occurred_at.clone()),
+                    None,
+                )
+                .await;
+            }
+        }
+        Ok(())
+    }
+
+    async fn publish_kline_event(&self, event: &NormalizedKlineEvent) -> Result<()> {
+        let payload = serde_json::to_string(event)?;
+        self.inner
+            .kafka_producer
+            .send(
+                FutureRecord::to(&self.inner.config.market_data_kline_events_topic)
+                    .key(&event.event_id)
+                    .payload(&payload),
+                Duration::from_secs(5),
+            )
+            .await
+            .map_err(|(error, _)| anyhow::anyhow!(error))
+            .context("failed to publish market-data kline event")?;
+        Ok(())
+    }
+
+    async fn publish_trade_event(&self, event: &crate::models::NormalizedTradeEvent) -> Result<()> {
+        let payload = serde_json::to_string(event)?;
+        self.inner
+            .kafka_producer
+            .send(
+                FutureRecord::to(&self.inner.config.market_data_trade_events_topic)
+                    .key(&event.event_id)
+                    .payload(&payload),
+                Duration::from_secs(5),
+            )
+            .await
+            .map_err(|(error, _)| anyhow::anyhow!(error))
+            .context("failed to publish market-data trade event")?;
+        Ok(())
+    }
+
+    async fn mark_stream(
+        &self,
+        connected: bool,
+        stream_url: Option<String>,
+        last_message_at: Option<String>,
+        error: Option<String>,
+    ) {
+        let mut status = self.inner.runtime_status.write().await;
+        status.stream.connected = connected;
+        if let Some(stream_url) = stream_url {
+            status.stream.stream_url = Some(stream_url);
+        }
+        if let Some(last_message_at) = last_message_at {
+            status.stream.last_message_at = Some(last_message_at);
+        }
+        status.stream.last_error = error;
     }
 
     async fn compaction_loop(&self) {

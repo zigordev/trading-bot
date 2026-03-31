@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "crates/execution",
     "crates/market-data",
     "crates/research-backtesting",
     "crates/strategy-engine",

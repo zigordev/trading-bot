@@ -105,7 +105,7 @@ pub struct PairStreamSubscription {
     pub strategy_names: Vec<String>,
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct PersistedKlineRecord {
     pub symbol: String,
@@ -127,7 +127,7 @@ pub struct PersistedKlineRecord {
     pub updated_at: String,
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct PersistedTradeRecord {
     pub symbol: String,
@@ -136,7 +136,7 @@ pub struct PersistedTradeRecord {
     pub trade_time: i64,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NormalizedKlineEvent {
     pub event_id: String,
@@ -165,7 +165,7 @@ pub struct NormalizedKlineEvent {
     pub strategy_names: Vec<String>,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NormalizedTradeEvent {
     pub event_id: String,

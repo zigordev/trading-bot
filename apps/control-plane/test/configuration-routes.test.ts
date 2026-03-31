@@ -6,7 +6,7 @@ import type {
   ConfigStores,
 } from "../src/features/config-resources.js";
 import { registerConfigurationRoutes } from "../src/routes/configuration.js";
-import { createAppWithErrorHandler } from "./helpers.ts";
+import { createAppWithErrorHandler, testConfig } from "./helpers.ts";
 
 const createStore = <TInput, TRecord>(
   overrides: Partial<ConfigStore<TInput, TRecord>> = {},
@@ -31,6 +31,7 @@ const createStores = (
     strategies: createStore(),
     riskProfiles: createStore(),
     analysisSettings: createStore(),
+    executionSettings: createStore(),
     ...overrides,
   }) as ConfigStores;
 
@@ -43,6 +44,7 @@ test("POST /v1/analysis-settings maps foreign-key violations to 409", async (t) 
 
   registerConfigurationRoutes(
     app,
+    testConfig,
     createStores({
       analysisSettings: createStore({
         create: async () => {
@@ -76,7 +78,7 @@ test("POST /v1/timeframes rejects bodies without periodMs", async (t) => {
   const app = createAppWithErrorHandler();
   t.after(() => app.close());
 
-  registerConfigurationRoutes(app, createStores());
+  registerConfigurationRoutes(app, testConfig, createStores());
 
   const response = await app.inject({
     method: "POST",

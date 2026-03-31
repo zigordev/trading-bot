@@ -115,6 +115,10 @@ struct BacktestCompletedEventData {
     replay_trade_count: usize,
     signal_count: usize,
     trade_count: usize,
+    stop_loss_trade_count: usize,
+    take_profit_trade_count: usize,
+    reversal_trade_count: usize,
+    window_end_trade_count: usize,
     total_pnl_percent: f64,
 }
 
@@ -769,6 +773,10 @@ impl ResearchBacktestingService {
                 replay_trade_count: response.dataset.replay_trade_count,
                 signal_count: response.summary.signal_count,
                 trade_count: response.summary.trade_count,
+                stop_loss_trade_count: response.summary.stop_loss_trade_count,
+                take_profit_trade_count: response.summary.take_profit_trade_count,
+                reversal_trade_count: response.summary.reversal_trade_count,
+                window_end_trade_count: response.summary.window_end_trade_count,
                 total_pnl_percent: response.summary.total_pnl_percent,
             },
         };

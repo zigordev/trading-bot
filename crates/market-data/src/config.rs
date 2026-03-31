@@ -18,10 +18,13 @@ pub struct AppConfig {
     pub kafka_bootstrap_servers: String,
     pub config_change_events_topic: String,
     pub data_readiness_events_topic: String,
+    pub market_data_kline_events_topic: String,
+    pub market_data_trade_events_topic: String,
     pub data_readiness_publish_interval_ms: u64,
     pub config_refresh_debounce_ms: u64,
     pub readiness_max_config_age_ms: u64,
     pub binance_rest_base_url: String,
+    pub binance_ws_base_url: String,
     pub binance_rest_max_retries: usize,
     pub binance_rest_retry_backoff_ms: u64,
     /// Configured Binance REQUEST_WEIGHT minute ceiling used by the local
@@ -229,6 +232,14 @@ pub fn load_config() -> Result<AppConfig> {
             "DATA_READINESS_EVENTS_TOPIC",
             "trading-bot.market-data.data-readiness-snapshot.v1",
         ),
+        market_data_kline_events_topic: env_or_default(
+            "MARKET_DATA_KLINE_EVENTS_TOPIC",
+            "trading-bot.market-data.kline.v1",
+        ),
+        market_data_trade_events_topic: env_or_default(
+            "MARKET_DATA_TRADE_EVENTS_TOPIC",
+            "trading-bot.market-data.agg-trade.v1",
+        ),
         data_readiness_publish_interval_ms: parse_u64(
             "DATA_READINESS_PUBLISH_INTERVAL_MS",
             10_000,
@@ -236,6 +247,10 @@ pub fn load_config() -> Result<AppConfig> {
         config_refresh_debounce_ms: parse_u64("CONFIG_REFRESH_DEBOUNCE_MS", 500)?,
         readiness_max_config_age_ms: parse_u64("READINESS_MAX_CONFIG_AGE_MS", 120000)?,
         binance_rest_base_url: env_or_default("BINANCE_REST_BASE_URL", "https://api.binance.com"),
+        binance_ws_base_url: env_or_default(
+            "BINANCE_WS_BASE_URL",
+            "wss://stream.binance.com:9443",
+        ),
         binance_rest_max_retries: parse_usize("BINANCE_REST_MAX_RETRIES", 5)?,
         binance_rest_retry_backoff_ms: parse_u64("BINANCE_REST_RETRY_BACKOFF_MS", 500)?,
         binance_rest_request_weight_limit_per_minute: parse_u64(

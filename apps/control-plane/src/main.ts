@@ -91,6 +91,11 @@ await app.register(fastifySwagger, {
       { name: "strategies", description: "Strategy registry and activation state" },
       { name: "risk-profiles", description: "Risk management profiles" },
       {
+        name: "execution-settings",
+        description:
+          "Execution promotion and operating policy for the active trading module",
+      },
+      {
         name: "analysis-settings",
         description:
           "Reusable technical-analysis settings expanded across active symbols, timeframes, and risk profiles",

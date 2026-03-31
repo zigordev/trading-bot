@@ -33,11 +33,7 @@ INSERT INTO public.symbols (
 ) VALUES
   ('6f686479-a001-4d72-89f3-f8a6a98f894f', 'BTCUSDT', true, 'BTC', 'USDT', '2026-03-16 10:42:15.044+00', '2026-03-16 10:42:15.044+00'),
   ('0d7c2f49-63a0-4f37-9a9d-4cb2c8b4d901', 'ETHUSDT', true, 'ETH', 'USDT', '2026-03-20 16:32:00+00', '2026-03-20 16:32:00+00'),
-  ('b6d58aab-3c38-4f8b-9c43-09d2a0c2e902', 'BNBUSDT', true, 'BNB', 'USDT', '2026-03-20 16:32:00+00', '2026-03-20 16:32:00+00'),
-  ('4dad49a8-683e-44a8-92e1-e13efe01d1eb', 'BTCUSD', true, 'BTC', 'USD', '2026-03-16 10:42:15.044+00', '2026-03-16 10:42:15.044+00'),
-  ('46f685c3-b3f0-48d7-a745-92c84d29b896', 'ETHUSD', true, 'ETH', 'USD', '2026-03-20 16:32:00+00', '2026-03-20 16:32:00+00'),
-  ('d711e4d3-5e28-4b14-9e23-30289bcf124d', 'SOLUSD', true, 'SOL', 'USD', '2026-03-20 16:32:00+00', '2026-03-20 16:32:00+00');
-
+  ('b6d58aab-3c38-4f8b-9c43-09d2a0c2e902', 'BNBUSDT', true, 'BNB', 'USDT', '2026-03-20 16:32:00+00', '2026-03-20 16:32:00+00');
 
 --
 -- Data for Name: risk_profiles; Type: TABLE DATA; Schema: public; Owner: -
@@ -80,10 +76,46 @@ VALUES
   ('7f93de85-2179-4e63-a8cb-333005ccddb1', 'ema-cross-12-26', 'emaCross', '{"fastPeriod": 12, "slowPeriod": 26}', true, '2026-03-16 10:45:18.083+00', '2026-03-16 10:45:18.083+00');
 
 
+--
+-- Data for Name: execution_settings; Type: TABLE DATA; Schema: public; Owner: -
+--
+
+INSERT INTO public.execution_settings
+  (
+    id,
+    name,
+    enabled,
+    mode,
+    auto_promote,
+    selection_metric,
+    require_positive_pnl,
+    min_trade_count,
+    allowed_symbols_json,
+    allowed_timeframes_json,
+    replace_open_position_policy,
+    created_at,
+    updated_at
+  )
+VALUES
+  (
+    '4bf44511-8cc5-44f4-9ce6-5ff8d680bc71',
+    'paper-default',
+    true,
+    'paper',
+    true,
+    'totalPnlPercent',
+    false,
+    1,
+    '[]'::jsonb,
+    '[]'::jsonb,
+    'flatten',
+    '2026-03-29 09:00:00+00',
+    '2026-03-29 09:00:00+00'
+  );
+
+
 -- (research_settings intentionally omitted)
 
 --
 -- PostgreSQL database dump complete
 --
-
-\unrestrict tRrFYEsl4EyLe2agNf1Fp8SchH6H57Nhpsi6rnSCFjEXR1iuTunvIdOA1fsgu7r

@@ -19,7 +19,13 @@ export type OpsWebsocketEvent =
   | BaseOpsEvent<
       "config.resource.updated",
       {
-        resource: "symbols" | "timeframes" | "strategies" | "risk-profiles" | "analysis-settings";
+        resource:
+          | "symbols"
+          | "timeframes"
+          | "strategies"
+          | "risk-profiles"
+          | "analysis-settings"
+          | "execution-settings";
         operation: "created" | "updated" | "deleted";
         id?: string;
       }
@@ -33,6 +39,13 @@ export type OpsWebsocketEvent =
     >
   | BaseOpsEvent<
       "ops.data-readiness.updated",
+      {
+        symbols: string[];
+        timeframeCodes: string[];
+      }
+    >
+  | BaseOpsEvent<
+      "ops.execution.updated",
       {
         symbols: string[];
         timeframeCodes: string[];

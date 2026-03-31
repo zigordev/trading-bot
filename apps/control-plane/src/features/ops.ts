@@ -1,4 +1,5 @@
 import type { Pool, QueryResultRow } from "pg";
+import { listResolvedAnalysisSettings } from "./config-resources.js";
 
 export type BacktestJobStatus =
   | "queued"
@@ -44,6 +45,10 @@ export type BacktestRunProjectionRecord = {
   replayTradeCount: number;
   signalCount: number;
   tradeCount: number;
+  stopLossTradeCount: number;
+  takeProfitTradeCount: number;
+  reversalTradeCount: number;
+  windowEndTradeCount: number;
   totalPnlPercent: number;
   sourceEventId: string;
   sourceOccurredAt: string;
@@ -92,6 +97,104 @@ export type DataReadinessProjectionInput = Omit<
   DataReadinessProjectionRecord,
   "createdAt" | "updatedAt"
 >;
+
+export type ExecutionPromotionProjectionRecord = {
+  promotionId: string;
+  executionSettingsName: string;
+  analysisSettingId: string;
+  sourceBacktestId: string | null;
+  symbolCode: string;
+  timeframeCode: string;
+  strategyName: string;
+  riskProfileName: string;
+  mode: "paper" | "live";
+  selectionMetric: string;
+  selectionValue: number;
+  status: "active" | "superseded";
+  promotedAt: string;
+  sourceEventId: string | null;
+  sourceOccurredAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ExecutionPromotionProjectionInput = Omit<
+  ExecutionPromotionProjectionRecord,
+  "createdAt" | "updatedAt"
+>;
+
+export type ExecutionTradeRecord = {
+  tradeId: string;
+  externalOrderId: string | null;
+  positionId: string | null;
+  sourceBacktestId: string | null;
+  analysisSettingId: string;
+  executionSettingsName: string | null;
+  symbolCode: string;
+  timeframeCode: string;
+  strategyName: string;
+  riskProfileName: string;
+  mode: "paper" | "live";
+  side: "long" | "short";
+  status: "open" | "closed" | "cancelled" | "rejected";
+  closeReason: string | null;
+  openedAt: string;
+  closedAt: string | null;
+  durationMs: number | null;
+  entryPrice: number;
+  exitPrice: number | null;
+  quantity: number;
+  notionalUsd: number;
+  stopLossPrice: number | null;
+  takeProfitPrice: number | null;
+  realizedPnlPercent: number | null;
+  realizedPnlUsd: number | null;
+  feesUsd: number;
+  sourceEventId: string | null;
+  sourceOccurredAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ExecutionTradeInput = Omit<ExecutionTradeRecord, "createdAt" | "updatedAt">;
+
+export type ExecutionTradeSortField =
+  | "openedAt"
+  | "closedAt"
+  | "realizedPnlPercent"
+  | "symbolCode"
+  | "notionalUsd";
+
+export type ExecutionTradeQuery = {
+  page: number;
+  pageSize: number;
+  sortBy: ExecutionTradeSortField;
+  sortDirection: "asc" | "desc";
+  search?: string;
+  symbolCode?: string;
+  timeframeCode?: string;
+  strategyName?: string;
+  side?: "long" | "short";
+  status?: "open" | "closed" | "cancelled" | "rejected";
+  mode?: "paper" | "live";
+};
+
+export type PaginatedExecutionTrades = {
+  items: ExecutionTradeRecord[];
+  totalCount: number;
+  page: number;
+  pageSize: number;
+};
+
+type ExecutionSettingsSelectionRecord = {
+  name: string;
+  mode: "paper" | "live";
+  autoPromote: boolean;
+  maxPromotions: number;
+  requirePositivePnl: boolean;
+  minTradeCount: number;
+  replaceOpenPositionPolicy: "keep" | "flatten";
+};
 
 const isZeroReadinessDimension = (
   value: Record<string, unknown> | null,
@@ -194,6 +297,10 @@ const mapBacktestRunProjectionRow = (
   replayTradeCount: Number(row.replay_trade_count),
   signalCount: Number(row.signal_count),
   tradeCount: Number(row.trade_count),
+  stopLossTradeCount: Number(row.stop_loss_trade_count ?? 0),
+  takeProfitTradeCount: Number(row.take_profit_trade_count ?? 0),
+  reversalTradeCount: Number(row.reversal_trade_count ?? 0),
+  windowEndTradeCount: Number(row.window_end_trade_count ?? 0),
   totalPnlPercent: Number(row.total_pnl_percent),
   sourceEventId: String(row.source_event_id),
   sourceOccurredAt:
@@ -255,6 +362,114 @@ const mapDataReadinessProjectionRow = (
   createdAt: toIsoString(row.created_at) ?? new Date(0).toISOString(),
   updatedAt: toIsoString(row.updated_at) ?? new Date(0).toISOString(),
 });
+
+const mapExecutionPromotionProjectionRow = (
+  row: QueryResultRow,
+): ExecutionPromotionProjectionRecord => ({
+  promotionId: String(row.promotion_id),
+  executionSettingsName: String(row.execution_settings_name),
+  analysisSettingId: String(row.analysis_setting_id),
+  sourceBacktestId:
+    row.source_backtest_id === null ? null : String(row.source_backtest_id),
+  symbolCode: String(row.symbol_code),
+  timeframeCode: String(row.timeframe_code),
+  strategyName: String(row.strategy_name),
+  riskProfileName: String(row.risk_profile_name),
+  mode: row.mode === "live" ? "live" : "paper",
+  selectionMetric: String(row.selection_metric),
+  selectionValue: Number(row.selection_value),
+  status: row.status === "superseded" ? "superseded" : "active",
+  promotedAt: toIsoString(row.promoted_at) ?? new Date(0).toISOString(),
+  sourceEventId:
+    row.source_event_id === null ? null : String(row.source_event_id),
+  sourceOccurredAt: row.source_occurred_at === null ? null : toIsoString(row.source_occurred_at),
+  createdAt: toIsoString(row.created_at) ?? new Date(0).toISOString(),
+  updatedAt: toIsoString(row.updated_at) ?? new Date(0).toISOString(),
+});
+
+const mapExecutionTradeRow = (row: QueryResultRow): ExecutionTradeRecord => ({
+  tradeId: String(row.trade_id),
+  externalOrderId:
+    row.external_order_id === null ? null : String(row.external_order_id),
+  positionId: row.position_id === null ? null : String(row.position_id),
+  sourceBacktestId:
+    row.source_backtest_id === null ? null : String(row.source_backtest_id),
+  analysisSettingId: String(row.analysis_setting_id),
+  executionSettingsName:
+    row.execution_settings_name === null ? null : String(row.execution_settings_name),
+  symbolCode: String(row.symbol_code),
+  timeframeCode: String(row.timeframe_code),
+  strategyName: String(row.strategy_name),
+  riskProfileName: String(row.risk_profile_name),
+  mode: row.mode === "live" ? "live" : "paper",
+  side: row.side === "short" ? "short" : "long",
+  status:
+    row.status === "closed" ||
+    row.status === "cancelled" ||
+    row.status === "rejected"
+      ? row.status
+      : "open",
+  closeReason: row.close_reason === null ? null : String(row.close_reason),
+  openedAt: toIsoString(row.opened_at) ?? new Date(0).toISOString(),
+  closedAt: row.closed_at === null ? null : toIsoString(row.closed_at),
+  durationMs: row.duration_ms === null ? null : Number(row.duration_ms),
+  entryPrice: Number(row.entry_price),
+  exitPrice: row.exit_price === null ? null : Number(row.exit_price),
+  quantity: Number(row.quantity),
+  notionalUsd: Number(row.notional_usd),
+  stopLossPrice:
+    row.stop_loss_price === null ? null : Number(row.stop_loss_price),
+  takeProfitPrice:
+    row.take_profit_price === null ? null : Number(row.take_profit_price),
+  realizedPnlPercent:
+    row.realized_pnl_percent === null ? null : Number(row.realized_pnl_percent),
+  realizedPnlUsd: row.realized_pnl_usd === null ? null : Number(row.realized_pnl_usd),
+  feesUsd: Number(row.fees_usd),
+  sourceEventId:
+    row.source_event_id === null ? null : String(row.source_event_id),
+  sourceOccurredAt: row.source_occurred_at === null ? null : toIsoString(row.source_occurred_at),
+  createdAt: toIsoString(row.created_at) ?? new Date(0).toISOString(),
+  updatedAt: toIsoString(row.updated_at) ?? new Date(0).toISOString(),
+});
+
+const mapExecutionSettingsSelectionRow = (
+  row: QueryResultRow,
+): ExecutionSettingsSelectionRecord => ({
+  name: String(row.name),
+  mode: row.mode === "live" ? "live" : "paper",
+  autoPromote: Boolean(row.auto_promote),
+  maxPromotions: Number(row.max_promotions),
+  requirePositivePnl: Boolean(row.require_positive_pnl),
+  minTradeCount: Number(row.min_trade_count),
+  replaceOpenPositionPolicy:
+    row.replace_open_position_policy === "keep" ? "keep" : "flatten",
+});
+
+const hasSamePromotionContext = (
+  promotion: Pick<
+    ExecutionPromotionProjectionRecord,
+    | "executionSettingsName"
+    | "analysisSettingId"
+    | "symbolCode"
+    | "timeframeCode"
+    | "strategyName"
+    | "riskProfileName"
+    | "mode"
+  >,
+  run: Pick<
+    BacktestRunProjectionInput,
+    "analysisSettingId" | "symbol" | "timeframeCode" | "strategyName" | "riskProfileName"
+  >,
+  executionSettingsName: string,
+  mode: "paper" | "live",
+): boolean =>
+  promotion.executionSettingsName === executionSettingsName &&
+  promotion.analysisSettingId === run.analysisSettingId &&
+  promotion.symbolCode === run.symbol &&
+  promotion.timeframeCode === run.timeframeCode &&
+  promotion.strategyName === run.strategyName &&
+  promotion.riskProfileName === run.riskProfileName &&
+  promotion.mode === mode;
 
 export const ensureOpsSchema = async (pool: Pool): Promise<void> => {
   await pool.query(`
@@ -324,12 +539,24 @@ export const ensureOpsSchema = async (pool: Pool): Promise<void> => {
       replay_trade_count INTEGER NOT NULL,
       signal_count INTEGER NOT NULL,
       trade_count INTEGER NOT NULL,
+      stop_loss_trade_count INTEGER NOT NULL DEFAULT 0,
+      take_profit_trade_count INTEGER NOT NULL DEFAULT 0,
+      reversal_trade_count INTEGER NOT NULL DEFAULT 0,
+      window_end_trade_count INTEGER NOT NULL DEFAULT 0,
       total_pnl_percent DOUBLE PRECISION NOT NULL,
       source_event_id TEXT NOT NULL,
       source_occurred_at TIMESTAMPTZ NOT NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+  `);
+
+  await pool.query(`
+    ALTER TABLE ops_backtest_runs
+      ADD COLUMN IF NOT EXISTS stop_loss_trade_count INTEGER NOT NULL DEFAULT 0,
+      ADD COLUMN IF NOT EXISTS take_profit_trade_count INTEGER NOT NULL DEFAULT 0,
+      ADD COLUMN IF NOT EXISTS reversal_trade_count INTEGER NOT NULL DEFAULT 0,
+      ADD COLUMN IF NOT EXISTS window_end_trade_count INTEGER NOT NULL DEFAULT 0
   `);
 
   await pool.query(`
@@ -369,6 +596,78 @@ export const ensureOpsSchema = async (pool: Pool): Promise<void> => {
       CONSTRAINT ops_data_readiness_status_valid
         CHECK (status IN ('ready', 'partial', 'missing', 'error'))
     );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS ops_execution_promotions (
+      promotion_id TEXT PRIMARY KEY,
+      execution_settings_name TEXT NOT NULL,
+      analysis_setting_id TEXT NOT NULL,
+      source_backtest_id TEXT,
+      symbol_code TEXT NOT NULL,
+      timeframe_code TEXT NOT NULL,
+      strategy_name TEXT NOT NULL,
+      risk_profile_name TEXT NOT NULL,
+      mode TEXT NOT NULL,
+      selection_metric TEXT NOT NULL,
+      selection_value DOUBLE PRECISION NOT NULL,
+      status TEXT NOT NULL,
+      promoted_at TIMESTAMPTZ NOT NULL,
+      source_event_id TEXT,
+      source_occurred_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      CONSTRAINT ops_execution_promotions_mode_valid
+        CHECK (mode IN ('paper', 'live')),
+      CONSTRAINT ops_execution_promotions_status_valid
+        CHECK (status IN ('active', 'superseded'))
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS ops_execution_trades (
+      trade_id TEXT PRIMARY KEY,
+      external_order_id TEXT,
+      position_id TEXT,
+      source_backtest_id TEXT,
+      analysis_setting_id TEXT NOT NULL,
+      execution_settings_name TEXT,
+      symbol_code TEXT NOT NULL,
+      timeframe_code TEXT NOT NULL,
+      strategy_name TEXT NOT NULL,
+      risk_profile_name TEXT NOT NULL,
+      mode TEXT NOT NULL,
+      side TEXT NOT NULL,
+      status TEXT NOT NULL,
+      close_reason TEXT,
+      opened_at TIMESTAMPTZ NOT NULL,
+      closed_at TIMESTAMPTZ,
+      duration_ms BIGINT,
+      entry_price DOUBLE PRECISION NOT NULL,
+      exit_price DOUBLE PRECISION,
+      quantity DOUBLE PRECISION NOT NULL,
+      notional_usd DOUBLE PRECISION NOT NULL,
+      stop_loss_price DOUBLE PRECISION,
+      take_profit_price DOUBLE PRECISION,
+      realized_pnl_percent DOUBLE PRECISION,
+      realized_pnl_usd DOUBLE PRECISION,
+      fees_usd DOUBLE PRECISION NOT NULL DEFAULT 0,
+      source_event_id TEXT,
+      source_occurred_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      CONSTRAINT ops_execution_trades_mode_valid
+        CHECK (mode IN ('paper', 'live')),
+      CONSTRAINT ops_execution_trades_side_valid
+        CHECK (side IN ('long', 'short')),
+      CONSTRAINT ops_execution_trades_status_valid
+        CHECK (status IN ('open', 'closed', 'cancelled', 'rejected'))
+    );
+  `);
+
+  await pool.query(`
+    ALTER TABLE ops_execution_trades
+      ADD COLUMN IF NOT EXISTS close_reason TEXT
   `);
 
   await pool.query(`
@@ -608,6 +907,9 @@ export const upsertBacktestBatchFromProgressEvent = async (
     runningCount: number;
   },
 ): Promise<BacktestBatchRecord> => {
+  const normalizedProgressPercent = Number.isFinite(payload.progressPercent)
+    ? Math.min(100, Math.max(0, payload.progressPercent))
+    : 0;
   const result = await pool.query(
     `
       INSERT INTO ops_backtest_batches (
@@ -665,7 +967,7 @@ export const upsertBacktestBatchFromProgressEvent = async (
       payload.requestedStartTime,
       payload.requestedEndTime,
       payload.stage,
-      payload.progressPercent,
+      normalizedProgressPercent,
       payload.totalCount,
       payload.completedCount,
       payload.runningCount,
@@ -742,6 +1044,10 @@ export const upsertBacktestRunProjection = async (
         replay_trade_count,
         signal_count,
         trade_count,
+        stop_loss_trade_count,
+        take_profit_trade_count,
+        reversal_trade_count,
+        window_end_trade_count,
         total_pnl_percent,
         source_event_id,
         source_occurred_at
@@ -764,7 +1070,12 @@ export const upsertBacktestRunProjection = async (
         $15,
         $16,
         $17,
-        $18::timestamptz
+        $18,
+        $19,
+        $20,
+        $21,
+        $22,
+        $23::timestamptz
       )
       ON CONFLICT (backtest_id)
       DO UPDATE SET
@@ -782,6 +1093,10 @@ export const upsertBacktestRunProjection = async (
         replay_trade_count = EXCLUDED.replay_trade_count,
         signal_count = EXCLUDED.signal_count,
         trade_count = EXCLUDED.trade_count,
+        stop_loss_trade_count = EXCLUDED.stop_loss_trade_count,
+        take_profit_trade_count = EXCLUDED.take_profit_trade_count,
+        reversal_trade_count = EXCLUDED.reversal_trade_count,
+        window_end_trade_count = EXCLUDED.window_end_trade_count,
         total_pnl_percent = EXCLUDED.total_pnl_percent,
         source_event_id = EXCLUDED.source_event_id,
         source_occurred_at = EXCLUDED.source_occurred_at,
@@ -802,6 +1117,10 @@ export const upsertBacktestRunProjection = async (
         replay_trade_count,
         signal_count,
         trade_count,
+        stop_loss_trade_count,
+        take_profit_trade_count,
+        reversal_trade_count,
+        window_end_trade_count,
         total_pnl_percent,
         source_event_id,
         source_occurred_at,
@@ -824,6 +1143,10 @@ export const upsertBacktestRunProjection = async (
       input.replayTradeCount,
       input.signalCount,
       input.tradeCount,
+      input.stopLossTradeCount,
+      input.takeProfitTradeCount,
+      input.reversalTradeCount,
+      input.windowEndTradeCount,
       input.totalPnlPercent,
       input.sourceEventId,
       input.sourceOccurredAt,
@@ -855,6 +1178,10 @@ export const listBacktestRunProjections = async (
         replay_trade_count,
         signal_count,
         trade_count,
+        stop_loss_trade_count,
+        take_profit_trade_count,
+        reversal_trade_count,
+        window_end_trade_count,
         total_pnl_percent,
         source_event_id,
         source_occurred_at,
@@ -991,4 +1318,611 @@ export const listDataReadinessProjections = async (
   );
 
   return result.rows.map(mapDataReadinessProjectionRow);
+};
+
+export const upsertExecutionPromotionProjection = async (
+  pool: Pool,
+  input: ExecutionPromotionProjectionInput,
+): Promise<ExecutionPromotionProjectionRecord> => {
+  const result = await pool.query(
+    `
+      INSERT INTO ops_execution_promotions (
+        promotion_id,
+        execution_settings_name,
+        analysis_setting_id,
+        source_backtest_id,
+        symbol_code,
+        timeframe_code,
+        strategy_name,
+        risk_profile_name,
+        mode,
+        selection_metric,
+        selection_value,
+        status,
+        promoted_at,
+        source_event_id,
+        source_occurred_at
+      )
+      VALUES (
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::timestamptz, $14, $15::timestamptz
+      )
+      ON CONFLICT (promotion_id) DO UPDATE
+         SET execution_settings_name = EXCLUDED.execution_settings_name,
+             analysis_setting_id = EXCLUDED.analysis_setting_id,
+             source_backtest_id = EXCLUDED.source_backtest_id,
+             symbol_code = EXCLUDED.symbol_code,
+             timeframe_code = EXCLUDED.timeframe_code,
+             strategy_name = EXCLUDED.strategy_name,
+             risk_profile_name = EXCLUDED.risk_profile_name,
+             mode = EXCLUDED.mode,
+             selection_metric = EXCLUDED.selection_metric,
+             selection_value = EXCLUDED.selection_value,
+             status = EXCLUDED.status,
+             promoted_at = EXCLUDED.promoted_at,
+             source_event_id = EXCLUDED.source_event_id,
+             source_occurred_at = EXCLUDED.source_occurred_at,
+             updated_at = NOW()
+      RETURNING
+        promotion_id,
+        execution_settings_name,
+        analysis_setting_id,
+        source_backtest_id,
+        symbol_code,
+        timeframe_code,
+        strategy_name,
+        risk_profile_name,
+        mode,
+        selection_metric,
+        selection_value,
+        status,
+        promoted_at,
+        source_event_id,
+        source_occurred_at,
+        created_at,
+        updated_at
+    `,
+    [
+      input.promotionId,
+      input.executionSettingsName,
+      input.analysisSettingId,
+      input.sourceBacktestId,
+      input.symbolCode,
+      input.timeframeCode,
+      input.strategyName,
+      input.riskProfileName,
+      input.mode,
+      input.selectionMetric,
+      input.selectionValue,
+      input.status,
+      input.promotedAt,
+      input.sourceEventId,
+      input.sourceOccurredAt,
+    ],
+  );
+
+  return mapExecutionPromotionProjectionRow(result.rows[0]);
+};
+
+export const getActiveExecutionPromotion = async (
+  pool: Pool,
+): Promise<ExecutionPromotionProjectionRecord | null> => {
+  const result = await pool.query(
+    `
+      SELECT
+        promotion_id,
+        execution_settings_name,
+        analysis_setting_id,
+        source_backtest_id,
+        symbol_code,
+        timeframe_code,
+        strategy_name,
+        risk_profile_name,
+        mode,
+        selection_metric,
+        selection_value,
+        status,
+        promoted_at,
+        source_event_id,
+        source_occurred_at,
+        created_at,
+        updated_at
+      FROM ops_execution_promotions
+      WHERE status = 'active'
+      ORDER BY promoted_at DESC, promotion_id DESC
+      LIMIT 1
+    `,
+  );
+
+  return result.rowCount === 0 ? null : mapExecutionPromotionProjectionRow(result.rows[0]);
+};
+
+export const listActiveExecutionPromotions = async (
+  pool: Pool,
+  limit = 20,
+): Promise<ExecutionPromotionProjectionRecord[]> => {
+  const result = await pool.query(
+    `
+      SELECT
+        promotion_id,
+        execution_settings_name,
+        analysis_setting_id,
+        source_backtest_id,
+        symbol_code,
+        timeframe_code,
+        strategy_name,
+        risk_profile_name,
+        mode,
+        selection_metric,
+        selection_value,
+        status,
+        promoted_at,
+        source_event_id,
+        source_occurred_at,
+        created_at,
+        updated_at
+      FROM ops_execution_promotions
+      WHERE status = 'active'
+      ORDER BY selection_value DESC, promoted_at DESC, promotion_id DESC
+      LIMIT $1
+    `,
+    [Math.max(1, Math.min(limit, 100))],
+  );
+
+  return result.rows.map(mapExecutionPromotionProjectionRow);
+};
+
+export const upsertExecutionTradeProjection = async (
+  pool: Pool,
+  input: ExecutionTradeInput,
+): Promise<ExecutionTradeRecord> => {
+  const result = await pool.query(
+    `
+      INSERT INTO ops_execution_trades (
+        trade_id,
+        external_order_id,
+        position_id,
+        source_backtest_id,
+        analysis_setting_id,
+        execution_settings_name,
+        symbol_code,
+        timeframe_code,
+        strategy_name,
+        risk_profile_name,
+        mode,
+        side,
+        status,
+        close_reason,
+        opened_at,
+        closed_at,
+        duration_ms,
+        entry_price,
+        exit_price,
+        quantity,
+        notional_usd,
+        stop_loss_price,
+        take_profit_price,
+        realized_pnl_percent,
+        realized_pnl_usd,
+        fees_usd,
+        source_event_id,
+        source_occurred_at
+      )
+      VALUES (
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+        $11, $12, $13, $14, $15::timestamptz, $16::timestamptz, $17, $18, $19, $20, $21,
+        $22, $23, $24, $25, $26, $27, $28::timestamptz
+      )
+      ON CONFLICT (trade_id) DO UPDATE
+         SET external_order_id = EXCLUDED.external_order_id,
+             position_id = EXCLUDED.position_id,
+             source_backtest_id = EXCLUDED.source_backtest_id,
+             analysis_setting_id = EXCLUDED.analysis_setting_id,
+             execution_settings_name = EXCLUDED.execution_settings_name,
+             symbol_code = EXCLUDED.symbol_code,
+             timeframe_code = EXCLUDED.timeframe_code,
+             strategy_name = EXCLUDED.strategy_name,
+             risk_profile_name = EXCLUDED.risk_profile_name,
+             mode = EXCLUDED.mode,
+             side = EXCLUDED.side,
+             status = EXCLUDED.status,
+             close_reason = EXCLUDED.close_reason,
+             opened_at = EXCLUDED.opened_at,
+             closed_at = EXCLUDED.closed_at,
+             duration_ms = EXCLUDED.duration_ms,
+             entry_price = EXCLUDED.entry_price,
+             exit_price = EXCLUDED.exit_price,
+             quantity = EXCLUDED.quantity,
+             notional_usd = EXCLUDED.notional_usd,
+             stop_loss_price = EXCLUDED.stop_loss_price,
+             take_profit_price = EXCLUDED.take_profit_price,
+             realized_pnl_percent = EXCLUDED.realized_pnl_percent,
+             realized_pnl_usd = EXCLUDED.realized_pnl_usd,
+             fees_usd = EXCLUDED.fees_usd,
+             source_event_id = EXCLUDED.source_event_id,
+             source_occurred_at = EXCLUDED.source_occurred_at,
+             updated_at = NOW()
+      RETURNING
+        trade_id,
+        external_order_id,
+        position_id,
+        source_backtest_id,
+        analysis_setting_id,
+        execution_settings_name,
+        symbol_code,
+        timeframe_code,
+        strategy_name,
+        risk_profile_name,
+        mode,
+        side,
+        status,
+        close_reason,
+        opened_at,
+        closed_at,
+        duration_ms,
+        entry_price,
+        exit_price,
+        quantity,
+        notional_usd,
+        stop_loss_price,
+        take_profit_price,
+        realized_pnl_percent,
+        realized_pnl_usd,
+        fees_usd,
+        source_event_id,
+        source_occurred_at,
+        created_at,
+        updated_at
+    `,
+    [
+      input.tradeId,
+      input.externalOrderId,
+      input.positionId,
+      input.sourceBacktestId,
+      input.analysisSettingId,
+      input.executionSettingsName,
+      input.symbolCode,
+      input.timeframeCode,
+      input.strategyName,
+      input.riskProfileName,
+      input.mode,
+      input.side,
+      input.status,
+      input.closeReason,
+      input.openedAt,
+      input.closedAt,
+      input.durationMs,
+      input.entryPrice,
+      input.exitPrice,
+      input.quantity,
+      input.notionalUsd,
+      input.stopLossPrice,
+      input.takeProfitPrice,
+      input.realizedPnlPercent,
+      input.realizedPnlUsd,
+      input.feesUsd,
+      input.sourceEventId,
+      input.sourceOccurredAt,
+    ],
+  );
+
+  return mapExecutionTradeRow(result.rows[0]);
+};
+
+export const listExecutionTrades = async (
+  pool: Pool,
+  query: ExecutionTradeQuery,
+): Promise<PaginatedExecutionTrades> => {
+  const whereClauses: string[] = [];
+  const params: unknown[] = [];
+  const pushParam = (value: unknown): string => {
+    params.push(value);
+    return `$${params.length}`;
+  };
+
+  if (query.search?.trim()) {
+    const param = pushParam(`%${query.search.trim().toLowerCase()}%`);
+    whereClauses.push(
+      `(LOWER(trade_id) LIKE ${param}
+        OR LOWER(COALESCE(external_order_id, '')) LIKE ${param}
+        OR LOWER(COALESCE(source_backtest_id, '')) LIKE ${param}
+        OR LOWER(analysis_setting_id) LIKE ${param})`,
+    );
+  }
+
+  if (query.symbolCode) {
+    whereClauses.push(`symbol_code = ${pushParam(query.symbolCode)}`);
+  }
+  if (query.timeframeCode) {
+    whereClauses.push(`timeframe_code = ${pushParam(query.timeframeCode)}`);
+  }
+  if (query.strategyName) {
+    whereClauses.push(`strategy_name = ${pushParam(query.strategyName)}`);
+  }
+  if (query.side) {
+    whereClauses.push(`side = ${pushParam(query.side)}`);
+  }
+  if (query.status) {
+    whereClauses.push(`status = ${pushParam(query.status)}`);
+  }
+  if (query.mode) {
+    whereClauses.push(`mode = ${pushParam(query.mode)}`);
+  }
+
+  const whereSql = whereClauses.length > 0 ? `WHERE ${whereClauses.join(" AND ")}` : "";
+  const sortColumnByField: Record<ExecutionTradeSortField, string> = {
+    openedAt: "opened_at",
+    closedAt: "closed_at",
+    realizedPnlPercent: "realized_pnl_percent",
+    symbolCode: "symbol_code",
+    notionalUsd: "notional_usd",
+  };
+  const sortColumn = sortColumnByField[query.sortBy] ?? "opened_at";
+  const sortDirection = query.sortDirection === "asc" ? "ASC" : "DESC";
+  const pageSize = Math.max(1, Math.min(query.pageSize, 100));
+  const page = Math.max(1, query.page);
+  const offset = (page - 1) * pageSize;
+
+  const countResult = await pool.query(
+    `SELECT COUNT(*)::bigint AS total_count FROM ops_execution_trades ${whereSql}`,
+    params,
+  );
+
+  const rowsResult = await pool.query(
+    `
+      SELECT
+        trade_id,
+        external_order_id,
+        position_id,
+        source_backtest_id,
+        analysis_setting_id,
+        execution_settings_name,
+        symbol_code,
+        timeframe_code,
+        strategy_name,
+        risk_profile_name,
+        mode,
+        side,
+        status,
+        close_reason,
+        opened_at,
+        closed_at,
+        duration_ms,
+        entry_price,
+        exit_price,
+        quantity,
+        notional_usd,
+        stop_loss_price,
+        take_profit_price,
+        realized_pnl_percent,
+        realized_pnl_usd,
+        fees_usd,
+        source_event_id,
+        source_occurred_at,
+        created_at,
+        updated_at
+      FROM ops_execution_trades
+      ${whereSql}
+      ORDER BY ${sortColumn} ${sortDirection}, trade_id DESC
+      LIMIT ${pushParam(pageSize)}
+      OFFSET ${pushParam(offset)}
+    `,
+    params,
+  );
+
+  return {
+    items: rowsResult.rows.map(mapExecutionTradeRow),
+    totalCount: Number(countResult.rows[0]?.total_count ?? 0),
+    page,
+    pageSize,
+  };
+};
+
+export const getAutoPromoteExecutionSettings = async (
+  pool: Pool,
+): Promise<ExecutionSettingsSelectionRecord | null> => {
+  const result = await pool.query(
+    `
+      SELECT
+        name,
+        mode,
+        auto_promote,
+        max_promotions,
+        require_positive_pnl,
+        min_trade_count,
+        replace_open_position_policy,
+        updated_at
+      FROM execution_settings
+      WHERE enabled = TRUE
+        AND auto_promote = TRUE
+      ORDER BY updated_at DESC, name ASC
+      LIMIT 1
+    `,
+  );
+
+  return result.rowCount === 0
+    ? null
+    : mapExecutionSettingsSelectionRow(result.rows[0]);
+};
+
+export const promoteBacktestRunIfEligible = async (
+  pool: Pool,
+  run: BacktestRunProjectionInput,
+): Promise<ExecutionPromotionProjectionRecord | null> => {
+  const settings = await getAutoPromoteExecutionSettings(pool);
+  if (!settings) {
+    return null;
+  }
+
+  if (run.tradeCount < settings.minTradeCount) {
+    return null;
+  }
+  if (settings.requirePositivePnl && run.totalPnlPercent <= 0) {
+    return null;
+  }
+  const eligibleAnalyses = await listResolvedAnalysisSettings(pool);
+  const isEnabledByRuntimeConfig = eligibleAnalyses.some(
+    (analysis) =>
+      analysis.id === run.analysisSettingId &&
+      analysis.symbolCode === run.symbol &&
+      analysis.timeframeCode === run.timeframeCode &&
+      analysis.riskProfileName === run.riskProfileName,
+  );
+  if (!isEnabledByRuntimeConfig) {
+    return null;
+  }
+
+  const activePromotions = await listActiveExecutionPromotions(
+    pool,
+    settings.maxPromotions + 10,
+  );
+  if (activePromotions.some((promotion) => promotion.sourceBacktestId === run.backtestId)) {
+    return null;
+  }
+  const sameContextPromotions = activePromotions.filter((promotion) =>
+    hasSamePromotionContext(promotion, run, settings.name, settings.mode),
+  );
+  const competingPromotions = activePromotions.filter(
+    (promotion) => !hasSamePromotionContext(promotion, run, settings.name, settings.mode),
+  );
+  const lowestCompetingPromotion =
+    competingPromotions[competingPromotions.length - 1] ?? null;
+  if (
+    sameContextPromotions.length === 0 &&
+    competingPromotions.length >= settings.maxPromotions &&
+    lowestCompetingPromotion &&
+    lowestCompetingPromotion.selectionValue >= run.totalPnlPercent
+  ) {
+    return null;
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const result = await client.query(
+      `
+        INSERT INTO ops_execution_promotions (
+          promotion_id,
+          execution_settings_name,
+          analysis_setting_id,
+          source_backtest_id,
+          symbol_code,
+          timeframe_code,
+          strategy_name,
+          risk_profile_name,
+          mode,
+          selection_metric,
+          selection_value,
+          status,
+          promoted_at,
+          source_event_id,
+          source_occurred_at
+        )
+        VALUES (
+          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'active', NOW(), $12, $13::timestamptz
+        )
+        ON CONFLICT (promotion_id) DO UPDATE
+          SET execution_settings_name = EXCLUDED.execution_settings_name,
+              analysis_setting_id = EXCLUDED.analysis_setting_id,
+              source_backtest_id = EXCLUDED.source_backtest_id,
+              symbol_code = EXCLUDED.symbol_code,
+              timeframe_code = EXCLUDED.timeframe_code,
+              strategy_name = EXCLUDED.strategy_name,
+              risk_profile_name = EXCLUDED.risk_profile_name,
+              mode = EXCLUDED.mode,
+              selection_metric = EXCLUDED.selection_metric,
+              selection_value = EXCLUDED.selection_value,
+              status = 'active',
+              promoted_at = NOW(),
+              source_event_id = EXCLUDED.source_event_id,
+              source_occurred_at = EXCLUDED.source_occurred_at,
+              updated_at = NOW()
+        RETURNING
+          promotion_id,
+          execution_settings_name,
+          analysis_setting_id,
+          source_backtest_id,
+          symbol_code,
+          timeframe_code,
+          strategy_name,
+          risk_profile_name,
+          mode,
+          selection_metric,
+          selection_value,
+          status,
+          promoted_at,
+          source_event_id,
+          source_occurred_at,
+          created_at,
+          updated_at
+      `,
+      [
+        `promotion:${settings.name}:${run.backtestId}`,
+        settings.name,
+        run.analysisSettingId,
+        run.backtestId,
+        run.symbol,
+        run.timeframeCode,
+        run.strategyName,
+        run.riskProfileName,
+        settings.mode,
+        "totalPnlPercent",
+        run.totalPnlPercent,
+        run.sourceEventId,
+        run.sourceOccurredAt,
+      ],
+    );
+
+    await client.query(
+      `
+        UPDATE ops_execution_promotions
+           SET status = 'superseded',
+               updated_at = NOW()
+         WHERE status = 'active'
+           AND promotion_id <> $1
+           AND execution_settings_name = $2
+           AND analysis_setting_id = $3
+           AND symbol_code = $4
+           AND timeframe_code = $5
+           AND strategy_name = $6
+           AND risk_profile_name = $7
+           AND mode = $8
+      `,
+      [
+        `promotion:${settings.name}:${run.backtestId}`,
+        settings.name,
+        run.analysisSettingId,
+        run.symbol,
+        run.timeframeCode,
+        run.strategyName,
+        run.riskProfileName,
+        settings.mode,
+      ],
+    );
+
+    await client.query(
+      `
+        UPDATE ops_execution_promotions
+           SET status = 'superseded',
+               updated_at = NOW()
+         WHERE status = 'active'
+           AND promotion_id NOT IN (
+             SELECT promotion_id
+             FROM ops_execution_promotions
+             WHERE status = 'active'
+             ORDER BY selection_value DESC, promoted_at DESC, promotion_id DESC
+             LIMIT $1
+           )
+      `,
+      [settings.maxPromotions],
+    );
+
+    await client.query("COMMIT");
+    return mapExecutionPromotionProjectionRow(result.rows[0]);
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
 };
