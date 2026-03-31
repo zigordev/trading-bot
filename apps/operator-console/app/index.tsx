@@ -64,6 +64,10 @@ export default function OverviewScreen() {
           return;
         }
 
+        if (event.type !== "config.resource.updated") {
+          return;
+        }
+
         void queryClient.invalidateQueries({
           queryKey: ["config-resource", event.payload.resource],
         });

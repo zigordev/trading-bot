@@ -16,6 +16,7 @@ export function MultiSelectFilter({
   options,
   onChange,
   allLabel,
+  allowEmpty = true,
   renderOptionAdornment,
 }: {
   label: string;
@@ -23,6 +24,7 @@ export function MultiSelectFilter({
   options: string[];
   onChange: (value: string[]) => void;
   allLabel: string;
+  allowEmpty?: boolean;
   renderOptionAdornment?: (option: string) => ReactNode;
 }) {
   const [open, setOpen] = useState(false);
@@ -145,24 +147,26 @@ export function MultiSelectFilter({
                 }}
               />
               <ScrollView contentContainerStyle={{ gap: 8 }}>
-                <Pressable
-                  onPress={() => onChange([])}
-                  style={{
-                    borderRadius: 12,
-                    backgroundColor: value.length === 0 ? "#1f3a5f" : "#f8fafc",
-                    paddingHorizontal: 14,
-                    paddingVertical: 12,
-                  }}
-                >
-                  <Text
+                {allowEmpty ? (
+                  <Pressable
+                    onPress={() => onChange([])}
                     style={{
-                      color: value.length === 0 ? "#ffffff" : "#344054",
-                      fontWeight: "700",
+                      borderRadius: 12,
+                      backgroundColor: value.length === 0 ? "#1f3a5f" : "#f8fafc",
+                      paddingHorizontal: 14,
+                      paddingVertical: 12,
                     }}
                   >
-                    {allLabel}
-                  </Text>
-                </Pressable>
+                    <Text
+                      style={{
+                        color: value.length === 0 ? "#ffffff" : "#344054",
+                        fontWeight: "700",
+                      }}
+                    >
+                      {allLabel}
+                    </Text>
+                  </Pressable>
+                ) : null}
 
                 {filteredOptions.map((option) => {
                   const selected = value.includes(option);
