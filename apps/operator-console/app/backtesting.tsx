@@ -89,6 +89,10 @@ export default function BacktestingScreen() {
           return;
         }
 
+        if (event.type !== "config.resource.updated") {
+          return;
+        }
+
         if (event.payload.resource === "symbols") {
           void queryClient.invalidateQueries({ queryKey: ["config-resource", "symbols"] });
           void queryClient.invalidateQueries({ queryKey: ["runtime-analyses"] });
@@ -510,41 +514,66 @@ export default function BacktestingScreen() {
                                 <View
                                   key={`${run.backtestId}:${run.analysisSettingId}:${run.riskProfileName}`}
                                   style={{
-                                    flexDirection: "row",
                                     paddingHorizontal: 14,
                                     paddingVertical: 12,
-                                    gap: 12,
                                     borderTopWidth: index === 0 ? 0 : 1,
                                     borderTopColor: "#eaecf0",
                                     backgroundColor: index % 2 === 0 ? "#ffffff" : "#fcfcfd",
+                                    gap: 10,
                                   }}
                                 >
-                                  <TableCell label={run.timeframeCode} flex={0.9} />
-                                  <TableCell
-                                    label={
-                                      analysisDetailById.get(run.analysisSettingId) ??
-                                      run.analysisSettingId
-                                    }
-                                    flex={2.2}
-                                  />
-                                  <TableCell label={run.riskProfileName} flex={1.1} />
-                                  <TableCell
-                                    label={`${run.totalPnlPercent.toFixed(2)}%`}
-                                    flex={0.8}
-                                    align="right"
-                                    color={run.totalPnlPercent >= 0 ? "#157f3b" : "#b42318"}
-                                    weight="700"
-                                  />
-                                  <TableCell
-                                    label={formatDuration(run.backtestDurationMs)}
-                                    flex={0.9}
-                                    align="right"
-                                  />
-                                  <TableCell
-                                    label={new Date(run.finishedAt).toLocaleString()}
-                                    flex={1.3}
-                                    align="right"
-                                  />
+                                  <View style={{ flexDirection: "row", gap: 12 }}>
+                                    <TableCell label={run.timeframeCode} flex={0.9} />
+                                    <TableCell
+                                      label={
+                                        analysisDetailById.get(run.analysisSettingId) ??
+                                        run.analysisSettingId
+                                      }
+                                      flex={2.2}
+                                    />
+                                    <TableCell label={run.riskProfileName} flex={1.1} />
+                                    <TableCell
+                                      label={`${run.totalPnlPercent.toFixed(2)}%`}
+                                      flex={0.8}
+                                      align="right"
+                                      color={run.totalPnlPercent >= 0 ? "#157f3b" : "#b42318"}
+                                      weight="700"
+                                    />
+                                    <TableCell
+                                      label={formatDuration(run.backtestDurationMs)}
+                                      flex={0.9}
+                                      align="right"
+                                    />
+                                    <TableCell
+                                      label={new Date(run.finishedAt).toLocaleString()}
+                                      flex={1.3}
+                                      align="right"
+                                    />
+                                  </View>
+                                  <View
+                                    style={{
+                                      flexDirection: "row",
+                                      gap: 8,
+                                      flexWrap: "wrap",
+                                    }}
+                                  >
+                                    <MetricBadge
+                                      label="Reversal"
+                                      value={run.reversalTradeCount.toLocaleString()}
+                                    />
+                                    <MetricBadge
+                                      label="TP"
+                                      value={run.takeProfitTradeCount.toLocaleString()}
+                                    />
+                                    <MetricBadge
+                                      label="SL"
+                                      value={run.stopLossTradeCount.toLocaleString()}
+                                    />
+                                    <MetricBadge
+                                      label="Window"
+                                      value={run.windowEndTradeCount.toLocaleString()}
+                                    />
+                                  </View>
                                 </View>
                               ))}
                             </View>

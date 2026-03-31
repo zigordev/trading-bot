@@ -2,8 +2,10 @@ export type ConfigField = {
   name: string;
   label: string;
   kind: "text" | "number" | "boolean" | "json";
+  options?: string[];
   placeholder?: string;
   optional?: boolean;
+  defaultValue?: string;
 };
 
 export type ConfigResource = {
@@ -96,6 +98,48 @@ export const configResources = {
       { name: "enabled", label: "Enabled", kind: "boolean" },
     ],
   },
+  "execution-settings": {
+    label: "Execution Settings",
+    endpoint: "execution-settings",
+    titleField: "name",
+    fields: [
+      { name: "name", label: "Name", kind: "text" },
+      { name: "enabled", label: "Enabled", kind: "boolean", defaultValue: "true" },
+      {
+        name: "mode",
+        label: "Mode",
+        kind: "text",
+        options: ["paper", "live"],
+        defaultValue: "paper",
+      },
+      { name: "autoPromote", label: "Auto promote", kind: "boolean", defaultValue: "true" },
+      {
+        name: "maxPromotions",
+        label: "Max promotions",
+        kind: "number",
+        defaultValue: "1",
+      },
+      {
+        name: "requirePositivePnl",
+        label: "Require positive PnL",
+        kind: "boolean",
+        defaultValue: "false",
+      },
+      {
+        name: "minTradeCount",
+        label: "Minimum trade count",
+        kind: "number",
+        defaultValue: "1",
+      },
+      {
+        name: "replaceOpenPositionPolicy",
+        label: "Replace open position policy",
+        kind: "text",
+        options: ["keep", "flatten"],
+        defaultValue: "flatten",
+      },
+    ],
+  },
 } as const satisfies Record<string, ConfigResource>;
 
 export type ConfigResourceKey = keyof typeof configResources;
@@ -105,7 +149,10 @@ export const createEmptyFormState = (
 ): Record<string, string> =>
   configResources[resourceKey].fields.reduce<Record<string, string>>(
     (accumulator, field) => {
-      accumulator[field.name] = field.kind === "json" ? "{}" : field.kind === "boolean" ? "true" : "";
+      const defaultValue = "defaultValue" in field ? field.defaultValue : undefined;
+      accumulator[field.name] =
+        defaultValue ??
+        (field.kind === "json" ? "{}" : field.kind === "boolean" ? "true" : "");
       return accumulator;
     },
     {},

@@ -10,6 +10,7 @@ const navItems = [
     label: "Configuration",
     icon: "settings" as const,
   },
+  { href: "/execution", label: "Execution", icon: "candlestick-chart" as const },
   { href: "/backtesting", label: "Backtesting", icon: "history" as const },
 ] as const;
 

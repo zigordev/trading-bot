@@ -4,7 +4,13 @@ export type OpsRealtimeEvent =
       occurredAt: string;
       type: "config.resource.updated";
       payload: {
-        resource: "symbols" | "timeframes" | "strategies" | "risk-profiles" | "analysis-settings";
+        resource:
+          | "symbols"
+          | "timeframes"
+          | "strategies"
+          | "risk-profiles"
+          | "analysis-settings"
+          | "execution-settings";
         operation: "created" | "updated" | "deleted";
         id?: string;
       };
@@ -22,6 +28,15 @@ export type OpsRealtimeEvent =
       eventId: string;
       occurredAt: string;
       type: "ops.data-readiness.updated";
+      payload: {
+        symbols: string[];
+        timeframeCodes: string[];
+      };
+    }
+  | {
+      eventId: string;
+      occurredAt: string;
+      type: "ops.execution.updated";
       payload: {
         symbols: string[];
         timeframeCodes: string[];
@@ -62,7 +77,8 @@ export const parseOpsRealtimeEvent = (raw: string): OpsRealtimeEvent | null => {
         payload.resource === "timeframes" ||
         payload.resource === "strategies" ||
         payload.resource === "risk-profiles" ||
-        payload.resource === "analysis-settings") &&
+        payload.resource === "analysis-settings" ||
+        payload.resource === "execution-settings") &&
       (payload.operation === "created" ||
         payload.operation === "updated" ||
         payload.operation === "deleted")
@@ -81,7 +97,11 @@ export const parseOpsRealtimeEvent = (raw: string): OpsRealtimeEvent | null => {
     return null;
   }
 
-  if (parsed.type === "ops.backtests.updated" || parsed.type === "ops.data-readiness.updated") {
+  if (
+    parsed.type === "ops.backtests.updated" ||
+    parsed.type === "ops.data-readiness.updated" ||
+    parsed.type === "ops.execution.updated"
+  ) {
     if (!isStringArray(payload.symbols) || !isStringArray(payload.timeframeCodes)) {
       return null;
     }

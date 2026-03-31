@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { AppShell } from "@/src/components/app-shell";
 import { Card } from "@/src/components/card";
+import { MultiSelectFilter } from "@/src/components/multi-select-filter";
 import { SymbolAvatar } from "@/src/components/symbol-avatar";
 import {
   deleteConfigResource,
@@ -597,6 +598,7 @@ const configurationIconByResourceKey: Record<ConfigResourceKey, keyof typeof Mat
   strategies: "insights",
   "risk-profiles": "shield",
   "analysis-settings": "analytics",
+  "execution-settings": "play-circle-outline",
 };
 
 function RecordSummary({
@@ -645,6 +647,16 @@ function RecordSummary({
     );
   }
 
+  if (resourceKey === "execution-settings") {
+    return (
+      <View style={{ gap: 8 }}>
+        <Text style={{ color: "#475467" }}>
+          Mode: {String(record.mode ?? "paper")}
+        </Text>
+      </View>
+    );
+  }
+
   return null;
 }
 
@@ -685,7 +697,8 @@ function RecordToggle({
 
   if (
     resourceKey === "risk-profiles" ||
-    resourceKey === "analysis-settings"
+    resourceKey === "analysis-settings" ||
+    resourceKey === "execution-settings"
   ) {
     return (
       <BooleanToggle
@@ -788,6 +801,21 @@ function FieldInput({
         <Text style={{ color: enabled ? "#157f3b" : "#b54708" }}>
           Current: {enabled ? "True" : "False"}
         </Text>
+      </View>
+    );
+  }
+
+  if (field.options && field.options.length > 0) {
+    return (
+      <View style={{ gap: 6 }}>
+        <MultiSelectFilter
+          label={field.label}
+          value={value ? [value] : []}
+          options={field.options}
+          allLabel={`Select ${field.label.toLowerCase()}`}
+          allowEmpty={false}
+          onChange={(values) => onChange(values.at(-1) ?? "")}
+        />
       </View>
     );
   }
