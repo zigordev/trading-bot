@@ -190,3 +190,90 @@ test("GET /v1/runtime-config/analysis-settings returns the injected projection",
   assert.equal(response.statusCode, 200);
   assert.deepEqual(response.json(), projection);
 });
+
+test("GET /v1/ops/execution endpoints return injected execution projections", async (t) => {
+  const app = Fastify({ logger: false });
+  t.after(() => app.close());
+
+  registerOpsRoutes(app, testConfig, {} as never, {
+    fetchJson: async () => ({ status: "ok" }),
+    listResolvedAnalysisSettingsFn: async () => [],
+    listBacktestJobsFn: async () => [],
+    listBacktestBatchesFn: async () => [],
+    listBacktestRunProjectionsFn: async () => [],
+    listDataReadinessProjectionsFn: async () => [],
+    getActiveExecutionPromotionFn: async () => ({
+      promotionId: "promo-1",
+      executionSettingsName: "paper-default",
+      analysisSettingId: "analysis-1",
+      sourceBacktestId: "backtest-1",
+      symbolCode: "BTCUSDT",
+      timeframeCode: "1m",
+      strategyName: "ema-cross",
+      riskProfileName: "default-risk",
+      mode: "paper",
+      selectionValue: 12.4,
+      status: "active",
+      promotedAt: "2026-03-28T10:00:00.000Z",
+      sourceEventId: "event-1",
+      sourceOccurredAt: "2026-03-28T10:00:00.000Z",
+      createdAt: "2026-03-28T10:00:00.000Z",
+      updatedAt: "2026-03-28T10:00:00.000Z",
+    }),
+    listExecutionTradesFn: async () => ({
+      items: [
+        {
+          tradeId: "trade-1",
+          externalOrderId: "order-1",
+          positionId: "position-1",
+          sourceBacktestId: "backtest-1",
+          analysisSettingId: "analysis-1",
+          executionSettingsName: "paper-default",
+          symbolCode: "BTCUSDT",
+          timeframeCode: "1m",
+          strategyName: "ema-cross",
+          riskProfileName: "default-risk",
+          mode: "paper",
+          side: "long",
+          status: "closed",
+          openedAt: "2026-03-28T10:00:00.000Z",
+          closedAt: "2026-03-28T10:05:00.000Z",
+          durationMs: 300_000,
+          entryPrice: 100,
+          exitPrice: 102,
+          quantity: 1,
+          notionalUsd: 100,
+          stopLossPrice: 98,
+          takeProfitPrice: 104,
+          realizedPnlPercent: 2,
+          realizedPnlUsd: 2,
+          feesUsd: 0.1,
+          sourceEventId: "event-2",
+          sourceOccurredAt: "2026-03-28T10:05:00.000Z",
+          createdAt: "2026-03-28T10:00:00.000Z",
+          updatedAt: "2026-03-28T10:05:00.000Z",
+        },
+      ],
+      totalCount: 1,
+      page: 1,
+      pageSize: 20,
+    }),
+  });
+
+  const summaryResponse = await app.inject({
+    method: "GET",
+    url: "/v1/ops/execution/summary",
+  });
+  const tradesResponse = await app.inject({
+    method: "GET",
+    url: "/v1/ops/execution/trades?page=1&pageSize=20&sortBy=openedAt&sortDirection=desc",
+  });
+
+  assert.equal(summaryResponse.statusCode, 200);
+  assert.equal(summaryResponse.json().activePromotion.symbolCode, "BTCUSDT");
+  assert.equal(summaryResponse.json().recentTrades.length, 1);
+
+  assert.equal(tradesResponse.statusCode, 200);
+  assert.equal(tradesResponse.json().totalCount, 1);
+  assert.equal(tradesResponse.json().items[0].tradeId, "trade-1");
+});

@@ -12,6 +12,7 @@ When this runbook is complete, you will have:
 - the `control-plane` API running on `http://localhost:3020`
 - the Rust `market-data` service running on `http://localhost:3030`
 - the Rust `research-backtesting` service running on `http://localhost:3050`
+- the Rust `execution` service running on `http://localhost:3070`
 - a local Alloy sidecar shipping container logs into the shared Loki stack
 - a local OpenBao secret path and app token ready for `trading-bot`
 - the shared local Redpanda broker running in `platform-ops`

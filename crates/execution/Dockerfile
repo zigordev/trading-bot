@@ -18,7 +18,7 @@ COPY crates/market-data /app/crates/market-data
 COPY crates/research-backtesting /app/crates/research-backtesting
 COPY crates/strategy-engine /app/crates/strategy-engine
 
-RUN cargo build --release -p trading-bot-market-data
+RUN cargo build --release -p trading-bot-execution
 
 FROM debian:bookworm-slim AS local
 WORKDIR /app
@@ -34,9 +34,9 @@ RUN apt-get update \
     zlib1g \
   && rm -rf /var/lib/apt/lists/*
 
-COPY --from=build /app/target/release/trading-bot-market-data /usr/local/bin/trading-bot-market-data
+COPY --from=build /app/target/release/trading-bot-execution /usr/local/bin/trading-bot-execution
 
-EXPOSE 8090
+EXPOSE 8120
 
 ENTRYPOINT ["/usr/bin/tini", "--"]
-CMD ["trading-bot-market-data"]
+CMD ["trading-bot-execution"]

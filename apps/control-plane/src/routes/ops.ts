@@ -7,14 +7,21 @@ import {
   type ResolvedAnalysisSettingsRecord,
 } from "../features/config-resources.js";
 import {
+  getActiveExecutionPromotion,
+  listActiveExecutionPromotions,
   listBacktestBatches,
   listDataReadinessProjections,
+  listExecutionTrades,
   listBacktestRunProjections,
   listBacktestJobs,
   type BacktestBatchRecord,
   type BacktestJobRecord,
   type BacktestRunProjectionRecord,
   type DataReadinessProjectionRecord,
+  type ExecutionPromotionProjectionRecord,
+  type ExecutionTradeInput,
+  type ExecutionTradeRecord,
+  upsertExecutionTradeProjection,
 } from "../features/ops.js";
 import { addOpsSocket } from "../infrastructure/ops-events.js";
 
@@ -120,6 +127,43 @@ export const registerOpsRoutes = (
     listDataReadinessProjectionsFn?: (
       pool: Pool,
     ) => Promise<DataReadinessProjectionRecord[]>;
+    getActiveExecutionPromotionFn?: (
+      pool: Pool,
+    ) => Promise<ExecutionPromotionProjectionRecord | null>;
+    listActiveExecutionPromotionsFn?: (
+      pool: Pool,
+      limit: number,
+    ) => Promise<ExecutionPromotionProjectionRecord[]>;
+    listExecutionTradesFn?: (
+      pool: Pool,
+      query: {
+        page: number;
+        pageSize: number;
+        sortBy:
+          | "openedAt"
+          | "closedAt"
+          | "realizedPnlPercent"
+          | "symbolCode"
+          | "notionalUsd";
+        sortDirection: "asc" | "desc";
+        search?: string;
+        symbolCode?: string;
+        timeframeCode?: string;
+        strategyName?: string;
+        side?: "long" | "short";
+        status?: "open" | "closed" | "cancelled" | "rejected";
+        mode?: "paper" | "live";
+      },
+    ) => Promise<{
+      items: ExecutionTradeRecord[];
+      totalCount: number;
+      page: number;
+      pageSize: number;
+    }>;
+    upsertExecutionTradeProjectionFn?: (
+      pool: Pool,
+      input: ExecutionTradeInput,
+    ) => Promise<ExecutionTradeRecord>;
   },
 ): void => {
   const fetchJson = options?.fetchJson ?? defaultFetchJson(config);
@@ -131,6 +175,14 @@ export const registerOpsRoutes = (
     options?.listBacktestRunProjectionsFn ?? listBacktestRunProjections;
   const listDataReadinessProjectionsFn =
     options?.listDataReadinessProjectionsFn ?? listDataReadinessProjections;
+  const getActiveExecutionPromotionFn =
+    options?.getActiveExecutionPromotionFn ?? getActiveExecutionPromotion;
+  const listActiveExecutionPromotionsFn =
+    options?.listActiveExecutionPromotionsFn ?? listActiveExecutionPromotions;
+  const listExecutionTradesFn =
+    options?.listExecutionTradesFn ?? listExecutionTrades;
+  const upsertExecutionTradeProjectionFn =
+    options?.upsertExecutionTradeProjectionFn ?? upsertExecutionTradeProjection;
 
   const buildOverview = async () => {
     const [services, analyses, jobs] = await Promise.all([
@@ -207,6 +259,39 @@ export const registerOpsRoutes = (
     };
   };
 
+  const buildExecutionSummary = async () => {
+    const [activePromotion, activePromotions, tradesPage] = await Promise.all([
+      getActiveExecutionPromotionFn(pool),
+      listActiveExecutionPromotionsFn(pool, 20),
+      listExecutionTradesFn(pool, {
+        page: 1,
+        pageSize: 10,
+        sortBy: "openedAt",
+        sortDirection: "desc",
+      }),
+    ]);
+
+    const openTradeCount = tradesPage.items.filter((item) => item.status === "open").length;
+    const closedTrades = tradesPage.items.filter((item) => item.status === "closed");
+    const realizedPnlUsd = closedTrades.reduce(
+      (sum, item) => sum + (item.realizedPnlUsd ?? 0),
+      0,
+    );
+
+    return {
+      generatedAt: new Date().toISOString(),
+      activePromotion,
+      activePromotions,
+      totals: {
+        openTradeCount,
+        recentTradeCount: tradesPage.items.length,
+        closedTradeCount: closedTrades.length,
+        realizedPnlUsd,
+      },
+      recentTrades: tradesPage.items,
+    };
+  };
+
   app.get("/v1/ops/overview", {
     schema: {
       tags: ["ops"],
@@ -229,6 +314,90 @@ export const registerOpsRoutes = (
       summary: "Per symbol/timeframe readiness for replay and backtesting inputs",
     },
     handler: buildDataReadiness,
+  });
+
+  app.get("/v1/ops/execution/summary", {
+    schema: {
+      tags: ["ops"],
+      summary: "Execution promotion summary and recent execution trades",
+    },
+    handler: buildExecutionSummary,
+  });
+
+  app.get("/v1/ops/execution/trades", {
+    schema: {
+      tags: ["ops"],
+      summary: "Paginated execution trade history for the operator console",
+      querystring: {
+        type: "object",
+        properties: {
+          page: { type: "integer", minimum: 1 },
+          pageSize: { type: "integer", minimum: 1, maximum: 100 },
+          sortBy: {
+            type: "string",
+            enum: [
+              "openedAt",
+              "closedAt",
+              "realizedPnlPercent",
+              "symbolCode",
+              "notionalUsd",
+            ],
+          },
+          sortDirection: { type: "string", enum: ["asc", "desc"] },
+          search: { type: "string" },
+          symbolCode: { type: "string" },
+          timeframeCode: { type: "string" },
+          strategyName: { type: "string" },
+          side: { type: "string", enum: ["long", "short"] },
+          status: {
+            type: "string",
+            enum: ["open", "closed", "cancelled", "rejected"],
+          },
+          mode: { type: "string", enum: ["paper", "live"] },
+        },
+      },
+    },
+    handler: async (request) => {
+      const query = request.query as Record<string, unknown>;
+
+      return listExecutionTradesFn(pool, {
+        page: typeof query.page === "number" ? query.page : 1,
+        pageSize: typeof query.pageSize === "number" ? query.pageSize : 20,
+        sortBy:
+          query.sortBy === "closedAt" ||
+          query.sortBy === "realizedPnlPercent" ||
+          query.sortBy === "symbolCode" ||
+          query.sortBy === "notionalUsd"
+            ? query.sortBy
+            : "openedAt",
+        sortDirection: query.sortDirection === "asc" ? "asc" : "desc",
+        search: typeof query.search === "string" ? query.search : undefined,
+        symbolCode: typeof query.symbolCode === "string" ? query.symbolCode : undefined,
+        timeframeCode:
+          typeof query.timeframeCode === "string" ? query.timeframeCode : undefined,
+        strategyName:
+          typeof query.strategyName === "string" ? query.strategyName : undefined,
+        side:
+          query.side === "long" || query.side === "short" ? query.side : undefined,
+        status:
+          query.status === "open" ||
+          query.status === "closed" ||
+          query.status === "cancelled" ||
+          query.status === "rejected"
+            ? query.status
+            : undefined,
+        mode: query.mode === "live" || query.mode === "paper" ? query.mode : undefined,
+      });
+    },
+  });
+
+  app.post("/v1/ops/execution/trades", {
+    schema: {
+      tags: ["ops"],
+      summary: "Internal execution-trade projection upsert used by the execution runtime",
+    },
+    handler: async (request) =>
+      upsertExecutionTradeProjectionFn(pool, request.body as ExecutionTradeInput),
   });
 
   app.get(

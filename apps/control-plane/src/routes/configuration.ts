@@ -5,6 +5,8 @@ import {
   analysisSettingsRecordSchema,
   type ConfigStore,
   type ConfigStores,
+  executionSettingsBodySchema,
+  executionSettingsRecordSchema,
   symbolBodySchema,
   symbolRecordSchema,
   riskProfileBodySchema,
@@ -356,5 +358,14 @@ export const registerConfigurationRoutes = (
     bodySchema: analysisSettingsBodySchema,
     recordSchema: analysisSettingsRecordSchema,
     store: stores.analysisSettings,
+  });
+
+  registerCrudRoutes(app, {
+    path: "/v1/execution-settings",
+    tag: "execution-settings",
+    entityName: "execution setting",
+    bodySchema: executionSettingsBodySchema,
+    recordSchema: executionSettingsRecordSchema,
+    store: stores.executionSettings,
   });
 };

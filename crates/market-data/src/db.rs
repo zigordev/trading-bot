@@ -25,6 +25,7 @@ pub struct Database {
 }
 
 type LineStream = futures_util::stream::BoxStream<'static, Result<String>>;
+const JSON_EACH_ROW_MAX_LINE_LENGTH: usize = 64 * 1024 * 1024;
 
 #[derive(Debug, Deserialize)]
 struct HistoricalKlineRow {
@@ -2091,7 +2092,12 @@ impl Database {
             std::io::Error::new(std::io::ErrorKind::ConnectionAborted, format!("{e}"))
         });
         let reader = tokio_util::io::StreamReader::new(byte_stream);
-        let framed = FramedRead::new(reader, LinesCodec::new());
+        // Backtest rows can embed the full persisted response as one escaped JSON string,
+        // so a single JSONEachRow line can be much larger than the tokio-util default.
+        let framed = FramedRead::new(
+            reader,
+            LinesCodec::new_with_max_length(JSON_EACH_ROW_MAX_LINE_LENGTH),
+        );
         Ok(framed
             .map(|res| res.map_err(|e| anyhow::anyhow!(e)))
             .boxed())
@@ -2368,4 +2374,26 @@ fn encode_row_binary_string(value: &str, out: &mut Vec<u8>) {
 
 fn encode_row_binary_i64(value: i64, out: &mut Vec<u8>) {
     out.extend_from_slice(&value.to_le_bytes());
+}
+
+#[cfg(test)]
+mod tests {
+    use super::JSON_EACH_ROW_MAX_LINE_LENGTH;
+    use tokio_util::codec::{Decoder, LinesCodec};
+
+    #[test]
+    fn json_each_row_codec_accepts_large_backtest_line() {
+        let payload = "x".repeat(16 * 1024);
+        let mut codec = LinesCodec::new_with_max_length(JSON_EACH_ROW_MAX_LINE_LENGTH);
+        let mut bytes = bytes::BytesMut::from(
+            format!("{{\"response_json\":\"{}\"}}\n", payload).as_bytes(),
+        );
+
+        let line = codec
+            .decode(&mut bytes)
+            .expect("codec should accept large backtest rows")
+            .expect("codec should produce a line");
+
+        assert!(line.contains(&payload));
+    }
 }

@@ -6,6 +6,7 @@ import type { AppConfig } from "../config.js";
 import {
   completeBacktestJobFromProjectionEvent,
   listBacktestRunProjections,
+  promoteBacktestRunIfEligible,
   type BacktestRunProjectionInput,
   upsertBacktestRunProjection,
 } from "../features/ops.js";
@@ -102,6 +103,10 @@ const parseEnvelope = (value: string): BacktestCompletedEventEnvelope | null => 
       replayTradeCount: Number(data.replayTradeCount ?? 0),
       signalCount: Number(data.signalCount ?? 0),
       tradeCount: Number(data.tradeCount ?? 0),
+      stopLossTradeCount: Number(data.stopLossTradeCount ?? 0),
+      takeProfitTradeCount: Number(data.takeProfitTradeCount ?? 0),
+      reversalTradeCount: Number(data.reversalTradeCount ?? 0),
+      windowEndTradeCount: Number(data.windowEndTradeCount ?? 0),
       totalPnlPercent: Number(data.totalPnlPercent ?? 0),
     },
   };
@@ -231,6 +236,10 @@ export const createBacktestRunProjectionConsumer = (
           replayTradeCount: Number(run.replayTradeCount ?? 0),
           signalCount: Number(run.signalCount ?? 0),
           tradeCount: Number(run.tradeCount ?? 0),
+          stopLossTradeCount: Number((run as Record<string, unknown>).stopLossTradeCount ?? 0),
+          takeProfitTradeCount: Number((run as Record<string, unknown>).takeProfitTradeCount ?? 0),
+          reversalTradeCount: Number((run as Record<string, unknown>).reversalTradeCount ?? 0),
+          windowEndTradeCount: Number((run as Record<string, unknown>).windowEndTradeCount ?? 0),
           totalPnlPercent: Number(run.totalPnlPercent ?? 0),
           sourceEventId: `bootstrap:${run.backtestId}`,
           sourceOccurredAt: run.finishedAt,
@@ -280,7 +289,9 @@ export const createBacktestRunProjectionConsumer = (
               return;
             }
 
-            await upsertBacktestRunProjection(pool, toProjectionInput(envelope));
+            const projectionInput = toProjectionInput(envelope);
+            await upsertBacktestRunProjection(pool, projectionInput);
+            const promotion = await promoteBacktestRunIfEligible(pool, projectionInput);
             if (envelope.data.controlPlaneJobId) {
               await completeBacktestJobFromProjectionEvent(pool, {
                 jobId: envelope.data.controlPlaneJobId,
@@ -294,6 +305,15 @@ export const createBacktestRunProjectionConsumer = (
                 timeframeCodes: [envelope.data.timeframeCode],
               },
             });
+            if (promotion) {
+              publishOpsEvent({
+                type: "ops.execution.updated",
+                payload: {
+                  symbols: [promotion.symbolCode],
+                  timeframeCodes: [promotion.timeframeCode],
+                },
+              });
+            }
           } catch (error) {
             logger.error(
               { err: error, rawValue },

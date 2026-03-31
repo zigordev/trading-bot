@@ -76,6 +76,23 @@ export type AnalysisSettingsRecord = AnalysisSettingsInput & {
   updatedAt: string;
 };
 
+export type ExecutionSettingsInput = {
+  name: string;
+  enabled: boolean;
+  mode: "paper" | "live";
+  autoPromote: boolean;
+  maxPromotions: number;
+  requirePositivePnl: boolean;
+  minTradeCount: number;
+  replaceOpenPositionPolicy: "keep" | "flatten";
+};
+
+export type ExecutionSettingsRecord = ExecutionSettingsInput & {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type ResolvedAnalysisSettingsRecord = {
   id: string;
   name: string;
@@ -244,6 +261,34 @@ const mapAnalysisSettingsRow = (row: QueryResultRow): AnalysisSettingsRecord => 
   strategyName: String(row.strategy_name),
   technicalAnalysisSettings: parseJsonObject(row.technical_analysis_settings),
   enabled: Boolean(row.enabled),
+  createdAt: toIsoString(row.created_at),
+  updatedAt: toIsoString(row.updated_at),
+});
+
+const parseStringArray = (value: unknown): string[] => {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item));
+  }
+
+  if (typeof value === "string" && value.trim()) {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed.map((item) => String(item)) : [];
+  }
+
+  return [];
+};
+
+const mapExecutionSettingsRow = (row: QueryResultRow): ExecutionSettingsRecord => ({
+  id: String(row.id),
+  name: String(row.name),
+  enabled: Boolean(row.enabled),
+  mode: row.mode === "live" ? "live" : "paper",
+  autoPromote: Boolean(row.auto_promote),
+  maxPromotions: Number(row.max_promotions),
+  requirePositivePnl: Boolean(row.require_positive_pnl),
+  minTradeCount: Number(row.min_trade_count),
+  replaceOpenPositionPolicy:
+    row.replace_open_position_policy === "flatten" ? "flatten" : "keep",
   createdAt: toIsoString(row.created_at),
   updatedAt: toIsoString(row.updated_at),
 });
@@ -706,12 +751,87 @@ const analysisSettingsDefinition: ResourceDefinition<AnalysisSettingsInput, Anal
   toRecord: mapAnalysisSettingsRow,
 };
 
+const executionSettingsDefinition: ResourceDefinition<
+  ExecutionSettingsInput,
+  ExecutionSettingsRecord
+> = {
+  tableName: "execution_settings",
+  resourceType: "execution_settings",
+  createTableSql: `
+    CREATE TABLE IF NOT EXISTS execution_settings (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL UNIQUE,
+      enabled BOOLEAN NOT NULL DEFAULT TRUE,
+      mode TEXT NOT NULL DEFAULT 'paper',
+      auto_promote BOOLEAN NOT NULL DEFAULT FALSE,
+      max_promotions INTEGER NOT NULL DEFAULT 1,
+      selection_metric TEXT NOT NULL DEFAULT 'totalPnlPercent',
+      require_positive_pnl BOOLEAN NOT NULL DEFAULT TRUE,
+      min_trade_count INTEGER NOT NULL DEFAULT 1,
+      allowed_symbols_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+      allowed_timeframes_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+      replace_open_position_policy TEXT NOT NULL DEFAULT 'keep',
+      created_at TIMESTAMPTZ NOT NULL,
+      updated_at TIMESTAMPTZ NOT NULL,
+      CONSTRAINT execution_settings_mode_valid
+        CHECK (mode IN ('paper', 'live')),
+      CONSTRAINT execution_settings_max_promotions_positive
+        CHECK (max_promotions > 0),
+      CONSTRAINT execution_settings_min_trade_count_nonnegative
+        CHECK (min_trade_count >= 0),
+      CONSTRAINT execution_settings_replace_open_position_policy_valid
+        CHECK (replace_open_position_policy IN ('keep', 'flatten'))
+    );
+  `,
+  listOrderBy: "name ASC",
+  selectColumns: [
+    "id",
+    "name",
+    "enabled",
+    "mode",
+    "auto_promote",
+    "max_promotions",
+    "selection_metric",
+    "require_positive_pnl",
+    "min_trade_count",
+    "allowed_symbols_json",
+    "allowed_timeframes_json",
+    "replace_open_position_policy",
+    "created_at",
+    "updated_at",
+  ],
+  insertColumns: [
+    "name",
+    "enabled",
+    "mode",
+    "auto_promote",
+    "max_promotions",
+    "require_positive_pnl",
+    "min_trade_count",
+    "replace_open_position_policy",
+  ],
+  uniqueFieldName: "name",
+  uniqueFieldValue: (input) => input.name,
+  toInsertValues: (input) => [
+    input.name,
+    input.enabled,
+    input.mode,
+    input.autoPromote,
+    input.maxPromotions,
+    input.requirePositivePnl,
+    input.minTradeCount,
+    input.replaceOpenPositionPolicy,
+  ],
+  toRecord: mapExecutionSettingsRow,
+};
+
 const resourceDefinitions = [
   symbolDefinition,
   timeframeDefinition,
   strategyDefinition,
   riskProfileDefinition,
   analysisSettingsDefinition,
+  executionSettingsDefinition,
 ] as const;
 
 export const ensureControlPlaneSchema = async (pool: Pool): Promise<void> => {
@@ -818,10 +938,13 @@ export const ensureControlPlaneSchema = async (pool: Pool): Promise<void> => {
     END $$;
   `);
 
-  for (const definition of resourceDefinitions.slice(2, 5)) {
+  for (const definition of resourceDefinitions.slice(2)) {
     await pool.query(definition.createTableSql);
   }
   await pool.query(analysisSettingsDefinition.createTableSql);
+  await pool.query(
+    "ALTER TABLE execution_settings ADD COLUMN IF NOT EXISTS max_promotions INTEGER NOT NULL DEFAULT 1",
+  );
 
   await pool.query("DROP TABLE IF EXISTS config_change_outbox");
 
@@ -965,6 +1088,11 @@ export const createConfigStores = (
   analysisSettings: new PostgresCrudStore(
     pool,
     analysisSettingsDefinition,
+    eventPublisher,
+  ),
+  executionSettings: new PostgresCrudStore(
+    pool,
+    executionSettingsDefinition,
     eventPublisher,
   ),
 });
@@ -1184,6 +1312,67 @@ export const analysisSettingsRecordSchema = {
     "strategyName",
     "technicalAnalysisSettings",
     "enabled",
+    "createdAt",
+    "updatedAt",
+  ],
+} as const;
+
+export const executionSettingsBodySchema = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    name: { type: "string", minLength: 1 },
+    enabled: { type: "boolean" },
+    mode: { type: "string", enum: ["paper", "live"] },
+    autoPromote: { type: "boolean" },
+    maxPromotions: { type: "integer", minimum: 1 },
+    requirePositivePnl: { type: "boolean" },
+    minTradeCount: { type: "integer", minimum: 0 },
+    replaceOpenPositionPolicy: {
+      type: "string",
+      enum: ["keep", "flatten"],
+    },
+  },
+  required: [
+    "name",
+    "enabled",
+    "mode",
+    "autoPromote",
+    "maxPromotions",
+    "requirePositivePnl",
+    "minTradeCount",
+    "replaceOpenPositionPolicy",
+  ],
+} as const;
+
+export const executionSettingsRecordSchema = {
+  type: "object",
+  properties: {
+    id: { type: "string" },
+    name: { type: "string" },
+    enabled: { type: "boolean" },
+    mode: { type: "string", enum: ["paper", "live"] },
+    autoPromote: { type: "boolean" },
+    maxPromotions: { type: "integer" },
+    requirePositivePnl: { type: "boolean" },
+    minTradeCount: { type: "integer" },
+    replaceOpenPositionPolicy: {
+      type: "string",
+      enum: ["keep", "flatten"],
+    },
+    createdAt: { type: "string", format: "date-time" },
+    updatedAt: { type: "string", format: "date-time" },
+  },
+  required: [
+    "id",
+    "name",
+    "enabled",
+    "mode",
+    "autoPromote",
+    "maxPromotions",
+    "requirePositivePnl",
+    "minTradeCount",
+    "replaceOpenPositionPolicy",
     "createdAt",
     "updatedAt",
   ],

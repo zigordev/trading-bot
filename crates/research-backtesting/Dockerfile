@@ -13,6 +13,7 @@ RUN apt-get update \
   && rm -rf /var/lib/apt/lists/*
 
 COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
+COPY crates/execution /app/crates/execution
 COPY crates/market-data /app/crates/market-data
 COPY crates/research-backtesting /app/crates/research-backtesting
 COPY crates/strategy-engine /app/crates/strategy-engine

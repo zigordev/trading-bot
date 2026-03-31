@@ -2,6 +2,7 @@ use std::collections::VecDeque;
 
 use anyhow::{Result, bail};
 use serde_json::Value;
+use tracing::info;
 
 use crate::models::{
     MarketDataKlineEvent, PersistedKlineRecord, ResolvedAnalysisSettingsRecord,
@@ -212,7 +213,26 @@ impl AnalysisEvaluator {
                 Some("short".to_string())
             } else {
                 None
-            }?;
+            };
+
+        info!(
+            analysis_setting_id = %self.spec.analysis_setting_id,
+            symbol = %self.spec.symbol,
+            timeframe_code = %self.spec.timeframe_code,
+            strategy_name = %self.spec.strategy_name,
+            risk_profile_name = %self.spec.risk_profile_name,
+            close_time,
+            close_price,
+            previous_fast_ema,
+            previous_slow_ema,
+            fast_ema = next_fast_ema,
+            slow_ema = next_slow_ema,
+            signal_direction = signal_direction.as_deref().unwrap_or("none"),
+            kline_event_id = %event.event_id,
+            "emaCross candle evaluated"
+        );
+
+        let signal_direction = signal_direction?;
 
         Some(EmittedSignal {
             signal_direction,
