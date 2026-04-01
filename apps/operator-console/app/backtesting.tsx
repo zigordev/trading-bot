@@ -1,7 +1,7 @@
 import { MaterialIcons } from "@expo/vector-icons";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
-import { Pressable, ScrollView, Text, View } from "react-native";
+import { useEffect, useMemo, useState } from "react";
+import { Modal, Pressable, ScrollView, Text, View } from "react-native";
 import Svg, { Circle, Line, Path, Text as SvgText } from "react-native-svg";
 
 import { AppShell } from "@/src/components/app-shell";
@@ -46,6 +46,13 @@ const formatDuration = (durationMs: number): string => {
   return `${hours}h ${remainingMinutes}m`;
 };
 
+const formatScore = (value: number): string => value.toFixed(2);
+
+const scorePalette = (value: number) => ({
+  backgroundColor: value >= 0 ? "#ecfdf3" : "#fef3f2",
+  textColor: value >= 0 ? "#157f3b" : "#b42318",
+});
+
 export default function BacktestingScreen() {
   const queryClient = useQueryClient();
   const [section, setSection] = useState<BacktestingSection>("data-readiness");
@@ -54,6 +61,7 @@ export default function BacktestingScreen() {
   const [expandedSymbols, setExpandedSymbols] = useState<string[]>([]);
   const [expandedHistorySymbols, setExpandedHistorySymbols] = useState<string[]>([]);
   const [expandedReadinessSymbols, setExpandedReadinessSymbols] = useState<string[]>([]);
+  const [selectedBacktestId, setSelectedBacktestId] = useState<string | null>(null);
 
   const backtestsQuery = useQuery({
     queryKey: ["ops-backtests-summary"],
@@ -198,6 +206,18 @@ export default function BacktestingScreen() {
     analysisDetailById,
   );
   const readinessGroups = groupDataReadinessBySymbol(filteredReadinessItems);
+  const selectedBacktestRun = useMemo(() => {
+    if (!selectedBacktestId) {
+      return null;
+    }
+
+    const runs = [
+      ...(backtestsQuery.data?.latestRuns ?? []),
+      ...(backtestsQuery.data?.recentRuns ?? []),
+    ];
+
+    return runs.find((run) => run.backtestId === selectedBacktestId) ?? null;
+  }, [backtestsQuery.data?.latestRuns, backtestsQuery.data?.recentRuns, selectedBacktestId]);
 
   const toggleExpandedSymbol = (symbolCode: string) => {
     setExpandedSymbols((current) =>
@@ -433,11 +453,14 @@ export default function BacktestingScreen() {
                               </View>
 
                               <View style={{ alignItems: "flex-end", gap: 10 }}>
-                                <View
+                                <Pressable
+                                  onPress={(event) => {
+                                    event.stopPropagation();
+                                    setSelectedBacktestId(findTopScoringRun(group.runs)?.backtestId ?? null);
+                                  }}
                                   style={{
                                     borderRadius: 16,
-                                    backgroundColor:
-                                      group.bestPnlPercent >= 0 ? "#ecfdf3" : "#fef3f2",
+                                    backgroundColor: scorePalette(group.bestScore).backgroundColor,
                                     paddingHorizontal: 14,
                                     paddingVertical: 12,
                                     minWidth: 120,
@@ -446,23 +469,23 @@ export default function BacktestingScreen() {
                                 >
                                   <Text
                                     style={{
-                                      color: group.bestPnlPercent >= 0 ? "#157f3b" : "#b42318",
+                                      color: scorePalette(group.bestScore).textColor,
                                       fontSize: 20,
                                       fontWeight: "800",
                                     }}
                                   >
-                                    {group.bestPnlPercent.toFixed(2)}%
+                                    {formatScore(group.bestScore)}
                                   </Text>
                                   <Text
                                     style={{
-                                      color: group.bestPnlPercent >= 0 ? "#157f3b" : "#b42318",
+                                      color: scorePalette(group.bestScore).textColor,
                                       fontWeight: "700",
                                       marginTop: 2,
                                     }}
                                   >
-                                    Best PnL
+                                    Best score
                                   </Text>
-                                </View>
+                                </Pressable>
                                 <View
                                   style={{
                                     flexDirection: "row",
@@ -506,7 +529,7 @@ export default function BacktestingScreen() {
                                 <TableHeader label="Timeframe" flex={0.9} />
                                 <TableHeader label="Analysis" flex={2.2} />
                                 <TableHeader label="Risk" flex={1.1} />
-                                <TableHeader label="PnL" flex={0.8} align="right" />
+                                <TableHeader label="Score" flex={0.8} align="right" />
                                 <TableHeader label="Duration" flex={0.9} align="right" />
                                 <TableHeader label="Finished" flex={1.3} align="right" />
                               </View>
@@ -532,13 +555,19 @@ export default function BacktestingScreen() {
                                       flex={2.2}
                                     />
                                     <TableCell label={run.riskProfileName} flex={1.1} />
-                                    <TableCell
-                                      label={`${run.totalPnlPercent.toFixed(2)}%`}
-                                      flex={0.8}
-                                      align="right"
-                                      color={run.totalPnlPercent >= 0 ? "#157f3b" : "#b42318"}
-                                      weight="700"
-                                    />
+                                    <View style={{ flex: 0.8, alignItems: "flex-end" }}>
+                                      <Text
+                                        onPress={() => setSelectedBacktestId(run.backtestId)}
+                                        style={{
+                                          color: scorePalette(run.score).textColor,
+                                          fontWeight: "700",
+                                          textDecorationLine: "underline",
+                                          textAlign: "right",
+                                        }}
+                                      >
+                                        {formatScore(run.score)}
+                                      </Text>
+                                    </View>
                                     <TableCell
                                       label={formatDuration(run.backtestDurationMs)}
                                       flex={0.9}
@@ -557,6 +586,14 @@ export default function BacktestingScreen() {
                                       flexWrap: "wrap",
                                     }}
                                   >
+                                    <MetricBadge
+                                      label="Equity PnL"
+                                      value={`${run.equityCurvePnlPercent.toFixed(2)}%`}
+                                    />
+                                    <MetricBadge
+                                      label="Max DD"
+                                      value={`${run.maxDrawdownPercent.toFixed(2)}%`}
+                                    />
                                     <MetricBadge
                                       label="Reversal"
                                       value={run.reversalTradeCount.toLocaleString()}
@@ -586,7 +623,7 @@ export default function BacktestingScreen() {
 
                 <View style={{ gap: 12 }}>
                   <Text style={{ fontSize: 18, fontWeight: "700", color: "#101828" }}>
-                    PnL evolution
+                    Score evolution
                   </Text>
                   {backtestHistoryGroups.length === 0 ? (
                     <Text style={{ color: "#475467" }}>
@@ -692,10 +729,18 @@ export default function BacktestingScreen() {
                                         label="Runs"
                                         value={combination.runs.length.toLocaleString()}
                                       />
-                                      <MetricBadge
-                                        label="Best"
-                                        value={`${combination.bestPnlPercent.toFixed(2)}%`}
-                                      />
+                                      <Pressable
+                                        onPress={(event) => {
+                                          event.stopPropagation();
+                                          setSelectedBacktestId(findTopScoringRun(combination.runs)?.backtestId ?? null);
+                                        }}
+                                      >
+                                        <MetricBadge
+                                          label="Best score"
+                                          value={formatScore(combination.bestScore)}
+                                          accent="link"
+                                        />
+                                      </Pressable>
                                     </View>
                                   </View>
 
@@ -850,6 +895,72 @@ export default function BacktestingScreen() {
           </View>
         )}
       </View>
+      <Modal
+        visible={selectedBacktestId !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSelectedBacktestId(null)}
+      >
+        <View
+          style={{
+            flex: 1,
+            backgroundColor: "rgba(16, 24, 40, 0.45)",
+            justifyContent: "center",
+            alignItems: "center",
+            padding: 24,
+          }}
+        >
+          <View style={{ width: "100%", maxWidth: 720 }}>
+            <Card>
+              <View
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 12,
+                }}
+              >
+                <Text style={{ fontSize: 20, fontWeight: "700", color: "#101828" }}>
+                  Score details
+                </Text>
+                <Pressable
+                  onPress={() => setSelectedBacktestId(null)}
+                  style={{
+                    borderRadius: 10,
+                    borderWidth: 1,
+                    borderColor: "#d0d5dd",
+                    paddingHorizontal: 14,
+                    paddingVertical: 10,
+                  }}
+                >
+                  <Text style={{ color: "#344054", fontWeight: "700" }}>Close</Text>
+                </Pressable>
+              </View>
+              <View style={{ gap: 10, marginTop: 12 }}>
+                <DetailRow label="Backtest id" value={selectedBacktestId ?? "n/a"} />
+                {selectedBacktestRun ? (
+                  <>
+                    <DetailRow label="Symbol" value={selectedBacktestRun.symbol} />
+                    <DetailRow label="Timeframe" value={selectedBacktestRun.timeframeCode} />
+                    <DetailRow label="Strategy" value={selectedBacktestRun.strategyName} />
+                    <DetailRow label="Analysis setting id" value={selectedBacktestRun.analysisSettingId} />
+                    <DetailRow label="Risk profile" value={selectedBacktestRun.riskProfileName} />
+                    <DetailRow label="Finished" value={new Date(selectedBacktestRun.finishedAt).toLocaleString()} />
+                    <DetailRow label="Score" value={selectedBacktestRun.score.toFixed(2)} />
+                    <ScoreBreakdownSection run={selectedBacktestRun} />
+                    <DetailRow label="Backtest duration" value={formatDuration(selectedBacktestRun.backtestDurationMs)} />
+                    <DetailRow label="Strategy counts" value={`${selectedBacktestRun.signalCount} signals · ${selectedBacktestRun.tradeCount} trades`} />
+                  </>
+                ) : (
+                  <Text style={{ color: "#475467" }}>
+                    This backtest was not found in the current backtest summary payload.
+                  </Text>
+                )}
+              </View>
+            </Card>
+          </View>
+        </View>
+      </Modal>
     </AppShell>
   );
 }
@@ -876,9 +987,11 @@ function formatBacktestStage(stage: string | null): string {
 function MetricBadge({
   label,
   value,
+  accent = "default",
 }: {
   label: string;
   value: string | number;
+  accent?: "default" | "link";
 }) {
   return (
     <View
@@ -890,9 +1003,59 @@ function MetricBadge({
       }}
     >
       <Text style={{ color: "#475467", fontWeight: "700" }}>
-        {label}: <Text style={{ color: "#101828" }}>{value}</Text>
+        {label}: <Text style={{ color: accent === "link" ? "#1d4ed8" : "#101828" }}>{value}</Text>
       </Text>
     </View>
+  );
+}
+
+function DetailRow({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <View style={{ gap: 4 }}>
+      <Text style={{ color: "#475467", fontSize: 12, fontWeight: "700", textTransform: "uppercase" }}>
+        {label}
+      </Text>
+      <Text style={{ color: "#101828" }}>{value}</Text>
+    </View>
+  );
+}
+
+function ScoreBreakdownSection({
+  run,
+}: {
+  run: RecentBacktestRun;
+}) {
+  return (
+    <>
+      <DetailRow
+        label="Score formula"
+        value="score = equity PnL - 0.75 × max drawdown - 12 × reversal ratio"
+      />
+      <DetailRow label="Equity PnL" value={`${run.equityCurvePnlPercent.toFixed(2)}%`} />
+      <DetailRow label="Max drawdown" value={`${run.maxDrawdownPercent.toFixed(2)}%`} />
+      <DetailRow label="Reversal ratio" value={`${(run.reversalRatio * 100).toFixed(2)}%`} />
+      <DetailRow
+        label="Close reasons"
+        value={`${run.reversalTradeCount.toLocaleString()} reversal · ${run.takeProfitTradeCount.toLocaleString()} TP · ${run.stopLossTradeCount.toLocaleString()} SL · ${run.windowEndTradeCount.toLocaleString()} window`}
+      />
+      <DetailRow
+        label="Non-reversal trades"
+        value={run.nonReversalTradeCount.toLocaleString()}
+      />
+    </>
+  );
+}
+
+function findTopScoringRun(runs: RecentBacktestRun[]) {
+  return runs.reduce<RecentBacktestRun | null>(
+    (best, run) => (best === null || run.score > best.score ? run : best),
+    null,
   );
 }
 
@@ -912,12 +1075,11 @@ function PnlHistoryChart({
   const safeRuns = [...runs].sort(
     (left, right) => Date.parse(left.finishedAt) - Date.parse(right.finishedAt),
   );
-  const yValues = safeRuns.map((run) => run.totalPnlPercent);
+  const yValues = safeRuns.map((run) => run.score);
   const minY = Math.min(0, ...yValues);
   const maxY = Math.max(0, ...yValues);
   const ySpan = maxY - minY || 1;
-  const strokeColor =
-    safeRuns[safeRuns.length - 1]?.totalPnlPercent >= 0 ? "#157f3b" : "#b42318";
+  const strokeColor = scorePalette(safeRuns[safeRuns.length - 1]?.score ?? 0).textColor;
   const yTickCount = 5;
   const yTicks = Array.from({ length: yTickCount }, (_, index) => {
     const ratio = index / (yTickCount - 1);
@@ -926,7 +1088,7 @@ function PnlHistoryChart({
     return {
       value,
       y,
-      label: `${value >= 0 ? "+" : ""}${value.toFixed(1)}%`,
+      label: `${value >= 0 ? "+" : ""}${value.toFixed(1)}`,
     };
   });
   const xLabelIndexes = buildXAxisLabelIndexes(safeRuns.length);
@@ -936,7 +1098,7 @@ function PnlHistoryChart({
       safeRuns.length === 1
         ? paddingLeft + chartWidth / 2
         : paddingLeft + (index / (safeRuns.length - 1)) * chartWidth;
-    const y = paddingTop + ((maxY - run.totalPnlPercent) / ySpan) * chartHeight;
+    const y = paddingTop + ((maxY - run.score) / ySpan) * chartHeight;
     return { x, y };
   });
 
@@ -1148,7 +1310,7 @@ function groupLatestBacktestsBySymbol(runs: RecentBacktestRun[]) {
       symbol: string;
       count: number;
       timeframeCount: number;
-      bestPnlPercent: number;
+      bestScore: number;
       latestFinishedAt: string;
       runs: RecentBacktestRun[];
     }
@@ -1161,13 +1323,13 @@ function groupLatestBacktestsBySymbol(runs: RecentBacktestRun[]) {
         symbol: run.symbol,
         count: 0,
         timeframeCount: 0,
-        bestPnlPercent: Number.NEGATIVE_INFINITY,
+        bestScore: Number.NEGATIVE_INFINITY,
         latestFinishedAt: run.finishedAt,
         runs: [],
       };
 
     current.count += 1;
-    current.bestPnlPercent = Math.max(current.bestPnlPercent, run.totalPnlPercent);
+    current.bestScore = Math.max(current.bestScore, run.score);
     if (Date.parse(run.finishedAt) > Date.parse(current.latestFinishedAt)) {
       current.latestFinishedAt = run.finishedAt;
     }
@@ -1203,7 +1365,7 @@ function groupBacktestHistoryBySymbol(
         timeframeCode: string;
         riskProfileName: string;
         strategyName: string;
-        bestPnlPercent: number;
+        bestScore: number;
         latestFinishedAt: string;
         runs: RecentBacktestRun[];
       }[];
@@ -1239,10 +1401,7 @@ function groupBacktestHistoryBySymbol(
 
     if (existingCombination) {
       existingCombination.runs.push(run);
-      existingCombination.bestPnlPercent = Math.max(
-        existingCombination.bestPnlPercent,
-        run.totalPnlPercent,
-      );
+      existingCombination.bestScore = Math.max(existingCombination.bestScore, run.score);
       if (Date.parse(run.finishedAt) > Date.parse(existingCombination.latestFinishedAt)) {
         existingCombination.latestFinishedAt = run.finishedAt;
       }
@@ -1254,7 +1413,7 @@ function groupBacktestHistoryBySymbol(
         timeframeCode: run.timeframeCode,
         riskProfileName: run.riskProfileName,
         strategyName: run.strategyName,
-        bestPnlPercent: run.totalPnlPercent,
+        bestScore: run.score,
         latestFinishedAt: run.finishedAt,
         runs: [run],
       });

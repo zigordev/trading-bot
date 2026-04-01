@@ -119,7 +119,12 @@ struct BacktestCompletedEventData {
     take_profit_trade_count: usize,
     reversal_trade_count: usize,
     window_end_trade_count: usize,
+    non_reversal_trade_count: usize,
     total_pnl_percent: f64,
+    equity_curve_pnl_percent: f64,
+    max_drawdown_percent: f64,
+    reversal_ratio: f64,
+    score: f64,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -777,7 +782,12 @@ impl ResearchBacktestingService {
                 take_profit_trade_count: response.summary.take_profit_trade_count,
                 reversal_trade_count: response.summary.reversal_trade_count,
                 window_end_trade_count: response.summary.window_end_trade_count,
+                non_reversal_trade_count: response.summary.non_reversal_trade_count,
                 total_pnl_percent: response.summary.total_pnl_percent,
+                equity_curve_pnl_percent: response.summary.equity_curve_pnl_percent,
+                max_drawdown_percent: response.summary.max_drawdown_percent,
+                reversal_ratio: response.summary.reversal_ratio,
+                score: response.summary.score,
             },
         };
         let payload = serde_json::to_string(&envelope)?;
@@ -1662,7 +1672,16 @@ fn persisted_run_summary(run: &StoredBacktestRunWrite) -> StoredBacktestRunSumma
         replay_trade_count: run.replay_trade_count,
         signal_count: run.signal_count,
         trade_count: run.trade_count,
+        stop_loss_trade_count: 0,
+        take_profit_trade_count: 0,
+        reversal_trade_count: 0,
+        window_end_trade_count: 0,
+        non_reversal_trade_count: 0,
         total_pnl_percent: run.total_pnl_percent,
+        equity_curve_pnl_percent: 0.0,
+        max_drawdown_percent: 0.0,
+        reversal_ratio: 0.0,
+        score: run.total_pnl_percent,
     }
 }
 
@@ -1685,7 +1704,16 @@ fn map_persisted_backtest_summary(
         replay_trade_count: row.replay_trade_count as usize,
         signal_count: row.signal_count as usize,
         trade_count: row.trade_count as usize,
+        stop_loss_trade_count: row.stop_loss_trade_count as usize,
+        take_profit_trade_count: row.take_profit_trade_count as usize,
+        reversal_trade_count: row.reversal_trade_count as usize,
+        window_end_trade_count: row.window_end_trade_count as usize,
+        non_reversal_trade_count: row.non_reversal_trade_count as usize,
         total_pnl_percent: row.total_pnl_percent,
+        equity_curve_pnl_percent: row.equity_curve_pnl_percent,
+        max_drawdown_percent: row.max_drawdown_percent,
+        reversal_ratio: row.reversal_ratio,
+        score: row.score,
     })
 }
 
@@ -2594,6 +2622,7 @@ fn summarize_backtest(
         .iter()
         .filter(|trade| trade.exit_reason == "windowEnd")
         .count();
+    let non_reversal_trade_count = trades.len().saturating_sub(reversal_trade_count);
     let total_fees_usd = trades.iter().map(|trade| trade.fees_usd).sum::<f64>();
     let total_pnl_percent = trades.iter().map(|trade| trade.pnl_percent).sum::<f64>();
     let trade_count = trades.len();
@@ -2602,6 +2631,15 @@ fn summarize_backtest(
     } else {
         0.0
     };
+    let reversal_ratio = if trade_count > 0 {
+        reversal_trade_count as f64 / trade_count as f64
+    } else {
+        0.0
+    };
+    let (equity_curve_pnl_percent, max_drawdown_percent) =
+        calculate_equity_curve_metrics(trades);
+    let score =
+        equity_curve_pnl_percent - (0.75 * max_drawdown_percent) - (12.0 * reversal_ratio);
 
     BacktestSummary {
         signal_count: signals.len(),
@@ -2615,10 +2653,34 @@ fn summarize_backtest(
         take_profit_trade_count,
         reversal_trade_count,
         window_end_trade_count,
+        non_reversal_trade_count,
+        reversal_ratio,
         win_rate,
         total_fees_usd,
         total_pnl_percent,
+        equity_curve_pnl_percent,
+        max_drawdown_percent,
+        score,
     }
+}
+
+fn calculate_equity_curve_metrics(trades: &[SimulatedTradeRecord]) -> (f64, f64) {
+    let mut equity = 100.0;
+    let mut peak_equity = equity;
+    let mut max_drawdown_percent = 0.0_f64;
+
+    for trade in trades {
+        let trade_return = 1.0 + (trade.pnl_percent / 100.0);
+        equity *= trade_return.max(0.0);
+        peak_equity = peak_equity.max(equity);
+        if peak_equity > 0.0 {
+            let drawdown_percent = ((peak_equity - equity) / peak_equity) * 100.0;
+            max_drawdown_percent = max_drawdown_percent.max(drawdown_percent);
+        }
+    }
+
+    let equity_curve_pnl_percent = ((equity / 100.0) - 1.0) * 100.0;
+    (equity_curve_pnl_percent, max_drawdown_percent)
 }
 
 #[cfg(test)]
@@ -2635,7 +2697,7 @@ mod tests {
     use crate::models::BacktestRequest;
     use crate::{
         execution_simulation::{SimulationConfig, simulate_trade_replay_paged},
-        models::BacktestSignalRecord,
+        models::{BacktestSignalRecord, PositionDirection},
     };
 
     fn analysis_record() -> ResolvedAnalysisSettingsRecord {
@@ -2748,6 +2810,70 @@ mod tests {
         }
     }
 
+    fn simulated_trade(
+        trade_number: usize,
+        pnl_percent: f64,
+        exit_reason: &str,
+    ) -> SimulatedTradeRecord {
+        SimulatedTradeRecord {
+            trade_number,
+            direction: PositionDirection::Long,
+            entry_signal_sequence: trade_number,
+            exit_signal_sequence: Some(trade_number + 1),
+            entry_time: 1_000,
+            exit_time: 2_000,
+            entry_price: 100.0,
+            exit_price: 100.0,
+            quantity: 1.0,
+            notional_usd: 100.0,
+            stop_loss_price: 98.0,
+            take_profit_price: 106.0,
+            fees_usd: 0.0,
+            pnl_usd: pnl_percent,
+            pnl_percent,
+            entry_fill_source: "trade".to_string(),
+            exit_fill_source: "trade".to_string(),
+            exit_reason: exit_reason.to_string(),
+        }
+    }
+
+    #[test]
+    fn equity_curve_metrics_compound_returns_and_drawdown() {
+        let trades = vec![
+            simulated_trade(1, 10.0, "takeProfit"),
+            simulated_trade(2, -10.0, "stopLoss"),
+            simulated_trade(3, 5.0, "reversal"),
+        ];
+
+        let (equity_curve_pnl_percent, max_drawdown_percent) =
+            calculate_equity_curve_metrics(&trades);
+
+        assert!((equity_curve_pnl_percent - 3.95).abs() < 0.0001);
+        assert!((max_drawdown_percent - 10.0).abs() < 0.0001);
+    }
+
+    #[test]
+    fn summarize_backtest_uses_equity_curve_score_and_close_breakdown() {
+        let signals = vec![
+            signal(1, "long", 1_000, 100.0),
+            signal(2, "short", 2_000, 101.0),
+            signal(3, "long", 3_000, 102.0),
+        ];
+        let trades = vec![
+            simulated_trade(1, 10.0, "takeProfit"),
+            simulated_trade(2, -10.0, "reversal"),
+            simulated_trade(3, 5.0, "windowEnd"),
+        ];
+
+        let summary = summarize_backtest(&signals, &trades);
+
+        assert_eq!(summary.non_reversal_trade_count, 2);
+        assert!((summary.reversal_ratio - (1.0 / 3.0)).abs() < 0.0001);
+        assert!((summary.equity_curve_pnl_percent - 3.95).abs() < 0.0001);
+        assert!((summary.max_drawdown_percent - 10.0).abs() < 0.0001);
+        assert!((summary.score - (-7.55)).abs() < 0.0001);
+    }
+
     #[test]
     fn resolve_time_window_uses_backtesting_timerange_ms() {
         let analysis = analysis_record();
@@ -2783,32 +2909,41 @@ mod tests {
         .expect("window");
         assert_eq!(window.requested_start_time, 1_000_000);
         assert_eq!(window.requested_end_time, 1_000_000 + DAY_MS);
-        assert_eq!(window.effective_warmup_candles, 9);
+        assert_eq!(window.effective_warmup_candles, 3);
     }
 
     #[test]
     fn trade_coverage_blocker_rejects_internal_aggregate_trade_hole() {
         let coverage = trading_bot_market_data::db::WindowCoverage {
-            row_count: 10,
-            min_time: Some(1_001),
-            max_time: Some(1_999),
+            row_count: 7,
+            min_time: Some(1_000),
+            max_time: Some(2_000),
         };
-        let gaps = vec![trading_bot_market_data::db::AggregateTradeIdGap {
-            start_time: 1_400,
-            end_time: 1_500,
-            gap_ms: 100,
-            previous_aggregate_trade_id: 41,
-            next_aggregate_trade_id: 45,
-            missing_aggregate_trade_count: 3,
-        }];
+        let aggregate_trade_id_coverage =
+            trading_bot_market_data::db::AggregateTradeIdCoverage {
+                first_aggregate_trade_id: Some(41),
+                last_aggregate_trade_id: Some(50),
+                distinct_trade_count: 7,
+            };
+        let true_boundaries = Some(TrueTradeWindowBoundaries {
+            first_aggregate_trade_id: 41,
+            last_aggregate_trade_id: 50,
+            first_trade_time: 1_000,
+            last_trade_time: 2_000,
+        });
 
-        let blocker = trade_coverage_blocker(1_000, 2_000, 5, &coverage, &gaps);
+        let blocker = trade_coverage_blocker(
+            5,
+            &coverage,
+            &aggregate_trade_id_coverage,
+            true_boundaries,
+        );
 
         assert_eq!(
             blocker,
             Some(
-                "trade coverage contains aggregate trade id hole (prev_id=41, next_id=45, missing_count=3, gap_start=1400, gap_end=1500, gap_ms=100)"
-                    .to_string()
+                "trade coverage incomplete (row_count=7, min_time=Some(1000), max_time=Some(2000), expected_trades=10, present_trades=7, missing_trades=3, true_first_trade_time=1000, true_last_trade_time=2000)"
+                    .to_string(),
             )
         );
     }

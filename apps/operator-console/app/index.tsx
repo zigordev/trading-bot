@@ -121,7 +121,7 @@ export default function OverviewScreen() {
     Boolean(record.activated),
   ).length;
   const topBacktests = [...(backtestsQuery.data?.recentRuns ?? [])]
-    .sort((left, right) => right.totalPnlPercent - left.totalPnlPercent)
+    .sort((left, right) => right.score - left.score)
     .slice(0, 10);
   const symbolBaseAssets = new Map(
     (symbolsQuery.data ?? []).map((record) => [
@@ -412,7 +412,7 @@ export default function OverviewScreen() {
                   <OverviewHeader label="#" flex={0.45} />
                   <OverviewHeader label="Symbol" flex={1.35} />
                   <OverviewHeader label="Analysis" flex={2.3} />
-                  <OverviewHeader label="PnL" flex={0.8} align="right" />
+                  <OverviewHeader label="Score" flex={0.8} align="right" />
                   <OverviewHeader label="Finished" flex={1.4} align="right" />
                 </View>
                 {topBacktests.map((run, index) => (
@@ -445,10 +445,10 @@ export default function OverviewScreen() {
                       flex={2.3}
                     />
                     <OverviewCell
-                      label={`${run.totalPnlPercent.toFixed(2)}%`}
+                      label={run.score.toFixed(2)}
                       flex={0.8}
                       align="right"
-                      color={run.totalPnlPercent >= 0 ? "#157f3b" : "#b42318"}
+                      color={run.score >= 0 ? "#157f3b" : "#b42318"}
                       weight="700"
                     />
                     <OverviewCell

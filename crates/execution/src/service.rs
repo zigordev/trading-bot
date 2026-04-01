@@ -48,15 +48,20 @@ struct Inner {
 }
 
 struct ExecutionRuntime {
-    active_contexts: Vec<ActiveExecutionContext>,
-    context_states: BTreeMap<String, ContextRuntimeState>,
+    active_analyses: Vec<ResolvedAnalysisSettingsRecord>,
+    active_promotions: Vec<ActiveExecutionContext>,
+    analysis_states: BTreeMap<String, AnalysisRuntimeState>,
+    promotion_states: BTreeMap<String, PromotionRuntimeState>,
     listen_key: Option<String>,
 }
 
-struct ContextRuntimeState {
+struct AnalysisRuntimeState {
     evaluator: Option<AnalysisEvaluator>,
-    open_position: Option<LocalPaperPosition>,
     last_processed_kline_close_time: Option<i64>,
+}
+
+struct PromotionRuntimeState {
+    open_position: Option<LocalPaperPosition>,
     last_checked_trade_time: Option<i64>,
 }
 
@@ -69,6 +74,13 @@ fn analysis_matches_promotion(
         && analysis.timeframe_code == promotion.timeframe_code
         && analysis.strategy_name == promotion.strategy_name
         && analysis.risk_profile_name == promotion.risk_profile_name
+}
+
+fn promotion_matches_analysis(
+    promotion: &ActiveExecutionContext,
+    analysis: &ResolvedAnalysisSettingsRecord,
+) -> bool {
+    analysis_matches_promotion(analysis, &promotion.promotion)
 }
 
 #[derive(Clone, Debug, Default, Serialize)]
@@ -165,8 +177,10 @@ impl ExecutionService {
                     otel_exporter_configured: config.otel_exporter_otlp_endpoint.is_some(),
                 }),
                 runtime: Mutex::new(ExecutionRuntime {
-                    active_contexts: Vec::new(),
-                    context_states: BTreeMap::new(),
+                    active_analyses: Vec::new(),
+                    active_promotions: Vec::new(),
+                    analysis_states: BTreeMap::new(),
+                    promotion_states: BTreeMap::new(),
                     listen_key: None,
                 }),
                 task_handles: Mutex::new(Vec::new()),
@@ -292,10 +306,15 @@ impl ExecutionService {
             .active_promotion_loaded
             .set(if active_promotions.is_empty() { 0 } else { 1 });
 
+        let next_analyses = analyses
+            .into_iter()
+            .filter(|analysis| build_analysis_spec(analysis).ok().flatten().is_some())
+            .collect::<Vec<_>>();
+
         let next_contexts = active_promotions
             .into_iter()
             .filter_map(|promotion| {
-                analyses
+                next_analyses
                     .iter()
                     .find(|analysis| analysis_matches_promotion(analysis, &promotion))
                     .cloned()
@@ -303,47 +322,60 @@ impl ExecutionService {
             })
             .collect::<Vec<_>>();
 
-        let previous_keys;
-        let next_keys = next_contexts
+        let previous_analysis_ids;
+        let next_analysis_ids = next_analyses
+            .iter()
+            .map(|analysis| analysis.id.clone())
+            .collect::<Vec<_>>();
+        let next_promotion_ids = next_contexts
             .iter()
             .map(|context| context.promotion.promotion_id.clone())
             .collect::<Vec<_>>();
         {
             let mut runtime = self.inner.runtime.lock().await;
-            previous_keys = runtime
-                .active_contexts
+            previous_analysis_ids = runtime
+                .active_analyses
                 .iter()
-                .map(|context| context.promotion.promotion_id.clone())
+                .map(|analysis| analysis.id.clone())
                 .collect::<Vec<_>>();
             runtime
-                .context_states
-                .retain(|promotion_id, state| {
-                    next_keys.iter().any(|key| key == promotion_id) || state.open_position.is_some()
-                });
+                .analysis_states
+                .retain(|analysis_id, _| next_analysis_ids.iter().any(|key| key == analysis_id));
+            runtime.promotion_states.retain(|promotion_id, state| {
+                next_promotion_ids.iter().any(|key| key == promotion_id) || state.open_position.is_some()
+            });
+            for analysis in &next_analyses {
+                runtime
+                    .analysis_states
+                    .entry(analysis.id.clone())
+                    .or_insert(AnalysisRuntimeState {
+                        evaluator: None,
+                        last_processed_kline_close_time: None,
+                    });
+            }
             for context in &next_contexts {
                 runtime
-                    .context_states
+                    .promotion_states
                     .entry(context.promotion.promotion_id.clone())
-                    .or_insert(ContextRuntimeState {
-                        evaluator: None,
+                    .or_insert(PromotionRuntimeState {
                         open_position: None,
-                        last_processed_kline_close_time: None,
                         last_checked_trade_time: None,
                     });
             }
-            runtime.active_contexts = next_contexts.clone();
+            runtime.active_analyses = next_analyses.clone();
+            runtime.active_promotions = next_contexts.clone();
         }
 
-        let added_contexts = next_contexts
+        let added_analyses = next_analyses
             .iter()
-            .filter(|context| !previous_keys.iter().any(|key| key == &context.promotion.promotion_id))
+            .filter(|analysis| !previous_analysis_ids.iter().any(|key| key == &analysis.id))
             .cloned()
             .collect::<Vec<_>>();
-        if next_contexts.is_empty() {
+        if next_analyses.is_empty() {
             self.mark_market_data("idle", None).await;
         } else {
-            for context in &added_contexts {
-                self.warm_context_from_market_data(context).await?;
+            for analysis in &added_analyses {
+                self.warm_analysis_from_market_data(analysis).await?;
             }
         }
 
@@ -359,7 +391,7 @@ impl ExecutionService {
         let open_positions = {
             let runtime = self.inner.runtime.lock().await;
             runtime
-                .context_states
+                .promotion_states
                 .values()
                 .filter_map(|state| state.open_position.clone())
                 .collect::<Vec<_>>()
@@ -377,10 +409,10 @@ impl ExecutionService {
             .iter()
             .map(|context| context.promotion.clone())
             .collect();
-        status.active_analysis_id = next_contexts.first().map(|context| context.analysis.id.clone());
-        status.active_analysis_ids = next_contexts
+        status.active_analysis_id = next_analyses.first().map(|analysis| analysis.id.clone());
+        status.active_analysis_ids = next_analyses
             .iter()
-            .map(|context| context.analysis.id.clone())
+            .map(|analysis| analysis.id.clone())
             .collect();
         status.paper_trade_count = summary.recent_trades.len();
         status.open_position = open_positions.first().cloned();
@@ -389,14 +421,17 @@ impl ExecutionService {
         Ok(())
     }
 
-    async fn warm_context_from_market_data(&self, context: &ActiveExecutionContext) -> Result<()> {
+    async fn warm_analysis_from_market_data(
+        &self,
+        analysis: &ResolvedAnalysisSettingsRecord,
+    ) -> Result<()> {
         let klines = self
             .fetch_market_json::<Vec<PersistedKlineRecord>>(&format!(
-                "/v1/klines/{}/{}?limit=250",
-                context.promotion.symbol_code, context.promotion.timeframe_code
+                "/v1/klines/{}/{}?limit=1000",
+                analysis.symbol, analysis.timeframe_code
             ))
             .await?;
-        self.rebuild_evaluator_if_needed(context, &klines).await?;
+        self.rebuild_evaluator_if_needed(analysis, &klines).await?;
         self.mark_market_data("up", None).await;
         Ok(())
     }
@@ -508,11 +543,11 @@ impl ExecutionService {
     }
 
     async fn process_live_kline_event(&self, event: NormalizedKlineEvent) -> Result<()> {
-        let contexts = {
+        let analyses = {
             let runtime = self.inner.runtime.lock().await;
-            runtime.active_contexts.clone()
+            runtime.active_analyses.clone()
         };
-        if contexts.is_empty() {
+        if analyses.is_empty() {
             self.mark_market_data("idle", None).await;
             return Ok(());
         }
@@ -521,18 +556,17 @@ impl ExecutionService {
             return Ok(());
         }
 
-        for context in contexts.into_iter().filter(|context| {
-            event.pair_code == context.promotion.symbol_code
-                && event.timeframe_code == context.promotion.timeframe_code
+        for analysis in analyses.into_iter().filter(|analysis| {
+            event.pair_code == analysis.symbol
+                && event.timeframe_code == analysis.timeframe_code
                 && event
                     .analysis_setting_ids
                     .iter()
-                    .any(|id| id == &context.analysis.id)
+                    .any(|id| id == &analysis.id)
         }) {
-            let promotion_id = context.promotion.promotion_id.clone();
             let signal = {
                 let mut runtime = self.inner.runtime.lock().await;
-                let Some(state) = runtime.context_states.get_mut(&promotion_id) else {
+                let Some(state) = runtime.analysis_states.get_mut(&analysis.id) else {
                     continue;
                 };
                 if event.close_time <= state.last_processed_kline_close_time.unwrap_or(i64::MIN) {
@@ -541,9 +575,9 @@ impl ExecutionService {
 
                 let Some(evaluator) = state.evaluator.as_mut() else {
                     warn!(
-                        symbol = %context.promotion.symbol_code,
-                        timeframe = %context.promotion.timeframe_code,
-                        promotion_id = %promotion_id,
+                        symbol = %analysis.symbol,
+                        timeframe = %analysis.timeframe_code,
+                        analysis_setting_id = %analysis.id,
                         "execution skipped live kline because evaluator is not warmed yet"
                     );
                     continue;
@@ -580,7 +614,7 @@ impl ExecutionService {
             };
 
             if let Some(signal) = signal {
-                self.handle_signal_with_fill(&context, &signal, signal.close_price)
+                self.handle_signal_with_fill_for_analysis(&analysis, &signal, signal.close_price)
                     .await?;
             }
         }
@@ -592,7 +626,7 @@ impl ExecutionService {
         let maybe_closes = {
             let mut runtime = self.inner.runtime.lock().await;
             runtime
-                .context_states
+                .promotion_states
                 .iter_mut()
                 .filter_map(|(_, state)| {
                     state.last_checked_trade_time = Some(
@@ -642,20 +676,20 @@ impl ExecutionService {
     }
 
     async fn run_signal_cycle(&self) -> Result<()> {
-        let contexts = {
+        let analyses = {
             let runtime = self.inner.runtime.lock().await;
-            runtime.active_contexts.clone()
+            runtime.active_analyses.clone()
         };
-        if contexts.is_empty() {
+        if analyses.is_empty() {
             self.mark_market_data("idle", None).await;
             return Ok(());
         }
-        for context in contexts {
-            let snapshot = self.fetch_market_snapshot(&context).await?;
+        for analysis in analyses {
+            let snapshot = self.fetch_market_snapshot(&analysis).await?;
             self.mark_market_data("up", None).await;
-            self.rebuild_evaluator_if_needed(&context, &snapshot.klines).await?;
-            self.process_trade_exits(&context, &snapshot.trades).await?;
-            self.process_signal_entries(&context, &snapshot.klines, &snapshot.trades)
+            self.rebuild_evaluator_if_needed(&analysis, &snapshot.klines).await?;
+            self.process_trade_exits(&analysis, &snapshot.trades).await?;
+            self.process_signal_entries(&analysis, &snapshot.klines, &snapshot.trades)
                 .await?;
         }
         Ok(())
@@ -663,26 +697,26 @@ impl ExecutionService {
 
     async fn fetch_market_snapshot(
         &self,
-        context: &ActiveExecutionContext,
+        analysis: &ResolvedAnalysisSettingsRecord,
     ) -> Result<crate::models::MarketSnapshot> {
         let klines = self
             .fetch_market_json::<Vec<PersistedKlineRecord>>(&format!(
-                "/v1/klines/{}/{}?limit=250",
-                context.promotion.symbol_code, context.promotion.timeframe_code
+                "/v1/klines/{}/{}?limit=1000",
+                analysis.symbol, analysis.timeframe_code
             ))
             .await?;
         let trades = match self
             .fetch_market_json::<Vec<PersistedTradeRecord>>(&format!(
                 "/v1/trades/{}?limit=100",
-                context.promotion.symbol_code
+                analysis.symbol
             ))
             .await
         {
             Ok(rows) => rows,
             Err(error) => {
                 warn!(
-                    symbol = %context.promotion.symbol_code,
-                    timeframe = %context.promotion.timeframe_code,
+                    symbol = %analysis.symbol,
+                    timeframe = %analysis.timeframe_code,
                     error = %error,
                     "execution proceeding without recent trades; paper fills will fall back to kline close",
                 );
@@ -695,21 +729,18 @@ impl ExecutionService {
 
     async fn rebuild_evaluator_if_needed(
         &self,
-        context: &ActiveExecutionContext,
+        analysis: &ResolvedAnalysisSettingsRecord,
         klines: &[PersistedKlineRecord],
     ) -> Result<()> {
         let mut runtime = self.inner.runtime.lock().await;
-        let Some(state) = runtime
-            .context_states
-            .get_mut(&context.promotion.promotion_id)
-        else {
+        let Some(state) = runtime.analysis_states.get_mut(&analysis.id) else {
             return Ok(());
         };
         if state.evaluator.is_some() {
             return Ok(());
         }
 
-        let Some(spec) = build_analysis_spec(&context.analysis)? else {
+        let Some(spec) = build_analysis_spec(analysis)? else {
             bail!("active execution analysis is not evaluable");
         };
 
@@ -717,7 +748,7 @@ impl ExecutionService {
         let warmup = klines
             .iter()
             .map(|row| StrategyPersistedKlineRecord {
-                pair_code: context.promotion.symbol_code.clone(),
+                pair_code: analysis.symbol.clone(),
                 symbol: row.symbol.clone(),
                 timeframe_code: row.timeframe_code.clone(),
                 period_ms: row.period_ms,
@@ -740,51 +771,61 @@ impl ExecutionService {
         evaluator.warm_from_klines(&warmup);
         state.evaluator = Some(evaluator);
         state.last_processed_kline_close_time = klines.iter().map(|row| row.close_time).max();
-        state.last_checked_trade_time = None;
         Ok(())
     }
 
     async fn process_trade_exits(
         &self,
-        context: &ActiveExecutionContext,
+        analysis: &ResolvedAnalysisSettingsRecord,
         trades: &[PersistedTradeRecord],
     ) -> Result<()> {
-        let maybe_close = {
+        let maybe_closes = {
             let runtime = self.inner.runtime.lock().await;
-            let Some(state) = runtime.context_states.get(&context.promotion.promotion_id) else {
-                return Ok(());
-            };
-            let Some(position) = state.open_position.clone() else {
-                return Ok(());
-            };
-
-            let next_trade = trades
-                .iter()
-                .filter(|trade| trade.trade_time > state.last_checked_trade_time.unwrap_or(0))
-                .find(|trade| {
-                    let Ok(price) = trade.price.parse::<f64>() else {
-                        return false;
-                    };
-                    if position.side == "long" {
-                        price <= position.stop_loss_price || price >= position.take_profit_price
-                    } else {
-                        price >= position.stop_loss_price || price <= position.take_profit_price
+            runtime
+                .promotion_states
+                .values()
+                .filter_map(|state| {
+                    let position = state.open_position.clone()?;
+                    if position.analysis_setting_id != analysis.id {
+                        return None;
                     }
-                })
-                .cloned();
 
-            next_trade.map(|trade| (position, trade))
+                    let next_trade = trades
+                        .iter()
+                        .filter(|trade| trade.trade_time > state.last_checked_trade_time.unwrap_or(0))
+                        .find(|trade| {
+                            let Ok(price) = trade.price.parse::<f64>() else {
+                                return false;
+                            };
+                            if position.side == "long" {
+                                price <= position.stop_loss_price || price >= position.take_profit_price
+                            } else {
+                                price >= position.stop_loss_price || price <= position.take_profit_price
+                            }
+                        })
+                        .cloned();
+
+                    next_trade.map(|trade| (position, trade))
+                })
+                .collect::<Vec<_>>()
         };
 
-        if let Some((position, trade)) = maybe_close {
+        for (position, trade) in maybe_closes {
             self.close_paper_trade(position, trade, "riskExit").await?;
         }
 
         let latest_trade_time = trades_max_time(trades);
         if latest_trade_time.is_some() {
             let mut runtime = self.inner.runtime.lock().await;
-            if let Some(state) = runtime.context_states.get_mut(&context.promotion.promotion_id) {
-                state.last_checked_trade_time = latest_trade_time;
+            for state in runtime.promotion_states.values_mut() {
+                if state
+                    .open_position
+                    .as_ref()
+                    .map(|position| position.analysis_setting_id == analysis.id)
+                    .unwrap_or(false)
+                {
+                    state.last_checked_trade_time = latest_trade_time;
+                }
             }
         }
         Ok(())
@@ -792,15 +833,15 @@ impl ExecutionService {
 
     async fn process_signal_entries(
         &self,
-        context: &ActiveExecutionContext,
+        analysis: &ResolvedAnalysisSettingsRecord,
         klines: &[PersistedKlineRecord],
         trades: &[PersistedTradeRecord],
     ) -> Result<()> {
         let pending_rows = {
             let runtime = self.inner.runtime.lock().await;
             let last_processed_close_time = runtime
-                .context_states
-                .get(&context.promotion.promotion_id)
+                .analysis_states
+                .get(&analysis.id)
                 .and_then(|state| state.last_processed_kline_close_time)
                 .unwrap_or(i64::MIN);
             klines
@@ -816,24 +857,21 @@ impl ExecutionService {
         for row in pending_rows {
             let signal = {
                 let mut runtime = self.inner.runtime.lock().await;
-                let Some(state) = runtime.context_states.get_mut(&context.promotion.promotion_id) else {
+                let Some(state) = runtime.analysis_states.get_mut(&analysis.id) else {
                     continue;
                 };
                 let Some(evaluator) = state.evaluator.as_mut() else {
                     continue;
                 };
-                evaluator.process_live_kline(&synthetic_live_kline(
-                    &row,
-                    &context.analysis,
-                ))
+                evaluator.process_live_kline(&synthetic_live_kline(&row, analysis))
             };
 
             if let Some(signal) = signal {
-                self.handle_signal(context, &signal, trades).await?;
+                self.handle_signal_for_analysis(analysis, &signal, trades).await?;
             }
 
             let mut runtime = self.inner.runtime.lock().await;
-            if let Some(state) = runtime.context_states.get_mut(&context.promotion.promotion_id) {
+            if let Some(state) = runtime.analysis_states.get_mut(&analysis.id) {
                 state.last_processed_kline_close_time = Some(row.close_time);
             }
         }
@@ -841,29 +879,43 @@ impl ExecutionService {
         Ok(())
     }
 
-    async fn handle_signal(
+    async fn handle_signal_for_analysis(
         &self,
-        context: &ActiveExecutionContext,
+        analysis: &ResolvedAnalysisSettingsRecord,
         signal: &EmittedSignal,
         trades: &[PersistedTradeRecord],
     ) -> Result<()> {
         let fill = first_trade_fill_after(trades, signal.close_time)
             .unwrap_or(signal.close_price);
 
-        self.handle_signal_with_fill(context, signal, fill).await
+        self.handle_signal_with_fill_for_analysis(analysis, signal, fill).await
     }
 
-    async fn handle_signal_with_fill(
+    async fn handle_signal_with_fill_for_analysis(
         &self,
-        context: &ActiveExecutionContext,
+        analysis: &ResolvedAnalysisSettingsRecord,
         signal: &EmittedSignal,
         fill: f64,
     ) -> Result<()> {
-        if context.promotion.mode == "paper" {
-            self.handle_paper_signal(context, signal, fill).await
-        } else {
-            self.handle_live_signal(context, signal, fill).await
+        let contexts = {
+            let runtime = self.inner.runtime.lock().await;
+            runtime
+                .active_promotions
+                .iter()
+                .filter(|context| promotion_matches_analysis(context, analysis))
+                .cloned()
+                .collect::<Vec<_>>()
+        };
+
+        for context in contexts {
+            if context.promotion.mode == "paper" {
+                self.handle_paper_signal(&context, signal, fill).await?;
+            } else {
+                self.handle_live_signal(&context, signal, fill).await?;
+            }
         }
+
+        Ok(())
     }
 
     async fn handle_paper_signal(
@@ -877,7 +929,7 @@ impl ExecutionService {
             .runtime
             .lock()
             .await
-            .context_states
+            .promotion_states
             .get(&context.promotion.promotion_id)
             .and_then(|state| state.open_position.clone());
         if let Some(position) = existing.clone() {
@@ -1019,20 +1071,13 @@ impl ExecutionService {
             fees_usd: 0.0,
         };
         self.post_execution_trade(&trade).await?;
-        let open_positions = {
+        {
             let mut runtime = self.inner.runtime.lock().await;
-            if let Some(state) = runtime.context_states.get_mut(&context.promotion.promotion_id) {
+            if let Some(state) = runtime.promotion_states.get_mut(&context.promotion.promotion_id) {
                 state.open_position = Some(position);
             }
-            runtime
-                .context_states
-                .values()
-                .filter_map(|state| state.open_position.clone())
-                .collect::<Vec<_>>()
-        };
-        let mut status = self.inner.status.write().await;
-        status.open_position = open_positions.first().cloned();
-        status.open_positions = open_positions;
+        }
+        self.refresh_open_positions_status().await;
         Ok(())
     }
 
@@ -1081,15 +1126,21 @@ impl ExecutionService {
         };
         self.post_execution_trade(&trade_record).await?;
         info!(trade_id = %position.trade_id, close_reason = %normalized_close_reason, pnl_percent, "paper trade closed");
-        let open_positions = {
+        {
             let mut runtime = self.inner.runtime.lock().await;
-            if let Some(state) = runtime.context_states.get_mut(
-                &position.promotion_id,
-            ) {
+            if let Some(state) = runtime.promotion_states.get_mut(&position.promotion_id) {
                 state.open_position = None;
             }
+        }
+        self.refresh_open_positions_status().await;
+        Ok(())
+    }
+
+    async fn refresh_open_positions_status(&self) {
+        let open_positions = {
+            let runtime = self.inner.runtime.lock().await;
             runtime
-                .context_states
+                .promotion_states
                 .values()
                 .filter_map(|state| state.open_position.clone())
                 .collect::<Vec<_>>()
@@ -1097,7 +1148,6 @@ impl ExecutionService {
         let mut status = self.inner.status.write().await;
         status.open_position = open_positions.first().cloned();
         status.open_positions = open_positions;
-        Ok(())
     }
 
     async fn post_execution_trade(&self, trade: &ExecutionTradeRecord) -> Result<()> {
@@ -1300,8 +1350,10 @@ mod tests {
                     otel_exporter_configured: false,
                 }),
                 runtime: Mutex::new(ExecutionRuntime {
-                    active_contexts: Vec::new(),
-                    context_states: BTreeMap::new(),
+                    active_analyses: Vec::new(),
+                    active_promotions: Vec::new(),
+                    analysis_states: BTreeMap::new(),
+                    promotion_states: BTreeMap::new(),
                     listen_key: None,
                 }),
                 task_handles: Mutex::new(Vec::new()),

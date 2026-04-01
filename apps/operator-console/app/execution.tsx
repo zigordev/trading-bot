@@ -329,7 +329,7 @@ export default function ExecutionScreen() {
                 Promoted strategies
               </Text>
               <Text style={{ color: "#475467" }}>
-                Current active promotion set ranked by total PnL %.
+                Current active promotion set ranked by compounded backtest score.
               </Text>
             </View>
             <View style={{ marginTop: 12, gap: 0 }}>
@@ -370,7 +370,7 @@ export default function ExecutionScreen() {
                     textAlign: "right",
                   }}
                 >
-                    PnL %
+                    Score
                   </Text>
                 </View>
                 {executionSummaryQuery.data.activePromotions.map((promotion, index, items) => (
@@ -471,11 +471,15 @@ export default function ExecutionScreen() {
                     </Text>
                   </View>
                   <Text
+                    onPress={() =>
+                      promotion.sourceBacktestId && setSelectedBacktestId(promotion.sourceBacktestId)
+                    }
                     style={{
                       flex: 0.8,
-                      color: "#101828",
+                      color: promotion.sourceBacktestId ? "#1d4ed8" : "#101828",
                       fontWeight: "700",
                       textAlign: "right",
+                      textDecorationLine: promotion.sourceBacktestId ? "underline" : "none",
                     }}
                   >
                     {promotion.selectionValue.toFixed(2)}
@@ -743,9 +747,10 @@ export default function ExecutionScreen() {
                       value={new Date(selectedBacktestRun.finishedAt).toLocaleString()}
                     />
                     <DetailRow
-                      label="PnL %"
-                      value={`${selectedBacktestRun.totalPnlPercent.toFixed(2)}%`}
+                      label="Score"
+                      value={selectedBacktestRun.score.toFixed(2)}
                     />
+                    <ScoreBreakdownSection run={selectedBacktestRun} />
                     <DetailRow
                       label="Backtest duration"
                       value={formatDuration(selectedBacktestRun.backtestDurationMs)}
@@ -883,6 +888,32 @@ function DetailRow({
         {value}
       </Text>
     </View>
+  );
+}
+
+function ScoreBreakdownSection({
+  run,
+}: {
+  run: Awaited<ReturnType<typeof getBacktestsSummary>>["latestRuns"][number];
+}) {
+  return (
+    <>
+      <DetailRow
+        label="Score formula"
+        value="score = equity PnL - 0.75 × max drawdown - 12 × reversal ratio"
+      />
+      <DetailRow label="Equity PnL" value={`${run.equityCurvePnlPercent.toFixed(2)}%`} />
+      <DetailRow label="Max drawdown" value={`${run.maxDrawdownPercent.toFixed(2)}%`} />
+      <DetailRow label="Reversal ratio" value={`${(run.reversalRatio * 100).toFixed(2)}%`} />
+      <DetailRow
+        label="Close reasons"
+        value={`${run.reversalTradeCount.toLocaleString()} reversal · ${run.takeProfitTradeCount.toLocaleString()} TP · ${run.stopLossTradeCount.toLocaleString()} SL · ${run.windowEndTradeCount.toLocaleString()} window`}
+      />
+      <DetailRow
+        label="Non-reversal trades"
+        value={run.nonReversalTradeCount.toLocaleString()}
+      />
+    </>
   );
 }
 

@@ -105,7 +105,7 @@ VALUES
     true,
     'totalPnlPercent',
     false,
-    1,
+    5,
     '[]'::jsonb,
     '[]'::jsonb,
     'flatten',

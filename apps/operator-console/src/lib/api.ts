@@ -50,7 +50,12 @@ export type RecentBacktestRun = {
   takeProfitTradeCount: number;
   reversalTradeCount: number;
   windowEndTradeCount: number;
+  nonReversalTradeCount: number;
   totalPnlPercent: number;
+  equityCurvePnlPercent: number;
+  maxDrawdownPercent: number;
+  reversalRatio: number;
+  score: number;
 };
 
 export type BacktestsSummaryResponse = {
@@ -67,7 +72,6 @@ export type ExecutionSettingsRecord = {
   mode: "paper" | "live";
   autoPromote: boolean;
   maxPromotions: number;
-  requirePositivePnl: boolean;
   minTradeCount: number;
   replaceOpenPositionPolicy: "keep" | "flatten";
   createdAt: string;
