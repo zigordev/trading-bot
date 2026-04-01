@@ -107,9 +107,14 @@ pub struct BacktestSummary {
     pub take_profit_trade_count: usize,
     pub reversal_trade_count: usize,
     pub window_end_trade_count: usize,
+    pub non_reversal_trade_count: usize,
+    pub reversal_ratio: f64,
     pub win_rate: f64,
     pub total_fees_usd: f64,
     pub total_pnl_percent: f64,
+    pub equity_curve_pnl_percent: f64,
+    pub max_drawdown_percent: f64,
+    pub score: f64,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -176,7 +181,16 @@ pub struct PersistedBacktestRunSummary {
     pub replay_trade_count: usize,
     pub signal_count: usize,
     pub trade_count: usize,
+    pub stop_loss_trade_count: usize,
+    pub take_profit_trade_count: usize,
+    pub reversal_trade_count: usize,
+    pub window_end_trade_count: usize,
+    pub non_reversal_trade_count: usize,
     pub total_pnl_percent: f64,
+    pub equity_curve_pnl_percent: f64,
+    pub max_drawdown_percent: f64,
+    pub reversal_ratio: f64,
+    pub score: f64,
 }
 
 #[derive(Clone, Debug)]

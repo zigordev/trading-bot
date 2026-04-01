@@ -74,6 +74,27 @@ struct StoredBacktestRunRow {
     response_json: String,
 }
 
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+struct StoredBacktestRunResponseSummary {
+    summary: StoredBacktestRunResponseSummaryFields,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+struct StoredBacktestRunResponseSummaryFields {
+    stop_loss_trade_count: usize,
+    take_profit_trade_count: usize,
+    reversal_trade_count: usize,
+    window_end_trade_count: usize,
+    non_reversal_trade_count: usize,
+    total_pnl_percent: f64,
+    equity_curve_pnl_percent: f64,
+    max_drawdown_percent: f64,
+    reversal_ratio: f64,
+    score: f64,
+}
+
 #[derive(Debug, Deserialize)]
 struct LatestOpenTimeRow {
     open_time: Option<i64>,
@@ -231,7 +252,16 @@ pub struct StoredBacktestRunSummary {
     pub replay_trade_count: i64,
     pub signal_count: i64,
     pub trade_count: i64,
+    pub stop_loss_trade_count: i64,
+    pub take_profit_trade_count: i64,
+    pub reversal_trade_count: i64,
+    pub window_end_trade_count: i64,
+    pub non_reversal_trade_count: i64,
     pub total_pnl_percent: f64,
+    pub equity_curve_pnl_percent: f64,
+    pub max_drawdown_percent: f64,
+    pub reversal_ratio: f64,
+    pub score: f64,
 }
 
 #[derive(Clone, Debug)]
@@ -1959,6 +1989,11 @@ impl Database {
                 continue;
             }
             let row = serde_json::from_str::<StoredBacktestRunRow>(&line)?;
+            let response_summary = serde_json::from_str::<StoredBacktestRunResponseSummary>(
+                &row.response_json,
+            )
+            .unwrap_or_default()
+            .summary;
             records.push(StoredBacktestRun {
                 summary: StoredBacktestRunSummary {
                     backtest_id: row.backtest_id,
@@ -1977,7 +2012,20 @@ impl Database {
                     replay_trade_count: row.replay_trade_count,
                     signal_count: row.signal_count,
                     trade_count: row.trade_count,
-                    total_pnl_percent: row.total_pnl_percent,
+                    stop_loss_trade_count: response_summary.stop_loss_trade_count as i64,
+                    take_profit_trade_count: response_summary.take_profit_trade_count as i64,
+                    reversal_trade_count: response_summary.reversal_trade_count as i64,
+                    window_end_trade_count: response_summary.window_end_trade_count as i64,
+                    non_reversal_trade_count: response_summary.non_reversal_trade_count as i64,
+                    total_pnl_percent: if response_summary.total_pnl_percent == 0.0 {
+                        row.total_pnl_percent
+                    } else {
+                        response_summary.total_pnl_percent
+                    },
+                    equity_curve_pnl_percent: response_summary.equity_curve_pnl_percent,
+                    max_drawdown_percent: response_summary.max_drawdown_percent,
+                    reversal_ratio: response_summary.reversal_ratio,
+                    score: response_summary.score,
                 },
                 response_json: row.response_json,
             });

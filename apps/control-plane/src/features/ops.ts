@@ -49,7 +49,12 @@ export type BacktestRunProjectionRecord = {
   takeProfitTradeCount: number;
   reversalTradeCount: number;
   windowEndTradeCount: number;
+  nonReversalTradeCount: number;
   totalPnlPercent: number;
+  equityCurvePnlPercent: number;
+  maxDrawdownPercent: number;
+  reversalRatio: number;
+  score: number;
   sourceEventId: string;
   sourceOccurredAt: string;
   createdAt: string;
@@ -191,10 +196,21 @@ type ExecutionSettingsSelectionRecord = {
   mode: "paper" | "live";
   autoPromote: boolean;
   maxPromotions: number;
-  requirePositivePnl: boolean;
   minTradeCount: number;
   replaceOpenPositionPolicy: "keep" | "flatten";
 };
+
+const selectionMetricName = "score";
+
+const calculatePromotionSelectionValue = (
+  run: Pick<
+    BacktestRunProjectionInput,
+    "score" | "equityCurvePnlPercent" | "maxDrawdownPercent" | "reversalRatio"
+  >,
+): number =>
+  Number.isFinite(run.score)
+    ? run.score
+    : run.equityCurvePnlPercent - 0.75 * run.maxDrawdownPercent - 12 * run.reversalRatio;
 
 const isZeroReadinessDimension = (
   value: Record<string, unknown> | null,
@@ -301,7 +317,12 @@ const mapBacktestRunProjectionRow = (
   takeProfitTradeCount: Number(row.take_profit_trade_count ?? 0),
   reversalTradeCount: Number(row.reversal_trade_count ?? 0),
   windowEndTradeCount: Number(row.window_end_trade_count ?? 0),
+  nonReversalTradeCount: Number(row.non_reversal_trade_count ?? 0),
   totalPnlPercent: Number(row.total_pnl_percent),
+  equityCurvePnlPercent: Number(row.equity_curve_pnl_percent ?? 0),
+  maxDrawdownPercent: Number(row.max_drawdown_percent ?? 0),
+  reversalRatio: Number(row.reversal_ratio ?? 0),
+  score: Number(row.score ?? 0),
   sourceEventId: String(row.source_event_id),
   sourceOccurredAt:
     toIsoString(row.source_occurred_at) ?? new Date(0).toISOString(),
@@ -439,7 +460,6 @@ const mapExecutionSettingsSelectionRow = (
   mode: row.mode === "live" ? "live" : "paper",
   autoPromote: Boolean(row.auto_promote),
   maxPromotions: Number(row.max_promotions),
-  requirePositivePnl: Boolean(row.require_positive_pnl),
   minTradeCount: Number(row.min_trade_count),
   replaceOpenPositionPolicy:
     row.replace_open_position_policy === "keep" ? "keep" : "flatten",
@@ -543,7 +563,12 @@ export const ensureOpsSchema = async (pool: Pool): Promise<void> => {
       take_profit_trade_count INTEGER NOT NULL DEFAULT 0,
       reversal_trade_count INTEGER NOT NULL DEFAULT 0,
       window_end_trade_count INTEGER NOT NULL DEFAULT 0,
+      non_reversal_trade_count INTEGER NOT NULL DEFAULT 0,
       total_pnl_percent DOUBLE PRECISION NOT NULL,
+      equity_curve_pnl_percent DOUBLE PRECISION NOT NULL DEFAULT 0,
+      max_drawdown_percent DOUBLE PRECISION NOT NULL DEFAULT 0,
+      reversal_ratio DOUBLE PRECISION NOT NULL DEFAULT 0,
+      score DOUBLE PRECISION NOT NULL DEFAULT 0,
       source_event_id TEXT NOT NULL,
       source_occurred_at TIMESTAMPTZ NOT NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -556,7 +581,12 @@ export const ensureOpsSchema = async (pool: Pool): Promise<void> => {
       ADD COLUMN IF NOT EXISTS stop_loss_trade_count INTEGER NOT NULL DEFAULT 0,
       ADD COLUMN IF NOT EXISTS take_profit_trade_count INTEGER NOT NULL DEFAULT 0,
       ADD COLUMN IF NOT EXISTS reversal_trade_count INTEGER NOT NULL DEFAULT 0,
-      ADD COLUMN IF NOT EXISTS window_end_trade_count INTEGER NOT NULL DEFAULT 0
+      ADD COLUMN IF NOT EXISTS window_end_trade_count INTEGER NOT NULL DEFAULT 0,
+      ADD COLUMN IF NOT EXISTS non_reversal_trade_count INTEGER NOT NULL DEFAULT 0,
+      ADD COLUMN IF NOT EXISTS equity_curve_pnl_percent DOUBLE PRECISION NOT NULL DEFAULT 0,
+      ADD COLUMN IF NOT EXISTS max_drawdown_percent DOUBLE PRECISION NOT NULL DEFAULT 0,
+      ADD COLUMN IF NOT EXISTS reversal_ratio DOUBLE PRECISION NOT NULL DEFAULT 0,
+      ADD COLUMN IF NOT EXISTS score DOUBLE PRECISION NOT NULL DEFAULT 0
   `);
 
   await pool.query(`
@@ -1048,7 +1078,12 @@ export const upsertBacktestRunProjection = async (
         take_profit_trade_count,
         reversal_trade_count,
         window_end_trade_count,
+        non_reversal_trade_count,
         total_pnl_percent,
+        equity_curve_pnl_percent,
+        max_drawdown_percent,
+        reversal_ratio,
+        score,
         source_event_id,
         source_occurred_at
       )
@@ -1075,7 +1110,11 @@ export const upsertBacktestRunProjection = async (
         $20,
         $21,
         $22,
-        $23::timestamptz
+        $23,
+        $24,
+        $25,
+        $26,
+        $27::timestamptz
       )
       ON CONFLICT (backtest_id)
       DO UPDATE SET
@@ -1097,7 +1136,12 @@ export const upsertBacktestRunProjection = async (
         take_profit_trade_count = EXCLUDED.take_profit_trade_count,
         reversal_trade_count = EXCLUDED.reversal_trade_count,
         window_end_trade_count = EXCLUDED.window_end_trade_count,
+        non_reversal_trade_count = EXCLUDED.non_reversal_trade_count,
         total_pnl_percent = EXCLUDED.total_pnl_percent,
+        equity_curve_pnl_percent = EXCLUDED.equity_curve_pnl_percent,
+        max_drawdown_percent = EXCLUDED.max_drawdown_percent,
+        reversal_ratio = EXCLUDED.reversal_ratio,
+        score = EXCLUDED.score,
         source_event_id = EXCLUDED.source_event_id,
         source_occurred_at = EXCLUDED.source_occurred_at,
         updated_at = NOW()
@@ -1121,7 +1165,12 @@ export const upsertBacktestRunProjection = async (
         take_profit_trade_count,
         reversal_trade_count,
         window_end_trade_count,
+        non_reversal_trade_count,
         total_pnl_percent,
+        equity_curve_pnl_percent,
+        max_drawdown_percent,
+        reversal_ratio,
+        score,
         source_event_id,
         source_occurred_at,
         created_at,
@@ -1147,7 +1196,12 @@ export const upsertBacktestRunProjection = async (
       input.takeProfitTradeCount,
       input.reversalTradeCount,
       input.windowEndTradeCount,
+      input.nonReversalTradeCount,
       input.totalPnlPercent,
+      input.equityCurvePnlPercent,
+      input.maxDrawdownPercent,
+      input.reversalRatio,
+      input.score,
       input.sourceEventId,
       input.sourceOccurredAt,
     ],
@@ -1182,7 +1236,12 @@ export const listBacktestRunProjections = async (
         take_profit_trade_count,
         reversal_trade_count,
         window_end_trade_count,
+        non_reversal_trade_count,
         total_pnl_percent,
+        equity_curve_pnl_percent,
+        max_drawdown_percent,
+        reversal_ratio,
+        score,
         source_event_id,
         source_occurred_at,
         created_at,
@@ -1727,7 +1786,6 @@ export const getAutoPromoteExecutionSettings = async (
         mode,
         auto_promote,
         max_promotions,
-        require_positive_pnl,
         min_trade_count,
         replace_open_position_policy,
         updated_at
@@ -1756,9 +1814,10 @@ export const promoteBacktestRunIfEligible = async (
   if (run.tradeCount < settings.minTradeCount) {
     return null;
   }
-  if (settings.requirePositivePnl && run.totalPnlPercent <= 0) {
+  if (run.equityCurvePnlPercent <= 0) {
     return null;
   }
+  const selectionValue = calculatePromotionSelectionValue(run);
   const eligibleAnalyses = await listResolvedAnalysisSettings(pool);
   const isEnabledByRuntimeConfig = eligibleAnalyses.some(
     (analysis) =>
@@ -1790,7 +1849,7 @@ export const promoteBacktestRunIfEligible = async (
     sameContextPromotions.length === 0 &&
     competingPromotions.length >= settings.maxPromotions &&
     lowestCompetingPromotion &&
-    lowestCompetingPromotion.selectionValue >= run.totalPnlPercent
+    lowestCompetingPromotion.selectionValue >= selectionValue
   ) {
     return null;
   }
@@ -1866,8 +1925,8 @@ export const promoteBacktestRunIfEligible = async (
         run.strategyName,
         run.riskProfileName,
         settings.mode,
-        "totalPnlPercent",
-        run.totalPnlPercent,
+        selectionMetricName,
+        selectionValue,
         run.sourceEventId,
         run.sourceOccurredAt,
       ],

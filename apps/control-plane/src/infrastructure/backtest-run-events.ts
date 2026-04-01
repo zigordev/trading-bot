@@ -5,7 +5,6 @@ import type { Pool } from "pg";
 import type { AppConfig } from "../config.js";
 import {
   completeBacktestJobFromProjectionEvent,
-  listBacktestRunProjections,
   promoteBacktestRunIfEligible,
   type BacktestRunProjectionInput,
   upsertBacktestRunProjection,
@@ -107,7 +106,12 @@ const parseEnvelope = (value: string): BacktestCompletedEventEnvelope | null => 
       takeProfitTradeCount: Number(data.takeProfitTradeCount ?? 0),
       reversalTradeCount: Number(data.reversalTradeCount ?? 0),
       windowEndTradeCount: Number(data.windowEndTradeCount ?? 0),
+      nonReversalTradeCount: Number(data.nonReversalTradeCount ?? 0),
       totalPnlPercent: Number(data.totalPnlPercent ?? 0),
+      equityCurvePnlPercent: Number(data.equityCurvePnlPercent ?? 0),
+      maxDrawdownPercent: Number(data.maxDrawdownPercent ?? 0),
+      reversalRatio: Number(data.reversalRatio ?? 0),
+      score: Number(data.score ?? 0),
     },
   };
 };
@@ -189,11 +193,6 @@ export const createBacktestRunProjectionConsumer = (
   };
 
   const hydrate = async (): Promise<void> => {
-    const existing = await listBacktestRunProjections(pool, 1);
-    if (existing.length > 0) {
-      return;
-    }
-
     const fetchJson = createFetchJson(config);
     try {
       const payload = await fetchJson(
@@ -240,7 +239,12 @@ export const createBacktestRunProjectionConsumer = (
           takeProfitTradeCount: Number((run as Record<string, unknown>).takeProfitTradeCount ?? 0),
           reversalTradeCount: Number((run as Record<string, unknown>).reversalTradeCount ?? 0),
           windowEndTradeCount: Number((run as Record<string, unknown>).windowEndTradeCount ?? 0),
+          nonReversalTradeCount: Number((run as Record<string, unknown>).nonReversalTradeCount ?? 0),
           totalPnlPercent: Number(run.totalPnlPercent ?? 0),
+          equityCurvePnlPercent: Number(run.equityCurvePnlPercent ?? 0),
+          maxDrawdownPercent: Number(run.maxDrawdownPercent ?? 0),
+          reversalRatio: Number(run.reversalRatio ?? 0),
+          score: Number(run.score ?? 0),
           sourceEventId: `bootstrap:${run.backtestId}`,
           sourceOccurredAt: run.finishedAt,
         });

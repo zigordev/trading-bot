@@ -120,12 +120,6 @@ export const configResources = {
         defaultValue: "1",
       },
       {
-        name: "requirePositivePnl",
-        label: "Require positive PnL",
-        kind: "boolean",
-        defaultValue: "false",
-      },
-      {
         name: "minTradeCount",
         label: "Minimum trade count",
         kind: "number",
