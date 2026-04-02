@@ -83,6 +83,7 @@ const parseEnvelope = (value: string): DataReadinessSnapshotEnvelope | null => {
                 ? item.pairCode
                 : "",
           timeframeCode: typeof item.timeframeCode === "string" ? item.timeframeCode : "",
+          strategyName: typeof item.strategyName === "string" ? item.strategyName : "",
           analysisSettingIds: Array.isArray(item.analysisSettingIds)
             ? item.analysisSettingIds.map((value) => String(value))
             : [],
@@ -99,7 +100,7 @@ const parseEnvelope = (value: string): DataReadinessSnapshotEnvelope | null => {
               ? (item.trades as Record<string, unknown>)
               : null,
         }))
-        .filter((item) => item.symbolCode && item.timeframeCode),
+        .filter((item) => item.symbolCode && item.timeframeCode && item.strategyName),
     },
   };
 };
@@ -185,6 +186,9 @@ export const createDataReadinessProjectionConsumer = (
                 symbols: [...new Set(envelope.data.items.map((item) => item.symbolCode))],
                 timeframeCodes: [
                   ...new Set(envelope.data.items.map((item) => item.timeframeCode)),
+                ],
+                strategyNames: [
+                  ...new Set(envelope.data.items.map((item) => item.strategyName)),
                 ],
               },
             });

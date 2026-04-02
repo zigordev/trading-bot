@@ -10,18 +10,43 @@ import { MultiSelectFilter } from "@/src/components/multi-select-filter";
 import { SymbolAvatar } from "@/src/components/symbol-avatar";
 import { buildAnalysisDetailMap } from "@/src/lib/analysis-details";
 import {
-  type BacktestBatch,
-  type RecentBacktestRun,
+  type BacktestJob,
   type DataReadinessResponse,
   getBacktestsSummary,
   getConfigResourceRecords,
   getDataReadiness,
   getRuntimeAnalyses,
+  type RecentBacktestRun,
 } from "@/src/lib/api";
 import { subscribeOpsRealtimeEvent } from "@/src/lib/ops-events";
 
-type BacktestingSection = "backtests" | "data-readiness";
 type DataReadinessItem = DataReadinessResponse["items"][number];
+
+type HistoryCombination = {
+  key: string;
+  analysisLabel: string;
+  timeframeCode: string;
+  riskProfileName: string;
+  strategyName: string;
+  bestScore: number;
+  latestFinishedAt: string;
+  runs: RecentBacktestRun[];
+};
+
+type SymbolBacktestingGroup = {
+  symbolCode: string;
+  readinessItems: Array<
+    DataReadinessItem & {
+      readinessPercent: number;
+      runningJob: BacktestJob | null;
+    }
+  >;
+  runningJobs: BacktestJob[];
+  latestRuns: RecentBacktestRun[];
+  historyCombinations: HistoryCombination[];
+};
+
+const PAGE_SIZE = 10;
 
 const formatDuration = (durationMs: number): string => {
   const safeDurationMs = Math.max(0, durationMs);
@@ -53,23 +78,39 @@ const scorePalette = (value: number) => ({
   textColor: value >= 0 ? "#157f3b" : "#b42318",
 });
 
+const readinessPercent = (item: DataReadinessItem): number =>
+  Math.min(
+    Number(item.kline?.coveragePercent ?? 0),
+    Number(item.trades?.coveragePercent ?? 0),
+  );
+
+const backtestKey = (value: {
+  symbolCode: string;
+  timeframeCode: string;
+  strategyName: string;
+}) => `${value.symbolCode}:${value.timeframeCode}:${value.strategyName}`;
+
 export default function BacktestingScreen() {
   const queryClient = useQueryClient();
-  const [section, setSection] = useState<BacktestingSection>("data-readiness");
   const [symbolFilter, setSymbolFilter] = useState<string[]>([]);
-  const [timeframeFilter, setTimeframeFilter] = useState<string[]>([]);
+  const [timeframeFilter, setTimeframeFilter] = useState<string>("");
+  const [strategyFilter, setStrategyFilter] = useState<string>("");
   const [expandedSymbols, setExpandedSymbols] = useState<string[]>([]);
-  const [expandedHistorySymbols, setExpandedHistorySymbols] = useState<string[]>([]);
-  const [expandedReadinessSymbols, setExpandedReadinessSymbols] = useState<string[]>([]);
+  const [readinessPageBySymbol, setReadinessPageBySymbol] = useState<Record<string, number>>({});
+  const [selectedLatestRowKey, setSelectedLatestRowKey] = useState<string | null>(null);
   const [selectedBacktestId, setSelectedBacktestId] = useState<string | null>(null);
+  const [selectedHistoryRowKey, setSelectedHistoryRowKey] = useState<string | null>(null);
 
   const backtestsQuery = useQuery({
     queryKey: ["ops-backtests-summary"],
     queryFn: getBacktestsSummary,
   });
   const readinessQuery = useQuery({
-    queryKey: ["ops-data-readiness"],
-    queryFn: getDataReadiness,
+    queryKey: ["ops-data-readiness", strategyFilter],
+    queryFn: () =>
+      getDataReadiness({
+        strategyName: strategyFilter || undefined,
+      }),
   });
   const symbolsQuery = useQuery({
     queryKey: ["config-resource", "symbols"],
@@ -136,15 +177,6 @@ export default function BacktestingScreen() {
       String(record.destinationAsset ?? ""),
     ]),
   );
-  const symbolState = new Map(
-    (symbolsQuery.data ?? []).map((record) => [String(record.code ?? ""), Boolean(record.active)]),
-  );
-  const timeframeState = new Map(
-    (timeframesQuery.data ?? []).map((record) => [
-      String(record.code ?? ""),
-      Boolean(record.active),
-    ]),
-  );
   const analysisDetailById = buildAnalysisDetailMap(runtimeAnalysesQuery.data ?? []);
 
   const symbolOptions = Array.from(
@@ -157,55 +189,214 @@ export default function BacktestingScreen() {
   )
     .filter(Boolean)
     .sort();
-
-  const filteredRuns =
-    backtestsQuery.data?.latestRuns.filter((run) => {
-      if (symbolFilter.length > 0 && !symbolFilter.includes(run.symbol)) {
-        return false;
-      }
-      if (timeframeFilter.length > 0 && !timeframeFilter.includes(run.timeframeCode)) {
-        return false;
-      }
-      return true;
-    }) ?? [];
-  const filteredRecentRuns =
-    backtestsQuery.data?.recentRuns.filter((run) => {
-      if (symbolFilter.length > 0 && !symbolFilter.includes(run.symbol)) {
-        return false;
-      }
-      if (timeframeFilter.length > 0 && !timeframeFilter.includes(run.timeframeCode)) {
-        return false;
-      }
-      return true;
-    }) ?? [];
-  const filteredBatches =
-    backtestsQuery.data?.batches.filter((batch) => {
-      if (symbolFilter.length > 0 && !symbolFilter.includes(batch.symbolCode)) {
-        return false;
-      }
-      if (timeframeFilter.length > 0 && !timeframeFilter.includes(batch.timeframeCode)) {
-        return false;
-      }
-      return true;
-    }) ?? [];
-  const runningDatasetGroups = groupRunningBatchesBySymbol(filteredBatches);
+  const strategyOptions = Array.from(
+    new Set([
+      ...(runtimeAnalysesQuery.data ?? []).map((analysis) => analysis.strategyName),
+      ...((backtestsQuery.data?.recentRuns ?? []).map((run) => run.strategyName) ?? []),
+      ...((readinessQuery.data?.items ?? []).map((item) => item.strategyName) ?? []),
+      ...((backtestsQuery.data?.jobs ?? []).map((job) => job.strategyName ?? "") ?? []),
+    ]),
+  )
+    .filter(Boolean)
+    .sort();
 
   const filteredReadinessItems =
     readinessQuery.data?.items.filter((item) => {
       if (symbolFilter.length > 0 && !symbolFilter.includes(item.symbolCode)) {
         return false;
       }
-      if (timeframeFilter.length > 0 && !timeframeFilter.includes(item.timeframeCode)) {
+      if (timeframeFilter && item.timeframeCode !== timeframeFilter) {
+        return false;
+      }
+      if (strategyFilter && item.strategyName !== strategyFilter) {
         return false;
       }
       return true;
     }) ?? [];
-  const latestBacktestGroups = groupLatestBacktestsBySymbol(filteredRuns);
-  const backtestHistoryGroups = groupBacktestHistoryBySymbol(
-    filteredRecentRuns,
+
+  const filteredLatestRuns =
+    backtestsQuery.data?.latestRuns.filter((run) => {
+      if (symbolFilter.length > 0 && !symbolFilter.includes(run.symbol)) {
+        return false;
+      }
+      if (timeframeFilter && run.timeframeCode !== timeframeFilter) {
+        return false;
+      }
+      if (strategyFilter && run.strategyName !== strategyFilter) {
+        return false;
+      }
+      return true;
+    }) ?? [];
+
+  const filteredRecentRuns =
+    backtestsQuery.data?.recentRuns.filter((run) => {
+      if (symbolFilter.length > 0 && !symbolFilter.includes(run.symbol)) {
+        return false;
+      }
+      if (timeframeFilter && run.timeframeCode !== timeframeFilter) {
+        return false;
+      }
+      if (strategyFilter && run.strategyName !== strategyFilter) {
+        return false;
+      }
+      return true;
+    }) ?? [];
+
+  const filteredRunningJobs =
+    backtestsQuery.data?.jobs.filter((job) => {
+      if (job.status !== "queued" && job.status !== "running") {
+        return false;
+      }
+      if (!job.symbolCode || !job.timeframeCode || !job.strategyName) {
+        return false;
+      }
+      if (symbolFilter.length > 0 && !symbolFilter.includes(job.symbolCode)) {
+        return false;
+      }
+      if (timeframeFilter && job.timeframeCode !== timeframeFilter) {
+        return false;
+      }
+      if (strategyFilter && job.strategyName !== strategyFilter) {
+        return false;
+      }
+      return true;
+    }) ?? [];
+
+  const runningJobByKey = new Map<string, BacktestJob>();
+  for (const job of filteredRunningJobs) {
+    if (!job.symbolCode || !job.timeframeCode || !job.strategyName) {
+      continue;
+    }
+    const key = backtestKey({
+      symbolCode: job.symbolCode,
+      timeframeCode: job.timeframeCode,
+      strategyName: job.strategyName,
+    });
+    const current = runningJobByKey.get(key);
+    if (!current) {
+      runningJobByKey.set(key, job);
+      continue;
+    }
+    if (current.status === "queued" && job.status === "running") {
+      runningJobByKey.set(key, job);
+      continue;
+    }
+    if (Date.parse(job.updatedAt) > Date.parse(current.updatedAt)) {
+      runningJobByKey.set(key, job);
+    }
+  }
+
+  const symbolGroups = useMemo(() => {
+    const symbols = new Set<string>();
+    for (const item of filteredReadinessItems) {
+      symbols.add(item.symbolCode);
+    }
+    for (const run of filteredLatestRuns) {
+      symbols.add(run.symbol);
+    }
+    for (const run of filteredRecentRuns) {
+      symbols.add(run.symbol);
+    }
+    for (const job of filteredRunningJobs) {
+      if (job.symbolCode) {
+        symbols.add(job.symbolCode);
+      }
+    }
+
+    return [...symbols]
+      .map<SymbolBacktestingGroup>((symbolCode) => {
+        const readinessItems = filteredReadinessItems
+          .filter((item) => item.symbolCode === symbolCode)
+          .map((item) => ({
+            ...item,
+            readinessPercent: readinessPercent(item),
+            runningJob: runningJobByKey.get(
+              backtestKey({
+                symbolCode: item.symbolCode,
+                timeframeCode: item.timeframeCode,
+                strategyName: item.strategyName,
+              }),
+            ) ?? null,
+          }))
+          .sort(
+            (left, right) =>
+              left.timeframeCode.localeCompare(right.timeframeCode) ||
+              left.strategyName.localeCompare(right.strategyName),
+          );
+
+        const latestRuns = filteredLatestRuns
+          .filter((run) => run.symbol === symbolCode)
+          .sort(
+            (left, right) => Date.parse(right.finishedAt) - Date.parse(left.finishedAt),
+          );
+
+        const runningJobs = filteredRunningJobs
+          .filter((job) => job.symbolCode === symbolCode)
+          .sort((left, right) => {
+            if (left.status !== right.status) {
+              return left.status === "running" ? -1 : 1;
+            }
+            return Date.parse(right.updatedAt) - Date.parse(left.updatedAt);
+          });
+
+        const combinations = new Map<string, HistoryCombination>();
+        for (const run of filteredRecentRuns.filter((candidate) => candidate.symbol === symbolCode)) {
+          const key = [
+            run.symbol,
+            run.timeframeCode,
+            run.analysisSettingId,
+            run.riskProfileName,
+            run.strategyName,
+          ].join(":");
+          const current = combinations.get(key) ?? {
+            key,
+            analysisLabel:
+              analysisDetailById.get(run.analysisSettingId) ?? run.analysisSettingId,
+            timeframeCode: run.timeframeCode,
+            riskProfileName: run.riskProfileName,
+            strategyName: run.strategyName,
+            bestScore: run.score,
+            latestFinishedAt: run.finishedAt,
+            runs: [],
+          };
+          current.bestScore = Math.max(current.bestScore, run.score);
+          if (Date.parse(run.finishedAt) > Date.parse(current.latestFinishedAt)) {
+            current.latestFinishedAt = run.finishedAt;
+          }
+          current.runs.push(run);
+          combinations.set(key, current);
+        }
+
+        const historyCombinations = [...combinations.values()]
+          .map((combination) => ({
+            ...combination,
+            runs: [...combination.runs].sort(
+              (left, right) => Date.parse(left.finishedAt) - Date.parse(right.finishedAt),
+            ),
+          }))
+          .sort(
+            (left, right) =>
+              Date.parse(right.latestFinishedAt) - Date.parse(left.latestFinishedAt),
+          );
+
+        return {
+          symbolCode,
+          readinessItems,
+          runningJobs,
+          latestRuns,
+          historyCombinations,
+        };
+      })
+      .sort((left, right) => left.symbolCode.localeCompare(right.symbolCode));
+  }, [
     analysisDetailById,
-  );
-  const readinessGroups = groupDataReadinessBySymbol(filteredReadinessItems);
+    filteredLatestRuns,
+    filteredReadinessItems,
+    filteredRecentRuns,
+    filteredRunningJobs,
+    runningJobByKey,
+  ]);
+
   const selectedBacktestRun = useMemo(() => {
     if (!selectedBacktestId) {
       return null;
@@ -219,6 +410,70 @@ export default function BacktestingScreen() {
     return runs.find((run) => run.backtestId === selectedBacktestId) ?? null;
   }, [backtestsQuery.data?.latestRuns, backtestsQuery.data?.recentRuns, selectedBacktestId]);
 
+  const selectedLatestContext = useMemo(() => {
+    if (!selectedLatestRowKey) {
+      return null;
+    }
+
+    const [symbolCode, timeframeCode, strategyName] = selectedLatestRowKey.split(":");
+    if (!symbolCode || !timeframeCode || !strategyName) {
+      return null;
+    }
+
+    return { symbolCode, timeframeCode, strategyName };
+  }, [selectedLatestRowKey]);
+
+  const selectedLatestRuns = useMemo(() => {
+    if (!selectedLatestContext) {
+      return [];
+    }
+
+    const group = symbolGroups.find(
+      (candidate) => candidate.symbolCode === selectedLatestContext.symbolCode,
+    );
+    if (!group) {
+      return [];
+    }
+
+    return group.latestRuns.filter(
+      (run) =>
+        run.timeframeCode === selectedLatestContext.timeframeCode &&
+        run.strategyName === selectedLatestContext.strategyName,
+    );
+  }, [selectedLatestContext, symbolGroups]);
+
+  const selectedHistoryContext = useMemo(() => {
+    if (!selectedHistoryRowKey) {
+      return null;
+    }
+
+    const [symbolCode, timeframeCode, strategyName] = selectedHistoryRowKey.split(":");
+    if (!symbolCode || !timeframeCode || !strategyName) {
+      return null;
+    }
+
+    return { symbolCode, timeframeCode, strategyName };
+  }, [selectedHistoryRowKey]);
+
+  const selectedHistoryCombinations = useMemo(() => {
+    if (!selectedHistoryContext) {
+      return [];
+    }
+
+    const group = symbolGroups.find(
+      (candidate) => candidate.symbolCode === selectedHistoryContext.symbolCode,
+    );
+    if (!group) {
+      return [];
+    }
+
+    return group.historyCombinations.filter(
+      (combination) =>
+        combination.timeframeCode === selectedHistoryContext.timeframeCode &&
+        combination.strategyName === selectedHistoryContext.strategyName,
+    );
+  }, [selectedHistoryContext, symbolGroups]);
+
   const toggleExpandedSymbol = (symbolCode: string) => {
     setExpandedSymbols((current) =>
       current.includes(symbolCode)
@@ -227,89 +482,18 @@ export default function BacktestingScreen() {
     );
   };
 
-  const toggleExpandedReadinessSymbol = (symbolCode: string) => {
-    setExpandedReadinessSymbols((current) =>
-      current.includes(symbolCode)
-        ? current.filter((value) => value !== symbolCode)
-        : [...current, symbolCode],
-    );
+  const setReadinessPage = (symbolCode: string, page: number) => {
+    setReadinessPageBySymbol((current) => ({
+      ...current,
+      [symbolCode]: Math.max(1, page),
+    }));
   };
 
-  const toggleExpandedHistorySymbol = (symbolCode: string) => {
-    setExpandedHistorySymbols((current) =>
-      current.includes(symbolCode)
-        ? current.filter((value) => value !== symbolCode)
-        : [...current, symbolCode],
-    );
-  };
+  const isLoading = backtestsQuery.isLoading || readinessQuery.isLoading;
 
   return (
     <AppShell>
       <View style={{ gap: 16 }}>
-        <View
-          style={{
-            marginHorizontal: -24,
-            marginTop: -20,
-          }}
-        >
-          <View
-            style={{
-              width: "100%",
-              backgroundColor: "#dbe2ea",
-              paddingHorizontal: 24,
-              paddingVertical: 10,
-            }}
-          >
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{
-                flexDirection: "row",
-                alignItems: "center",
-                gap: 8,
-                minWidth: "100%",
-                paddingRight: 8,
-              }}
-            >
-              {[
-                { key: "data-readiness", label: "Data", icon: "analytics" as const },
-                { key: "backtests", label: "Backtests", icon: "history" as const },
-              ].map((item) => {
-                const active = section === item.key;
-                return (
-                  <Pressable
-                    key={item.key}
-                    onPress={() => setSection(item.key as BacktestingSection)}
-                    style={{
-                      borderRadius: 10,
-                      backgroundColor: active ? "#1f3a5f" : "transparent",
-                      paddingHorizontal: 14,
-                      paddingVertical: 10,
-                      flexDirection: "row",
-                      alignItems: "center",
-                      gap: 8,
-                    }}
-                  >
-                    <MaterialIcons
-                      name={item.icon}
-                      size={18}
-                      color={active ? "#ffffff" : "#344054"}
-                    />
-                    <Text
-                      style={{
-                        color: active ? "#ffffff" : "#344054",
-                        fontWeight: "700",
-                      }}
-                    >
-                      {item.label}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </ScrollView>
-          </View>
-        </View>
-
         <View
           style={{
             flexDirection: "row",
@@ -332,569 +516,356 @@ export default function BacktestingScreen() {
               />
             )}
           />
-          <MultiSelectFilter
+          <SingleSelectFilter
             label="Timeframe"
             value={timeframeFilter}
             options={timeframeOptions}
             onChange={setTimeframeFilter}
             allLabel="All timeframes"
           />
+          <SingleSelectFilter
+            label="Strategy"
+            value={strategyFilter}
+            options={strategyOptions}
+            onChange={setStrategyFilter}
+            allLabel="All strategies"
+          />
         </View>
 
-        {section === "backtests" ? (
-          <View style={{ gap: 16 }}>
-            {backtestsQuery.isLoading ? (
-              <Text style={{ color: "#475467" }}>Loading latest backtests…</Text>
-            ) : (
-              <>
-                <View style={{ gap: 12 }}>
-                  <Text style={{ fontSize: 18, fontWeight: "700", color: "#101828" }}>
-                    Running backtests
-                  </Text>
-                  {runningDatasetGroups.length === 0 ? (
-                    <Text style={{ color: "#475467" }}>No backtests are currently running.</Text>
-                  ) : (
-                    runningDatasetGroups.map((group) => (
-                      <Card key={group.symbolCode}>
-                        <View
-                          style={{
-                            flexDirection: "row",
-                            alignItems: "flex-start",
-                            justifyContent: "space-between",
-                            gap: 16,
-                            flexWrap: "wrap",
-                          }}
-                        >
-                          <View style={{ flex: 1, minWidth: 240, gap: 8 }}>
-                            <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-                              <SymbolAvatar
-                                baseAsset={symbolBaseAssets.get(group.symbolCode)}
-                                destinationAsset={symbolDestinationAssets.get(group.symbolCode)}
-                                size={34}
-                              />
-                              <Text style={{ fontSize: 20, fontWeight: "700", color: "#101828" }}>
-                                {group.symbolCode}
-                              </Text>
-                            </View>
-                            <Text style={{ color: "#475467" }}>
-                              {formatBacktestStage(group.stage)}
-                            </Text>
-                            <Text style={{ color: "#475467" }}>
-                              {group.timeframeCount} timeframe{group.timeframeCount === 1 ? "" : "s"}
-                            </Text>
-                            <Text style={{ color: "#475467" }}>
-                              {group.completedCount}/{group.totalCount} finished
-                            </Text>
-                          </View>
-                          <View style={{ alignItems: "center", gap: 8 }}>
-                            <ProgressRing
-                              value={group.progressPercent}
-                              color="#1f3a5f"
-                              size={64}
-                              strokeWidth={7}
-                            />
-                            <Text style={{ color: "#475467", fontWeight: "700" }}>
-                              {group.runningCount} running
-                            </Text>
-                          </View>
-                        </View>
-                      </Card>
-                    ))
-                  )}
+        {isLoading ? (
+          <Text style={{ color: "#475467" }}>Loading backtesting workspace…</Text>
+        ) : symbolGroups.length === 0 ? (
+          <Text style={{ color: "#475467" }}>No symbols match the current filters.</Text>
+        ) : (
+          symbolGroups.map((group) => (
+            <Card key={group.symbolCode}>
+              <View style={{ gap: 18 }}>
+                <View
+                  style={{ gap: 12 }}
+                >
+                  <Pressable
+                    onPress={() => toggleExpandedSymbol(group.symbolCode)}
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: 16,
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 12, flex: 1 }}>
+                      <SymbolAvatar
+                        baseAsset={symbolBaseAssets.get(group.symbolCode)}
+                        destinationAsset={symbolDestinationAssets.get(group.symbolCode)}
+                        size={36}
+                      />
+                      <Text style={{ fontSize: 22, fontWeight: "700", color: "#101828", flex: 1 }}>
+                        {group.symbolCode}
+                      </Text>
+                    </View>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                      <Text style={{ color: "#475467", fontWeight: "700" }}>
+                        {expandedSymbols.includes(group.symbolCode) ? "Hide details" : "Show details"}
+                      </Text>
+                      <MaterialIcons
+                        name={expandedSymbols.includes(group.symbolCode) ? "expand-less" : "expand-more"}
+                        size={20}
+                        color="#475467"
+                      />
+                    </View>
+                  </Pressable>
                 </View>
 
-                <View style={{ gap: 12 }}>
-                  <Text style={{ fontSize: 18, fontWeight: "700", color: "#101828" }}>
-                    Latest backtests
-                  </Text>
-                  {latestBacktestGroups.length === 0 ? (
-                    <Text style={{ color: "#475467" }}>No latest backtests match the current filters.</Text>
+                {expandedSymbols.includes(group.symbolCode) ? (
+                  <>
+                <View style={{ gap: 10 }}>
+                  {group.readinessItems.length === 0 ? (
+                    <Text style={{ color: "#475467" }}>No readiness rows available.</Text>
                   ) : (
-                    latestBacktestGroups.map((group) => {
-                      const expanded = expandedSymbols.includes(group.symbol);
+                    (() => {
+                      const totalCount = group.readinessItems.length;
+                      const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+                      const currentPage = Math.min(
+                        readinessPageBySymbol[group.symbolCode] ?? 1,
+                        totalPages,
+                      );
+                      const pageStartIndex = (currentPage - 1) * PAGE_SIZE;
+                      const paginatedItems = group.readinessItems.slice(
+                        pageStartIndex,
+                        pageStartIndex + PAGE_SIZE,
+                      );
+
                       return (
-                        <Card key={group.symbol}>
-                          <Pressable
-                            onPress={() => toggleExpandedSymbol(group.symbol)}
+                        <View style={{ gap: 10 }}>
+                          <View
                             style={{
-                              gap: 14,
+                              borderWidth: 1,
+                              borderColor: "#eaecf0",
+                              borderRadius: 16,
+                              overflow: "hidden",
                             }}
                           >
                             <View
                               style={{
                                 flexDirection: "row",
-                                alignItems: "flex-start",
-                                justifyContent: "space-between",
-                                gap: 16,
-                                flexWrap: "wrap",
+                                backgroundColor: "#f8fafc",
+                                paddingHorizontal: 14,
+                                paddingVertical: 10,
+                                gap: 12,
                               }}
                             >
-                              <View style={{ flex: 1, minWidth: 240, gap: 6 }}>
-                                <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-                                  <SymbolAvatar
-                                    baseAsset={symbolBaseAssets.get(group.symbol)}
-                                    destinationAsset={symbolDestinationAssets.get(group.symbol)}
-                                    size={34}
-                                  />
-                                  <Text
-                                    style={{ fontSize: 20, fontWeight: "700", color: "#101828" }}
-                                  >
-                                    {group.symbol}
-                                  </Text>
-                                </View>
-                                <Text style={{ color: "#475467" }}>
-                                  {group.count.toLocaleString()} latest backtest
-                                  {group.count === 1 ? "" : "s"} · {group.timeframeCount.toLocaleString()} timeframe
-                                  {group.timeframeCount === 1 ? "" : "s"}
-                                </Text>
-                                <Text style={{ color: "#475467" }}>
-                                  Last finished: {new Date(group.latestFinishedAt).toLocaleString()}
-                                </Text>
-                              </View>
+                              <TableHeader label="Timeframe" flex={0.8} />
+                              <TableHeader label="Strategy" flex={1.1} />
+                              <TableHeader label="Data" flex={1.9} />
+                              <TableHeader label="Backtest" flex={1.4} />
+                              <TableHeader label="Latest backtest" flex={0.9} />
+                              <TableHeader label="Score evolution" flex={0.9} />
+                            </View>
+                            {paginatedItems.map((item, index) => {
+                              const rowKey = backtestKey(item);
+                              const hasLatest = group.latestRuns.some(
+                                (run) =>
+                                  run.timeframeCode === item.timeframeCode &&
+                                  run.strategyName === item.strategyName,
+                              );
+                              const hasHistory = group.historyCombinations.some(
+                                (combination) =>
+                                  combination.timeframeCode === item.timeframeCode &&
+                                  combination.strategyName === item.strategyName,
+                              );
 
-                              <View style={{ alignItems: "flex-end", gap: 10 }}>
-                                <Pressable
-                                  onPress={(event) => {
-                                    event.stopPropagation();
-                                    setSelectedBacktestId(findTopScoringRun(group.runs)?.backtestId ?? null);
-                                  }}
-                                  style={{
-                                    borderRadius: 16,
-                                    backgroundColor: scorePalette(group.bestScore).backgroundColor,
-                                    paddingHorizontal: 14,
-                                    paddingVertical: 12,
-                                    minWidth: 120,
-                                    alignItems: "center",
-                                  }}
-                                >
-                                  <Text
-                                    style={{
-                                      color: scorePalette(group.bestScore).textColor,
-                                      fontSize: 20,
-                                      fontWeight: "800",
-                                    }}
-                                  >
-                                    {formatScore(group.bestScore)}
-                                  </Text>
-                                  <Text
-                                    style={{
-                                      color: scorePalette(group.bestScore).textColor,
-                                      fontWeight: "700",
-                                      marginTop: 2,
-                                    }}
-                                  >
-                                    Best score
-                                  </Text>
-                                </Pressable>
+                              return (
                                 <View
+                                  key={rowKey}
                                   style={{
                                     flexDirection: "row",
-                                    alignItems: "center",
-                                    gap: 6,
-                                  }}
-                                >
-                                  <Text style={{ color: "#475467", fontWeight: "700" }}>
-                                    {expanded ? "Hide details" : "Show details"}
-                                  </Text>
-                                  <MaterialIcons
-                                    name={expanded ? "expand-less" : "expand-more"}
-                                    size={20}
-                                    color="#475467"
-                                  />
-                                </View>
-                              </View>
-                            </View>
-
-                          </Pressable>
-
-                          {expanded ? (
-                            <View
-                              style={{
-                                marginTop: 14,
-                                borderWidth: 1,
-                                borderColor: "#eaecf0",
-                                borderRadius: 16,
-                                overflow: "hidden",
-                              }}
-                            >
-                              <View
-                                style={{
-                                  flexDirection: "row",
-                                  backgroundColor: "#f8fafc",
-                                  paddingHorizontal: 14,
-                                  paddingVertical: 10,
-                                  gap: 12,
-                                }}
-                              >
-                                <TableHeader label="Timeframe" flex={0.9} />
-                                <TableHeader label="Analysis" flex={2.2} />
-                                <TableHeader label="Risk" flex={1.1} />
-                                <TableHeader label="Score" flex={0.8} align="right" />
-                                <TableHeader label="Duration" flex={0.9} align="right" />
-                                <TableHeader label="Finished" flex={1.3} align="right" />
-                              </View>
-                              {group.runs.map((run, index) => (
-                                <View
-                                  key={`${run.backtestId}:${run.analysisSettingId}:${run.riskProfileName}`}
-                                  style={{
                                     paddingHorizontal: 14,
                                     paddingVertical: 12,
+                                    gap: 12,
                                     borderTopWidth: index === 0 ? 0 : 1,
                                     borderTopColor: "#eaecf0",
                                     backgroundColor: index % 2 === 0 ? "#ffffff" : "#fcfcfd",
-                                    gap: 10,
+                                    alignItems: "center",
                                   }}
                                 >
-                                  <View style={{ flexDirection: "row", gap: 12 }}>
-                                    <TableCell label={run.timeframeCode} flex={0.9} />
-                                    <TableCell
-                                      label={
-                                        analysisDetailById.get(run.analysisSettingId) ??
-                                        run.analysisSettingId
-                                      }
-                                      flex={2.2}
+                                  <TableCell label={item.timeframeCode} flex={0.8} />
+                                  <TableCell label={item.strategyName} flex={1.1} />
+                                  <View style={{ flex: 1.9, gap: 8 }}>
+                                    <ReadinessDataBadge
+                                      label="Klines"
+                                      percent={Number(item.kline?.coveragePercent ?? 0)}
                                     />
-                                    <TableCell label={run.riskProfileName} flex={1.1} />
-                                    <View style={{ flex: 0.8, alignItems: "flex-end" }}>
-                                      <Text
-                                        onPress={() => setSelectedBacktestId(run.backtestId)}
-                                        style={{
-                                          color: scorePalette(run.score).textColor,
-                                          fontWeight: "700",
-                                          textDecorationLine: "underline",
-                                          textAlign: "right",
-                                        }}
-                                      >
-                                        {formatScore(run.score)}
-                                      </Text>
-                                    </View>
-                                    <TableCell
-                                      label={formatDuration(run.backtestDurationMs)}
-                                      flex={0.9}
-                                      align="right"
-                                    />
-                                    <TableCell
-                                      label={new Date(run.finishedAt).toLocaleString()}
-                                      flex={1.3}
-                                      align="right"
+                                    <ReadinessDataBadge
+                                      label="Trades"
+                                      percent={Number(item.trades?.coveragePercent ?? 0)}
                                     />
                                   </View>
-                                  <View
-                                    style={{
-                                      flexDirection: "row",
-                                      gap: 8,
-                                      flexWrap: "wrap",
-                                    }}
-                                  >
-                                    <MetricBadge
-                                      label="Equity PnL"
-                                      value={`${run.equityCurvePnlPercent.toFixed(2)}%`}
+                                  <View style={{ flex: 1.4 }}>
+                                    <BacktestStatusCell job={item.runningJob} />
+                                  </View>
+                                  <View style={{ flex: 0.9 }}>
+                                    <ActionButton
+                                      label="View"
+                                      disabled={!hasLatest}
+                                      onPress={() => setSelectedLatestRowKey(rowKey)}
                                     />
-                                    <MetricBadge
-                                      label="Max DD"
-                                      value={`${run.maxDrawdownPercent.toFixed(2)}%`}
-                                    />
-                                    <MetricBadge
-                                      label="Reversal"
-                                      value={run.reversalTradeCount.toLocaleString()}
-                                    />
-                                    <MetricBadge
-                                      label="TP"
-                                      value={run.takeProfitTradeCount.toLocaleString()}
-                                    />
-                                    <MetricBadge
-                                      label="SL"
-                                      value={run.stopLossTradeCount.toLocaleString()}
-                                    />
-                                    <MetricBadge
-                                      label="Window"
-                                      value={run.windowEndTradeCount.toLocaleString()}
+                                  </View>
+                                  <View style={{ flex: 0.9 }}>
+                                    <ActionButton
+                                      label="View"
+                                      disabled={!hasHistory}
+                                      onPress={() => setSelectedHistoryRowKey(rowKey)}
                                     />
                                   </View>
                                 </View>
-                              ))}
-                            </View>
-                          ) : null}
-                        </Card>
-                      );
-                    })
-                  )}
-                </View>
-
-                <View style={{ gap: 12 }}>
-                  <Text style={{ fontSize: 18, fontWeight: "700", color: "#101828" }}>
-                    Score evolution
-                  </Text>
-                  {backtestHistoryGroups.length === 0 ? (
-                    <Text style={{ color: "#475467" }}>
-                      No backtest history matches the current filters.
-                    </Text>
-                  ) : (
-                    backtestHistoryGroups.map((group) => {
-                      const expanded = expandedHistorySymbols.includes(group.symbol);
-                      return (
-                        <Card key={`history:${group.symbol}`}>
-                          <Pressable
-                            onPress={() => toggleExpandedHistorySymbol(group.symbol)}
-                            style={{ gap: 14 }}
-                          >
-                            <View
-                              style={{
-                                flexDirection: "row",
-                                alignItems: "flex-start",
-                                justifyContent: "space-between",
-                                gap: 16,
-                                flexWrap: "wrap",
-                              }}
-                            >
-                              <View style={{ flex: 1, minWidth: 240, gap: 6 }}>
-                                <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-                                  <SymbolAvatar
-                                    baseAsset={symbolBaseAssets.get(group.symbol)}
-                                    destinationAsset={symbolDestinationAssets.get(group.symbol)}
-                                    size={34}
-                                  />
-                                  <Text
-                                    style={{ fontSize: 20, fontWeight: "700", color: "#101828" }}
-                                  >
-                                    {group.symbol}
-                                  </Text>
-                                </View>
-                                <Text style={{ color: "#475467" }}>
-                                  {group.combinationCount.toLocaleString()} combination
-                                  {group.combinationCount === 1 ? "" : "s"} ·{" "}
-                                  {group.runCount.toLocaleString()} run
-                                  {group.runCount === 1 ? "" : "s"}
-                                </Text>
-                                <Text style={{ color: "#475467" }}>
-                                  Last finished: {new Date(group.latestFinishedAt).toLocaleString()}
-                                </Text>
-                              </View>
-
-                              <View style={{ alignItems: "flex-end", gap: 10 }}>
-                                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                                  <Text style={{ color: "#475467", fontWeight: "700" }}>
-                                    {expanded ? "Hide charts" : "Show charts"}
-                                  </Text>
-                                  <MaterialIcons
-                                    name={expanded ? "expand-less" : "expand-more"}
-                                    size={20}
-                                    color="#475467"
-                                  />
-                                </View>
-                              </View>
-                            </View>
-                          </Pressable>
-
-                          {expanded ? (
-                            <View style={{ marginTop: 14, gap: 14 }}>
-                              {group.combinations.map((combination) => (
-                                <View
-                                  key={combination.key}
-                                  style={{
-                                    borderWidth: 1,
-                                    borderColor: "#eaecf0",
-                                    borderRadius: 16,
-                                    padding: 14,
-                                    gap: 12,
-                                    backgroundColor: "#fcfcfd",
-                                  }}
-                                >
-                                  <View
-                                    style={{
-                                      flexDirection: "row",
-                                      alignItems: "flex-start",
-                                      justifyContent: "space-between",
-                                      gap: 12,
-                                      flexWrap: "wrap",
-                                    }}
-                                  >
-                                    <View style={{ flex: 1, minWidth: 220, gap: 4 }}>
-                                      <Text
-                                        style={{
-                                          color: "#101828",
-                                          fontWeight: "800",
-                                          fontSize: 15,
-                                        }}
-                                      >
-                                        {combination.analysisLabel}
-                                      </Text>
-                                      <Text style={{ color: "#475467" }}>
-                                        {combination.timeframeCode} · {combination.riskProfileName} ·{" "}
-                                        {combination.strategyName}
-                                      </Text>
-                                    </View>
-                                    <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
-                                      <MetricBadge
-                                        label="Runs"
-                                        value={combination.runs.length.toLocaleString()}
-                                      />
-                                      <Pressable
-                                        onPress={(event) => {
-                                          event.stopPropagation();
-                                          setSelectedBacktestId(findTopScoringRun(combination.runs)?.backtestId ?? null);
-                                        }}
-                                      >
-                                        <MetricBadge
-                                          label="Best score"
-                                          value={formatScore(combination.bestScore)}
-                                          accent="link"
-                                        />
-                                      </Pressable>
-                                    </View>
-                                  </View>
-
-                                  <PnlHistoryChart runs={combination.runs} />
-                                </View>
-                              ))}
-                            </View>
-                          ) : null}
-                        </Card>
-                      );
-                    })
-                  )}
-                </View>
-              </>
-            )}
-          </View>
-        ) : (
-          <View style={{ gap: 16 }}>
-            {readinessQuery.isLoading ? (
-              <Text style={{ color: "#475467" }}>Loading readiness data…</Text>
-            ) : readinessGroups.length === 0 ? (
-              <Text style={{ color: "#475467" }}>No readiness rows match the current filters.</Text>
-            ) : (
-              readinessGroups.map((group) => {
-                const expanded = expandedReadinessSymbols.includes(group.symbolCode);
-                return (
-                  <Card key={group.symbolCode}>
-                    <Pressable onPress={() => toggleExpandedReadinessSymbol(group.symbolCode)} style={{ gap: 14 }}>
-                      <View
-                        style={{
-                          flexDirection: "row",
-                          alignItems: "flex-start",
-                          justifyContent: "space-between",
-                          gap: 16,
-                          flexWrap: "wrap",
-                        }}
-                      >
-                        <View style={{ flex: 1, minWidth: 240, gap: 8 }}>
-                          <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-                            <SymbolAvatar
-                              baseAsset={symbolBaseAssets.get(group.symbolCode)}
-                              destinationAsset={symbolDestinationAssets.get(group.symbolCode)}
-                              size={34}
-                            />
-                            <Text style={{ fontSize: 20, fontWeight: "700", color: "#101828" }}>
-                              {group.symbolCode}
-                            </Text>
+                              );
+                            })}
                           </View>
-                          <Text style={{ color: "#475467" }}>
-                            {group.timeframeCount} timeframe{group.timeframeCount === 1 ? "" : "s"} ·{" "}
-                            {group.readyCount}/{group.count} ready
-                          </Text>
-                        </View>
-                        <View style={{ alignItems: "flex-end", gap: 10 }}>
                           <View
-                            style={{
-                              borderRadius: 16,
-                              backgroundColor:
-                                group.readyCount === group.count ? "#ecfdf3" : "#fef3f2",
-                              paddingHorizontal: 14,
-                              paddingVertical: 12,
-                              minWidth: 120,
-                              alignItems: "center",
-                            }}
-                          >
-                            <Text
-                              style={{
-                                color:
-                                  group.readyCount === group.count ? "#027a48" : "#b42318",
-                                fontWeight: "800",
-                              }}
-                            >
-                              {group.readyCount === group.count ? "Complete" : "Incomplete"}
-                            </Text>
-                          </View>
-                          <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                            <Text style={{ color: "#475467", fontWeight: "700" }}>
-                              {expanded ? "Hide details" : "Show details"}
-                            </Text>
-                            <MaterialIcons
-                              name={expanded ? "expand-less" : "expand-more"}
-                              size={20}
-                              color="#475467"
-                            />
-                          </View>
-                        </View>
-                      </View>
-                    </Pressable>
-
-                    {expanded ? (
-                      <View
-                        style={{
-                          marginTop: 14,
-                          borderWidth: 1,
-                          borderColor: "#eaecf0",
-                          borderRadius: 16,
-                          overflow: "hidden",
-                        }}
-                      >
-                        <View
-                          style={{
-                            flexDirection: "row",
-                            backgroundColor: "#f8fafc",
-                            paddingHorizontal: 14,
-                            paddingVertical: 10,
-                            gap: 12,
-                          }}
-                        >
-                          <TableHeader label="Timeframe" flex={0.8} />
-                          <TableHeader label="State" flex={0.8} />
-                          <TableHeader label="Klines" flex={1.6} />
-                          <TableHeader label="Trades" flex={1.6} />
-                        </View>
-                        {group.items.map((item, index) => (
-                          <View
-                            key={`${item.symbolCode}:${item.timeframeCode}`}
                             style={{
                               flexDirection: "row",
-                              paddingHorizontal: 14,
-                              paddingVertical: 12,
-                              gap: 12,
-                              borderTopWidth: index === 0 ? 0 : 1,
-                              borderTopColor: "#eaecf0",
-                              backgroundColor: index % 2 === 0 ? "#ffffff" : "#fcfcfd",
                               alignItems: "center",
+                              justifyContent: "space-between",
+                              gap: 12,
+                              flexWrap: "wrap",
                             }}
                           >
-                            <TableCell label={item.timeframeCode} flex={0.8} />
-                            <View style={{ flex: 0.8, alignItems: "flex-start" }}>
-                              <StatusBadge
-                                label="Active"
-                                value={
-                                  (symbolState.get(item.symbolCode) ?? false) &&
-                                  (timeframeState.get(item.timeframeCode) ?? false)
+                            <Text style={{ color: "#475467", fontWeight: "600" }}>
+                              Page {currentPage} of {totalPages} · {totalCount.toLocaleString()} rows
+                            </Text>
+                            <View style={{ flexDirection: "row", gap: 8 }}>
+                              <PaginationButton
+                                label="Previous"
+                                disabled={currentPage <= 1}
+                                onPress={() =>
+                                  setReadinessPage(group.symbolCode, currentPage - 1)
+                                }
+                              />
+                              <PaginationButton
+                                label="Next"
+                                disabled={currentPage >= totalPages}
+                                onPress={() =>
+                                  setReadinessPage(group.symbolCode, currentPage + 1)
                                 }
                               />
                             </View>
-                            <View style={{ flex: 1.6 }}>
-                              <DimensionSummary label="Klines" dimension={item.kline} compact />
-                            </View>
-                            <View style={{ flex: 1.6 }}>
-                              <DimensionSummary label="Trades" dimension={item.trades} compact />
-                            </View>
                           </View>
-                        ))}
-                      </View>
-                    ) : null}
-                  </Card>
-                );
-              })
-            )}
-          </View>
+                        </View>
+                      );
+                    })()
+                  )}
+                </View>
+                  </>
+                ) : null}
+              </View>
+            </Card>
+          ))
         )}
       </View>
+      <Modal
+        visible={selectedLatestRowKey !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSelectedLatestRowKey(null)}
+      >
+        <View
+          style={{
+            flex: 1,
+            backgroundColor: "rgba(16, 24, 40, 0.45)",
+            justifyContent: "center",
+            alignItems: "center",
+            padding: 24,
+          }}
+        >
+          <View style={{ width: "100%", maxWidth: 920 }}>
+            <Card>
+              <View
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 12,
+                }}
+              >
+                <View style={{ gap: 4, flex: 1 }}>
+                  <Text style={{ fontSize: 20, fontWeight: "700", color: "#101828" }}>
+                    Latest backtests
+                  </Text>
+                  {selectedLatestContext ? (
+                    <Text style={{ color: "#475467" }}>
+                      {selectedLatestContext.symbolCode} · {selectedLatestContext.timeframeCode} ·{" "}
+                      {selectedLatestContext.strategyName}
+                    </Text>
+                  ) : null}
+                </View>
+                <Pressable
+                  onPress={() => setSelectedLatestRowKey(null)}
+                  style={{
+                    borderRadius: 10,
+                    borderWidth: 1,
+                    borderColor: "#d0d5dd",
+                    paddingHorizontal: 14,
+                    paddingVertical: 10,
+                  }}
+                >
+                  <Text style={{ color: "#344054", fontWeight: "700" }}>Close</Text>
+                </Pressable>
+              </View>
+              <ScrollView
+                style={{ marginTop: 12, maxHeight: 560 }}
+                contentContainerStyle={{ gap: 10 }}
+                showsVerticalScrollIndicator
+              >
+                {selectedLatestRuns.length === 0 ? (
+                  <Text style={{ color: "#475467" }}>
+                    No completed latest runs for this timeframe and strategy.
+                  </Text>
+                ) : (
+                  <View
+                    style={{
+                      borderWidth: 1,
+                      borderColor: "#eaecf0",
+                      borderRadius: 16,
+                      overflow: "hidden",
+                    }}
+                  >
+                    <View
+                      style={{
+                        flexDirection: "row",
+                        backgroundColor: "#f8fafc",
+                        paddingHorizontal: 14,
+                        paddingVertical: 10,
+                        gap: 12,
+                      }}
+                    >
+                      <TableHeader label="Analysis" flex={2.1} />
+                      <TableHeader label="Risk" flex={1.1} />
+                      <TableHeader label="Score" flex={0.8} align="right" />
+                      <TableHeader label="Finished" flex={1.4} align="right" />
+                    </View>
+                    {selectedLatestRuns.map((run, index) => (
+                      <View
+                        key={`${run.backtestId}:${run.analysisSettingId}:${run.riskProfileName}`}
+                        style={{
+                          paddingHorizontal: 14,
+                          paddingVertical: 12,
+                          borderTopWidth: index === 0 ? 0 : 1,
+                          borderTopColor: "#eaecf0",
+                          backgroundColor: index % 2 === 0 ? "#ffffff" : "#fcfcfd",
+                          gap: 10,
+                        }}
+                      >
+                        <View style={{ flexDirection: "row", gap: 12 }}>
+                          <TableCell
+                            label={
+                              analysisDetailById.get(run.analysisSettingId) ??
+                              run.analysisSettingId
+                            }
+                            flex={2.1}
+                          />
+                          <TableCell label={run.riskProfileName} flex={1.1} />
+                          <View style={{ flex: 0.8, alignItems: "flex-end" }}>
+                            <Text
+                              onPress={() => setSelectedBacktestId(run.backtestId)}
+                              style={{
+                                color: scorePalette(run.score).textColor,
+                                fontWeight: "700",
+                                textDecorationLine: "underline",
+                                textAlign: "right",
+                              }}
+                            >
+                              {formatScore(run.score)}
+                            </Text>
+                          </View>
+                          <TableCell
+                            label={new Date(run.finishedAt).toLocaleString()}
+                            flex={1.4}
+                            align="right"
+                          />
+                        </View>
+                        <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
+                          <MetricBadge
+                            label="Duration"
+                            value={formatDuration(run.backtestDurationMs)}
+                          />
+                          <MetricBadge
+                            label="Equity PnL"
+                            value={`${run.equityCurvePnlPercent.toFixed(2)}%`}
+                          />
+                          <MetricBadge
+                            label="Max DD"
+                            value={`${run.maxDrawdownPercent.toFixed(2)}%`}
+                          />
+                        </View>
+                      </View>
+                    ))}
+                  </View>
+                )}
+              </ScrollView>
+            </Card>
+          </View>
+        </View>
+      </Modal>
       <Modal
         visible={selectedBacktestId !== null}
         transparent
@@ -921,7 +892,7 @@ export default function BacktestingScreen() {
                 }}
               >
                 <Text style={{ fontSize: 20, fontWeight: "700", color: "#101828" }}>
-                  Score details
+                  Backtest details
                 </Text>
                 <Pressable
                   onPress={() => setSelectedBacktestId(null)}
@@ -943,13 +914,31 @@ export default function BacktestingScreen() {
                     <DetailRow label="Symbol" value={selectedBacktestRun.symbol} />
                     <DetailRow label="Timeframe" value={selectedBacktestRun.timeframeCode} />
                     <DetailRow label="Strategy" value={selectedBacktestRun.strategyName} />
-                    <DetailRow label="Analysis setting id" value={selectedBacktestRun.analysisSettingId} />
-                    <DetailRow label="Risk profile" value={selectedBacktestRun.riskProfileName} />
-                    <DetailRow label="Finished" value={new Date(selectedBacktestRun.finishedAt).toLocaleString()} />
-                    <DetailRow label="Score" value={selectedBacktestRun.score.toFixed(2)} />
+                    <DetailRow
+                      label="Analysis setting id"
+                      value={selectedBacktestRun.analysisSettingId}
+                    />
+                    <DetailRow
+                      label="Risk profile"
+                      value={selectedBacktestRun.riskProfileName}
+                    />
+                    <DetailRow
+                      label="Finished"
+                      value={new Date(selectedBacktestRun.finishedAt).toLocaleString()}
+                    />
+                    <DetailRow
+                      label="Score"
+                      value={selectedBacktestRun.score.toFixed(2)}
+                    />
                     <ScoreBreakdownSection run={selectedBacktestRun} />
-                    <DetailRow label="Backtest duration" value={formatDuration(selectedBacktestRun.backtestDurationMs)} />
-                    <DetailRow label="Strategy counts" value={`${selectedBacktestRun.signalCount} signals · ${selectedBacktestRun.tradeCount} trades`} />
+                    <DetailRow
+                      label="Backtest duration"
+                      value={formatDuration(selectedBacktestRun.backtestDurationMs)}
+                    />
+                    <DetailRow
+                      label="Strategy counts"
+                      value={`${selectedBacktestRun.signalCount} signals · ${selectedBacktestRun.tradeCount} trades`}
+                    />
                   </>
                 ) : (
                   <Text style={{ color: "#475467" }}>
@@ -957,6 +946,131 @@ export default function BacktestingScreen() {
                   </Text>
                 )}
               </View>
+            </Card>
+          </View>
+        </View>
+      </Modal>
+      <Modal
+        visible={selectedHistoryRowKey !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSelectedHistoryRowKey(null)}
+      >
+        <View
+          style={{
+            flex: 1,
+            backgroundColor: "rgba(16, 24, 40, 0.45)",
+            justifyContent: "center",
+            alignItems: "center",
+            padding: 24,
+          }}
+        >
+          <View style={{ width: "100%", maxWidth: 920 }}>
+            <Card>
+              <View
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 12,
+                }}
+              >
+                <View style={{ gap: 4, flex: 1 }}>
+                  <Text style={{ fontSize: 20, fontWeight: "700", color: "#101828" }}>
+                    Score evolution
+                  </Text>
+                  {selectedHistoryContext ? (
+                    <Text style={{ color: "#475467" }}>
+                      {selectedHistoryContext.symbolCode} · {selectedHistoryContext.timeframeCode} ·{" "}
+                      {selectedHistoryContext.strategyName}
+                    </Text>
+                  ) : null}
+                </View>
+                <Pressable
+                  onPress={() => setSelectedHistoryRowKey(null)}
+                  style={{
+                    borderRadius: 10,
+                    borderWidth: 1,
+                    borderColor: "#d0d5dd",
+                    paddingHorizontal: 14,
+                    paddingVertical: 10,
+                  }}
+                >
+                  <Text style={{ color: "#344054", fontWeight: "700" }}>Close</Text>
+                </Pressable>
+              </View>
+              <ScrollView
+                style={{ marginTop: 12, maxHeight: 560 }}
+                contentContainerStyle={{ gap: 14 }}
+                showsVerticalScrollIndicator
+              >
+                {selectedHistoryCombinations.length === 0 ? (
+                  <Text style={{ color: "#475467" }}>
+                    No backtest history for this timeframe and strategy.
+                  </Text>
+                ) : (
+                  selectedHistoryCombinations.map((combination) => (
+                    <View
+                      key={combination.key}
+                      style={{
+                        borderWidth: 1,
+                        borderColor: "#eaecf0",
+                        borderRadius: 16,
+                        padding: 14,
+                        gap: 12,
+                        backgroundColor: "#fcfcfd",
+                      }}
+                    >
+                      <View
+                        style={{
+                          flexDirection: "row",
+                          alignItems: "flex-start",
+                          justifyContent: "space-between",
+                          gap: 12,
+                          flexWrap: "wrap",
+                        }}
+                      >
+                        <View style={{ flex: 1, minWidth: 220, gap: 4 }}>
+                          <Text
+                            style={{
+                              color: "#101828",
+                              fontWeight: "800",
+                              fontSize: 15,
+                            }}
+                          >
+                            {combination.analysisLabel}
+                          </Text>
+                          <Text style={{ color: "#475467" }}>
+                            {combination.timeframeCode} · {combination.riskProfileName} ·{" "}
+                            {combination.strategyName}
+                          </Text>
+                        </View>
+                        <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
+                          <MetricBadge
+                            label="Runs"
+                            value={combination.runs.length.toLocaleString()}
+                          />
+                          <Pressable
+                            onPress={() =>
+                              setSelectedBacktestId(
+                                findTopScoringRun(combination.runs)?.backtestId ?? null,
+                              )
+                            }
+                          >
+                            <MetricBadge
+                              label="Best score"
+                              value={formatScore(combination.bestScore)}
+                              accent="link"
+                            />
+                          </Pressable>
+                        </View>
+                      </View>
+
+                      <PnlHistoryChart runs={combination.runs} />
+                    </View>
+                  ))
+                )}
+              </ScrollView>
             </Card>
           </View>
         </View>
@@ -970,7 +1084,7 @@ function formatBacktestStage(stage: string | null): string {
     case "retrieving-data":
       return "Retrieving data";
     case "simulating":
-      return "Simulating backtest";
+      return "Simulating";
     case "running-backtests":
       return "Running backtests";
     case "queued":
@@ -982,6 +1096,202 @@ function formatBacktestStage(stage: string | null): string {
     default:
       return "Running";
   }
+}
+
+function InlineStatePill({
+  label,
+  tone,
+}: {
+  label: string;
+  tone: "ready" | "running" | "pending";
+}) {
+  const styles =
+    tone === "ready"
+      ? { backgroundColor: "#ecfdf3", color: "#027a48" }
+      : tone === "running"
+        ? { backgroundColor: "#eff8ff", color: "#175cd3" }
+        : { backgroundColor: "#fef3f2", color: "#b42318" };
+
+  return (
+    <View
+      style={{
+        alignSelf: "flex-start",
+        borderRadius: 999,
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+        backgroundColor: styles.backgroundColor,
+      }}
+    >
+      <Text style={{ color: styles.color, fontWeight: "700", fontSize: 12 }}>
+        {label}
+      </Text>
+    </View>
+  );
+}
+
+function ReadinessDataBadge({
+  label,
+  percent,
+}: {
+  label: string;
+  percent: number;
+}) {
+  const complete = percent >= 100;
+  const displayPercent = complete
+    ? "100%"
+    : `${Math.floor(Math.max(percent, 0) * 10) / 10}%`;
+  return (
+    <View
+      style={{
+        alignSelf: "flex-start",
+        borderRadius: 999,
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+        backgroundColor: complete ? "#ecfdf3" : "#fef3f2",
+      }}
+    >
+      <Text
+        style={{
+          color: complete ? "#027a48" : "#b42318",
+          fontWeight: "700",
+          fontSize: 12,
+        }}
+      >
+        {label} {displayPercent}
+      </Text>
+    </View>
+  );
+}
+
+function BacktestStatusCell({
+  job,
+}: {
+  job: BacktestJob | null;
+}) {
+  if (!job) {
+    return (
+      <View
+        style={{
+          alignSelf: "flex-start",
+          borderRadius: 999,
+          paddingHorizontal: 10,
+          paddingVertical: 4,
+          backgroundColor: "#f2f4f7",
+          opacity: 0.6,
+        }}
+      >
+        <Text style={{ color: "#667085", fontWeight: "700", fontSize: 12 }}>
+          Not running
+        </Text>
+      </View>
+    );
+  }
+
+  return (
+    <View
+      style={{
+        alignSelf: "flex-start",
+        borderRadius: 999,
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+        backgroundColor: "#eff8ff",
+      }}
+    >
+      <Text style={{ color: "#175cd3", fontWeight: "700", fontSize: 12 }}>
+        {job.status === "running"
+          ? `${Math.round(job.progressPercent ?? 0)}%`
+          : "Queued"}
+      </Text>
+    </View>
+  );
+}
+
+function ActionButton({
+  label,
+  disabled,
+  onPress,
+}: {
+  label: string;
+  disabled: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      disabled={disabled}
+      onPress={onPress}
+      style={{
+        alignSelf: "flex-start",
+        borderRadius: 10,
+        borderWidth: 1,
+        borderColor: disabled ? "#d0d5dd" : "#b2ddff",
+        backgroundColor: disabled ? "#f8fafc" : "#eff8ff",
+        opacity: disabled ? 0.5 : 1,
+        paddingHorizontal: 10,
+        paddingVertical: 7,
+      }}
+    >
+      <Text
+        style={{
+          color: disabled ? "#98a2b3" : "#175cd3",
+          fontWeight: "700",
+          fontSize: 12,
+        }}
+      >
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
+function PaginationButton({
+  label,
+  disabled,
+  onPress,
+}: {
+  label: string;
+  disabled: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={disabled}
+      style={{
+        borderRadius: 10,
+        borderWidth: 1,
+        borderColor: disabled ? "#eaecf0" : "#d0d5dd",
+        backgroundColor: disabled ? "#f2f4f7" : "#ffffff",
+        paddingHorizontal: 14,
+        paddingVertical: 10,
+      }}
+    >
+      <Text style={{ color: disabled ? "#98a2b3" : "#344054", fontWeight: "700" }}>{label}</Text>
+    </Pressable>
+  );
+}
+
+function SingleSelectFilter({
+  label,
+  value,
+  options,
+  allLabel,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: string[];
+  allLabel: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <MultiSelectFilter
+      label={label}
+      value={value ? [value] : []}
+      options={options}
+      allLabel={allLabel}
+      onChange={(values) => onChange(values.at(-1) ?? "")}
+    />
+  );
 }
 
 function MetricBadge({
@@ -1018,7 +1328,9 @@ function DetailRow({
 }) {
   return (
     <View style={{ gap: 4 }}>
-      <Text style={{ color: "#475467", fontSize: 12, fontWeight: "700", textTransform: "uppercase" }}>
+      <Text
+        style={{ color: "#475467", fontSize: 12, fontWeight: "700", textTransform: "uppercase" }}
+      >
         {label}
       </Text>
       <Text style={{ color: "#101828" }}>{value}</Text>
@@ -1241,257 +1553,6 @@ function formatXAxisDate(value: string) {
   });
 }
 
-function groupRunningBatchesBySymbol(
-  batches: BacktestBatch[],
-) {
-  const groups = new Map<
-    string,
-    {
-      symbolCode: string;
-      totalCount: number;
-      completedCount: number;
-      runningCount: number;
-      progressPercent: number;
-      stage: string | null;
-      timeframeCount: number;
-      batchCount: number;
-    }
-  >();
-
-  for (const batch of batches) {
-    if (batch.stage === "completed" && batch.completedCount >= batch.totalCount) {
-      continue;
-    }
-
-    const current = groups.get(batch.symbolCode) ?? {
-      symbolCode: batch.symbolCode,
-      totalCount: 0,
-      completedCount: 0,
-      runningCount: 0,
-      progressPercent: 0,
-      stage: null,
-      timeframeCount: 0,
-      batchCount: 0,
-    };
-
-    const weightedProgressTotal =
-      current.progressPercent * current.totalCount + batch.progressPercent * batch.totalCount;
-    current.totalCount += batch.totalCount;
-    current.completedCount += batch.completedCount;
-    current.runningCount += batch.runningCount;
-    current.batchCount += 1;
-    current.progressPercent =
-      current.totalCount > 0 ? weightedProgressTotal / current.totalCount : 0;
-    current.stage =
-      batch.stage === "retrieving-data"
-        ? batch.stage
-        : current.stage === "retrieving-data"
-          ? current.stage
-          : batch.stage;
-    groups.set(batch.symbolCode, current);
-  }
-
-  return [...groups.values()]
-    .map((group) => ({
-      ...group,
-      timeframeCount: new Set(
-        batches
-          .filter((batch) => batch.symbolCode === group.symbolCode)
-          .map((batch) => batch.timeframeCode),
-      ).size,
-    }))
-    .sort((left, right) => left.symbolCode.localeCompare(right.symbolCode));
-}
-
-function groupLatestBacktestsBySymbol(runs: RecentBacktestRun[]) {
-  const groups = new Map<
-    string,
-    {
-      symbol: string;
-      count: number;
-      timeframeCount: number;
-      bestScore: number;
-      latestFinishedAt: string;
-      runs: RecentBacktestRun[];
-    }
-  >();
-
-  for (const run of runs) {
-    const current =
-      groups.get(run.symbol) ??
-      {
-        symbol: run.symbol,
-        count: 0,
-        timeframeCount: 0,
-        bestScore: Number.NEGATIVE_INFINITY,
-        latestFinishedAt: run.finishedAt,
-        runs: [],
-      };
-
-    current.count += 1;
-    current.bestScore = Math.max(current.bestScore, run.score);
-    if (Date.parse(run.finishedAt) > Date.parse(current.latestFinishedAt)) {
-      current.latestFinishedAt = run.finishedAt;
-    }
-    current.runs.push(run);
-    groups.set(run.symbol, current);
-  }
-
-  return [...groups.values()]
-    .map((group) => ({
-      ...group,
-      timeframeCount: new Set(group.runs.map((run) => run.timeframeCode)).size,
-      runs: [...group.runs].sort(
-        (left, right) => Date.parse(right.finishedAt) - Date.parse(left.finishedAt),
-      ),
-    }))
-    .sort((left, right) => left.symbol.localeCompare(right.symbol));
-}
-
-function groupBacktestHistoryBySymbol(
-  runs: RecentBacktestRun[],
-  analysisDetailById: Map<string, string>,
-) {
-  const groups = new Map<
-    string,
-    {
-      symbol: string;
-      runCount: number;
-      combinationCount: number;
-      latestFinishedAt: string;
-      combinations: {
-        key: string;
-        analysisLabel: string;
-        timeframeCode: string;
-        riskProfileName: string;
-        strategyName: string;
-        bestScore: number;
-        latestFinishedAt: string;
-        runs: RecentBacktestRun[];
-      }[];
-    }
-  >();
-
-  for (const run of runs) {
-    const combinationKey = [
-      run.symbol,
-      run.timeframeCode,
-      run.analysisSettingId,
-      run.riskProfileName,
-      run.strategyName,
-    ].join(":");
-    const current =
-      groups.get(run.symbol) ??
-      {
-        symbol: run.symbol,
-        runCount: 0,
-        combinationCount: 0,
-        latestFinishedAt: run.finishedAt,
-        combinations: [],
-      };
-
-    current.runCount += 1;
-    if (Date.parse(run.finishedAt) > Date.parse(current.latestFinishedAt)) {
-      current.latestFinishedAt = run.finishedAt;
-    }
-
-    const existingCombination = current.combinations.find(
-      (combination) => combination.key === combinationKey,
-    );
-
-    if (existingCombination) {
-      existingCombination.runs.push(run);
-      existingCombination.bestScore = Math.max(existingCombination.bestScore, run.score);
-      if (Date.parse(run.finishedAt) > Date.parse(existingCombination.latestFinishedAt)) {
-        existingCombination.latestFinishedAt = run.finishedAt;
-      }
-    } else {
-      current.combinations.push({
-        key: combinationKey,
-        analysisLabel:
-          analysisDetailById.get(run.analysisSettingId) ?? run.analysisSettingId,
-        timeframeCode: run.timeframeCode,
-        riskProfileName: run.riskProfileName,
-        strategyName: run.strategyName,
-        bestScore: run.score,
-        latestFinishedAt: run.finishedAt,
-        runs: [run],
-      });
-    }
-
-    groups.set(run.symbol, current);
-  }
-
-  return [...groups.values()]
-    .map((group) => ({
-      ...group,
-      combinationCount: group.combinations.length,
-      combinations: group.combinations
-        .map((combination) => ({
-          ...combination,
-          runs: [...combination.runs].sort(
-            (left, right) => Date.parse(left.finishedAt) - Date.parse(right.finishedAt),
-          ),
-        }))
-        .sort(
-          (left, right) =>
-            Date.parse(right.latestFinishedAt) - Date.parse(left.latestFinishedAt),
-        ),
-    }))
-    .sort((left, right) => left.symbol.localeCompare(right.symbol));
-}
-
-function groupDataReadinessBySymbol(items: DataReadinessItem[]) {
-  const groups = new Map<
-    string,
-    {
-      symbolCode: string;
-      count: number;
-      readyCount: number;
-      timeframeCount: number;
-      klineAverage: number;
-      tradeAverage: number;
-      totalRows: number;
-      items: DataReadinessItem[];
-    }
-  >();
-
-  for (const item of items) {
-    const current =
-      groups.get(item.symbolCode) ?? {
-        symbolCode: item.symbolCode,
-        count: 0,
-        readyCount: 0,
-        timeframeCount: 0,
-        klineAverage: 0,
-        tradeAverage: 0,
-        totalRows: 0,
-        items: [],
-      };
-
-    current.count += 1;
-    current.readyCount += item.status === "ready" ? 1 : 0;
-    current.klineAverage += Number(item.kline?.coveragePercent ?? 0);
-    current.tradeAverage += Number(item.trades?.coveragePercent ?? 0);
-    current.totalRows +=
-      Number(item.kline?.rowCount ?? 0) + Number(item.trades?.rowCount ?? 0);
-    current.items.push(item);
-    groups.set(item.symbolCode, current);
-  }
-
-  return [...groups.values()]
-    .map((group) => ({
-      ...group,
-      timeframeCount: new Set(group.items.map((item) => item.timeframeCode)).size,
-      klineAverage: group.count > 0 ? group.klineAverage / group.count : 0,
-      tradeAverage: group.count > 0 ? group.tradeAverage / group.count : 0,
-      items: [...group.items].sort((left, right) =>
-        left.timeframeCode.localeCompare(right.timeframeCode),
-      ),
-    }))
-    .sort((left, right) => left.symbolCode.localeCompare(right.symbolCode));
-}
-
 function TableHeader({
   label,
   flex,
@@ -1532,146 +1593,6 @@ function TableCell({
       >
         {label}
       </Text>
-    </View>
-  );
-}
-
-function ProgressRing({
-  value,
-  color,
-  size = 88,
-  strokeWidth = 9,
-}: {
-  value: number;
-  color: string;
-  size?: number;
-  strokeWidth?: number;
-}) {
-  const radius = (size - strokeWidth) / 2;
-  const circumference = 2 * Math.PI * radius;
-  const normalized = Math.max(0, Math.min(100, value));
-  const dashOffset = circumference * (1 - normalized / 100);
-  const labelValue = normalized >= 100 ? 100 : Math.floor(normalized);
-
-  return (
-    <View
-      style={{
-        width: size,
-        height: size,
-        alignItems: "center",
-        justifyContent: "center",
-      }}
-    >
-      <Svg width={size} height={size} style={{ position: "absolute" }}>
-        <Circle
-          cx={size / 2}
-          cy={size / 2}
-          r={radius}
-          stroke="#e5e7eb"
-          strokeWidth={strokeWidth}
-          fill="none"
-        />
-        <Circle
-          cx={size / 2}
-          cy={size / 2}
-          r={radius}
-          stroke={color}
-          strokeWidth={strokeWidth}
-          fill="none"
-          strokeLinecap="round"
-          strokeDasharray={`${circumference} ${circumference}`}
-          strokeDashoffset={dashOffset}
-          origin={`${size / 2}, ${size / 2}`}
-          rotation="-90"
-        />
-      </Svg>
-      <Text
-        style={{
-          fontSize: size <= 64 ? 14 : 19,
-          fontWeight: "800",
-          color: "#101828",
-        }}
-      >
-        {labelValue}%
-      </Text>
-    </View>
-  );
-}
-
-function StatusBadge({
-  label,
-  value,
-}: {
-  label: string;
-  value: boolean;
-}) {
-  return (
-    <View
-      style={{
-        borderRadius: 999,
-        paddingHorizontal: 10,
-        paddingVertical: 6,
-        backgroundColor: value ? "#ecfdf3" : "#fef3f2",
-      }}
-    >
-      <Text style={{ color: value ? "#157f3b" : "#b42318", fontWeight: "700" }}>
-        {label}: {value ? "Yes" : "No"}
-      </Text>
-    </View>
-  );
-}
-
-function DimensionSummary({
-  label,
-  dimension,
-  compact = false,
-}: {
-  label: string;
-  dimension: {
-    rowCount?: number;
-    missingCount?: number;
-    coveragePercent?: number;
-    complete?: boolean;
-  } | null;
-  compact?: boolean;
-}) {
-  const rawCoverage = dimension?.coveragePercent ?? 0;
-  const isComplete = Boolean(dimension?.complete);
-  const displayedCoverage = Math.max(0, Math.min(100, rawCoverage));
-  const rowCount = (dimension?.rowCount ?? 0).toLocaleString();
-
-  return (
-    <View
-      style={{
-        borderRadius: 14,
-        borderWidth: 1,
-        borderColor: "#eaecf0",
-        padding: compact ? 10 : 12,
-        gap: compact ? 6 : 8,
-      }}
-    >
-      <View
-        style={{
-          flexDirection: "row",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 12,
-          flexWrap: "wrap",
-        }}
-      >
-        <View style={{ flex: 1, minWidth: compact ? 100 : 180, gap: 4 }}>
-          <Text style={{ fontWeight: "700", color: "#101828", fontSize: compact ? 13 : 14 }}>
-            {label}
-          </Text>
-          <Text style={{ color: "#475467" }}>{rowCount}</Text>
-        </View>
-        <ProgressRing
-          value={displayedCoverage}
-          color={isComplete ? "#157f3b" : "#b54708"}
-          size={compact ? 50 : 60}
-          strokeWidth={compact ? 6 : 7}
-        />
-      </View>
     </View>
   );
 }

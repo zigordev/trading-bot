@@ -85,6 +85,7 @@ export type DataReadinessProjectionRecord = {
   status: "ready" | "partial" | "missing" | "error";
   symbolCode: string;
   timeframeCode: string;
+  strategyName: string;
   analysisSettingIds: string[];
   requestedStartTime: number;
   requestedEndTime: number;
@@ -179,6 +180,8 @@ export type ExecutionTradeQuery = {
   symbolCode?: string;
   timeframeCode?: string;
   strategyName?: string;
+  openedFrom?: string;
+  openedTo?: string;
   side?: "long" | "short";
   status?: "open" | "closed" | "cancelled" | "rejected";
   mode?: "paper" | "live";
@@ -370,6 +373,7 @@ const mapDataReadinessProjectionRow = (
       : "error",
   symbolCode: String(row.symbol_code),
   timeframeCode: String(row.timeframe_code),
+  strategyName: String(row.strategy_name),
   analysisSettingIds: mapStringArray(row.analysis_setting_ids_json),
   requestedStartTime: Number(row.requested_start_time),
   requestedEndTime: Number(row.requested_end_time),
@@ -610,6 +614,7 @@ export const ensureOpsSchema = async (pool: Pool): Promise<void> => {
     CREATE TABLE IF NOT EXISTS ops_data_readiness (
       symbol_code TEXT NOT NULL,
       timeframe_code TEXT NOT NULL,
+      strategy_name TEXT NOT NULL,
       status TEXT NOT NULL,
       analysis_setting_ids_json JSONB NOT NULL,
       requested_start_time BIGINT NOT NULL,
@@ -622,10 +627,39 @@ export const ensureOpsSchema = async (pool: Pool): Promise<void> => {
       source_occurred_at TIMESTAMPTZ NOT NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      PRIMARY KEY (symbol_code, timeframe_code),
+      PRIMARY KEY (symbol_code, timeframe_code, strategy_name),
       CONSTRAINT ops_data_readiness_status_valid
         CHECK (status IN ('ready', 'partial', 'missing', 'error'))
     );
+  `);
+
+  await pool.query(`
+    ALTER TABLE ops_data_readiness
+      ADD COLUMN IF NOT EXISTS strategy_name TEXT
+  `);
+
+  await pool.query(`
+    DELETE FROM ops_data_readiness
+     WHERE strategy_name IS NULL OR strategy_name = ''
+  `);
+
+  await pool.query(`
+    DO $$
+    BEGIN
+      IF EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'ops_data_readiness_pkey'
+          AND conrelid = 'ops_data_readiness'::regclass
+      ) THEN
+        ALTER TABLE ops_data_readiness DROP CONSTRAINT ops_data_readiness_pkey;
+      END IF;
+    END $$;
+  `);
+
+  await pool.query(`
+    ALTER TABLE ops_data_readiness
+      ADD PRIMARY KEY (symbol_code, timeframe_code, strategy_name)
   `);
 
   await pool.query(`
@@ -1278,6 +1312,7 @@ export const replaceDataReadinessProjections = async (
           INSERT INTO ops_data_readiness (
             symbol_code,
             timeframe_code,
+            strategy_name,
             status,
             analysis_setting_ids_json,
             requested_start_time,
@@ -1293,17 +1328,18 @@ export const replaceDataReadinessProjections = async (
             $1,
             $2,
             $3,
-            $4::jsonb,
-            $5,
+            $4,
+            $5::jsonb,
             $6,
             $7,
             $8,
-            $9::jsonb,
+            $9,
             $10::jsonb,
-            $11,
-            $12::timestamptz
+            $11::jsonb,
+            $12,
+            $13::timestamptz
           )
-          ON CONFLICT (symbol_code, timeframe_code) DO UPDATE
+          ON CONFLICT (symbol_code, timeframe_code, strategy_name) DO UPDATE
              SET status = EXCLUDED.status,
                  analysis_setting_ids_json = EXCLUDED.analysis_setting_ids_json,
                  requested_start_time = EXCLUDED.requested_start_time,
@@ -1317,7 +1353,7 @@ export const replaceDataReadinessProjections = async (
                  updated_at = NOW()
            WHERE ops_data_readiness.source_occurred_at <= EXCLUDED.source_occurred_at
              AND (
-               NOT $13::boolean
+               NOT $14::boolean
                OR (
                  COALESCE((ops_data_readiness.kline_json->>'rowCount')::bigint, 0) = 0
                  AND COALESCE((ops_data_readiness.trades_json->>'rowCount')::bigint, 0) = 0
@@ -1327,6 +1363,7 @@ export const replaceDataReadinessProjections = async (
         [
           item.symbolCode,
           item.timeframeCode,
+          item.strategyName,
           item.status,
           JSON.stringify(item.analysisSettingIds),
           item.requestedStartTime,
@@ -1353,12 +1390,24 @@ export const replaceDataReadinessProjections = async (
 
 export const listDataReadinessProjections = async (
   pool: Pool,
+  filters: {
+    strategyName?: string;
+  } = {},
 ): Promise<DataReadinessProjectionRecord[]> => {
+  const values: unknown[] = [];
+  const whereClauses: string[] = [];
+
+  if (filters.strategyName?.trim()) {
+    values.push(filters.strategyName.trim());
+    whereClauses.push(`strategy_name = $${values.length}`);
+  }
+
   const result = await pool.query(
     `
       SELECT
         symbol_code,
         timeframe_code,
+        strategy_name,
         status,
         analysis_setting_ids_json,
         requested_start_time,
@@ -1372,8 +1421,10 @@ export const listDataReadinessProjections = async (
         created_at,
         updated_at
       FROM ops_data_readiness
-      ORDER BY symbol_code ASC, timeframe_code ASC
+      ${whereClauses.length > 0 ? `WHERE ${whereClauses.join(" AND ")}` : ""}
+      ORDER BY symbol_code ASC, timeframe_code ASC, strategy_name ASC
     `,
+    values,
   );
 
   return result.rows.map(mapDataReadinessProjectionRow);
@@ -1696,6 +1747,12 @@ export const listExecutionTrades = async (
   }
   if (query.strategyName) {
     whereClauses.push(`strategy_name = ${pushParam(query.strategyName)}`);
+  }
+  if (query.openedFrom) {
+    whereClauses.push(`opened_at >= ${pushParam(query.openedFrom)}`);
+  }
+  if (query.openedTo) {
+    whereClauses.push(`opened_at <= ${pushParam(query.openedTo)}`);
   }
   if (query.side) {
     whereClauses.push(`side = ${pushParam(query.side)}`);

@@ -151,15 +151,60 @@ export default function OverviewScreen() {
   const activeAnalysisSettings = [...(analysisSettingsQuery.data ?? [])]
     .filter((record) => Boolean(record.enabled))
     .sort((left, right) => String(left.name ?? "").localeCompare(String(right.name ?? "")))
-  const readinessBySymbol = [...new Map(
-    (dataReadinessQuery.data?.items ?? []).map((item) => [
-      item.symbolCode,
-      {
-        symbolCode: item.symbolCode,
-        complete: item.status === "ready",
-      },
-    ]),
-  ).values()].sort((left, right) => left.symbolCode.localeCompare(right.symbolCode));
+  const backtestingSummary = Array.from(
+    [
+      ...(dataReadinessQuery.data?.items.map((item) => item.symbolCode) ?? []),
+      ...(backtestsQuery.data?.latestRuns.map((run) => run.symbol) ?? []),
+      ...(backtestsQuery.data?.jobs.map((job) => job.symbolCode ?? "") ?? []),
+    ].reduce((groups, symbolCode) => {
+      if (!symbolCode) {
+        return groups;
+      }
+      const readinessItems = (dataReadinessQuery.data?.items ?? []).filter(
+        (item) => item.symbolCode === symbolCode,
+      );
+      const runningJobs = (backtestsQuery.data?.jobs ?? []).filter(
+        (job) =>
+          job.symbolCode === symbolCode &&
+          (job.status === "queued" || job.status === "running"),
+      );
+      const latestRuns = (backtestsQuery.data?.latestRuns ?? []).filter(
+        (run) => run.symbol === symbolCode,
+      );
+      groups.set(symbolCode, {
+        symbolCode,
+        readinessCount: readinessItems.length,
+        readinessAverage:
+          readinessItems.length === 0
+            ? 0
+            : readinessItems.reduce(
+                (sum, item) =>
+                  sum +
+                  Math.min(
+                    Number(item.kline?.coveragePercent ?? 0),
+                    Number(item.trades?.coveragePercent ?? 0),
+                  ),
+                0,
+              ) / readinessItems.length,
+        runningCount: runningJobs.length,
+        latestRunFinishedAt:
+          latestRuns
+            .map((run) => run.finishedAt)
+            .sort((left, right) => Date.parse(right) - Date.parse(left))[0] ?? null,
+        timeframeCount: new Set(readinessItems.map((item) => item.timeframeCode)).size,
+        strategyCount: new Set(readinessItems.map((item) => item.strategyName)).size,
+      });
+      return groups;
+    }, new Map<string, {
+      symbolCode: string;
+      readinessCount: number;
+      readinessAverage: number;
+      runningCount: number;
+      latestRunFinishedAt: string | null;
+      timeframeCount: number;
+      strategyCount: number;
+    }>()).values(),
+  ).sort((left, right) => left.symbolCode.localeCompare(right.symbolCode));
 
   const handleToggle = (
     resource: ConfigResourceKey,
@@ -328,25 +373,18 @@ export default function OverviewScreen() {
 
         <Card>
           <Text style={{ fontSize: 20, fontWeight: "700", color: "#101828" }}>
-            Data status
+            Backtesting status
           </Text>
           <View style={{ gap: 12, marginTop: 12 }}>
-            {dataReadinessQuery.isLoading ? (
-              <Text style={{ color: "#475467" }}>Loading data status…</Text>
-            ) : readinessBySymbol.length === 0 ? (
-              <Text style={{ color: "#475467" }}>No data status available yet.</Text>
+            {dataReadinessQuery.isLoading || backtestsQuery.isLoading ? (
+              <Text style={{ color: "#475467" }}>Loading backtesting status…</Text>
+            ) : backtestingSummary.length === 0 ? (
+              <Text style={{ color: "#475467" }}>No backtesting status available yet.</Text>
             ) : (
               <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12 }}>
-                {readinessBySymbol.map((item) => (
-                  <Card key={item.symbolCode} style={{ minWidth: 220, flex: 1 }}>
-                    <View
-                      style={{
-                        flexDirection: "row",
-                        alignItems: "center",
-                        justifyContent: "space-between",
-                        gap: 12,
-                      }}
-                    >
+                {backtestingSummary.map((item) => (
+                  <Card key={item.symbolCode} style={{ minWidth: 260, flex: 1 }}>
+                    <View style={{ gap: 10 }}>
                       <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
                         <SymbolAvatar
                           baseAsset={symbolBaseAssets.get(item.symbolCode)}
@@ -357,23 +395,20 @@ export default function OverviewScreen() {
                           {item.symbolCode}
                         </Text>
                       </View>
-                      <View
-                        style={{
-                          borderRadius: 999,
-                          paddingHorizontal: 10,
-                          paddingVertical: 6,
-                          backgroundColor: item.complete ? "#ecfdf3" : "#fef3f2",
-                        }}
-                      >
-                        <Text
-                          style={{
-                            color: item.complete ? "#027a48" : "#b42318",
-                            fontWeight: "800",
-                          }}
-                        >
-                          {item.complete ? "Complete" : "Incomplete"}
-                        </Text>
-                      </View>
+                      <Text style={{ color: "#475467" }}>
+                        Readiness avg {item.readinessAverage.toFixed(0)}% · {item.readinessCount} row
+                        {item.readinessCount === 1 ? "" : "s"}
+                      </Text>
+                      <Text style={{ color: "#475467" }}>
+                        {item.timeframeCount} timeframe{item.timeframeCount === 1 ? "" : "s"} ·{" "}
+                        {item.strategyCount} strateg{item.strategyCount === 1 ? "y" : "ies"}
+                      </Text>
+                      <Text style={{ color: "#475467" }}>
+                        {item.runningCount} running/queued job{item.runningCount === 1 ? "" : "s"}
+                      </Text>
+                      <Text style={{ color: "#475467" }}>
+                        Latest run: {item.latestRunFinishedAt ? new Date(item.latestRunFinishedAt).toLocaleString() : "n/a"}
+                      </Text>
                     </View>
                   </Card>
                 ))}
