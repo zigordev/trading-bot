@@ -132,31 +132,31 @@ pub fn normalize_ws_message(
         })));
     }
 
-    if let Some(subscription) = pair_by_stream.get(&stream_name) {
-        if stream_name.ends_with("@aggtrade") {
-            let payload: BinanceAggTradePayload = serde_json::from_value(envelope.data)?;
-            return Ok(Some(NormalizedWsEvent::Trade(NormalizedTradeEvent {
-                event_id: format!(
-                    "{}:trade:{}",
-                    subscription.pair_code, payload.aggregate_trade_id
-                ),
-                event_type: "trading-bot.market-data.agg-trade.v1".to_string(),
-                source: source.to_string(),
-                occurred_at: iso_timestamp(payload.trade_time),
-                exchange: "binance".to_string(),
-                ingestion_mode: "live".to_string(),
-                stream_name: subscription.trade_stream_name.clone(),
-                pair_code: subscription.pair_code.clone(),
-                symbol: subscription.symbol.clone(),
-                aggregate_trade_id: payload.aggregate_trade_id,
-                price: payload.price,
-                quantity: payload.quantity,
-                trade_time: payload.trade_time,
-                market_maker: payload.market_maker,
-                analysis_setting_ids: subscription.analysis_setting_ids.clone(),
-                strategy_names: subscription.strategy_names.clone(),
-            })));
-        }
+    if let Some(subscription) = pair_by_stream.get(&stream_name)
+        && stream_name.ends_with("@aggtrade")
+    {
+        let payload: BinanceAggTradePayload = serde_json::from_value(envelope.data)?;
+        return Ok(Some(NormalizedWsEvent::Trade(NormalizedTradeEvent {
+            event_id: format!(
+                "{}:trade:{}",
+                subscription.pair_code, payload.aggregate_trade_id
+            ),
+            event_type: "trading-bot.market-data.agg-trade.v1".to_string(),
+            source: source.to_string(),
+            occurred_at: iso_timestamp(payload.trade_time),
+            exchange: "binance".to_string(),
+            ingestion_mode: "live".to_string(),
+            stream_name: subscription.trade_stream_name.clone(),
+            pair_code: subscription.pair_code.clone(),
+            symbol: subscription.symbol.clone(),
+            aggregate_trade_id: payload.aggregate_trade_id,
+            price: payload.price,
+            quantity: payload.quantity,
+            trade_time: payload.trade_time,
+            market_maker: payload.market_maker,
+            analysis_setting_ids: subscription.analysis_setting_ids.clone(),
+            strategy_names: subscription.strategy_names.clone(),
+        })));
     }
 
     Ok(None)

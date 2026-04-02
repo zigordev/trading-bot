@@ -390,9 +390,9 @@ mod tests {
         assert_eq!(config.historical_store_password, None);
         assert_eq!(config.historical_kline_retention_days, 365);
         assert_eq!(config.historical_trade_retention_days, 90);
-        assert_eq!(config.historical_store_compaction_enabled, false);
+        assert!(!config.historical_store_compaction_enabled);
         assert_eq!(config.historical_store_compaction_interval_ms, 180000);
-        assert_eq!(config.historical_store_compact_after_refresh, false);
+        assert!(!config.historical_store_compact_after_refresh);
         assert_eq!(
             config.data_readiness_events_topic,
             "trading-bot.market-data.data-readiness-snapshot.v1"

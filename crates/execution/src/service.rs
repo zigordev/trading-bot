@@ -1,8 +1,4 @@
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    sync::Arc,
-    time::Duration,
-};
+use std::{collections::BTreeMap, sync::Arc, time::Duration};
 
 use anyhow::{Context, Result, bail};
 use futures_util::StreamExt;
@@ -81,17 +77,6 @@ fn analysis_runtime_key(analysis: &ResolvedAnalysisSettingsRecord) -> String {
         analysis.strategy_name,
         analysis.risk_profile_name
     )
-}
-
-fn position_matches_analysis(
-    position: &LocalPaperPosition,
-    analysis: &ResolvedAnalysisSettingsRecord,
-) -> bool {
-    position.analysis_setting_id == analysis.id
-        && position.symbol_code == analysis.symbol
-        && position.timeframe_code == analysis.timeframe_code
-        && position.strategy_name == analysis.strategy_name
-        && position.risk_profile_name == analysis.risk_profile_name
 }
 
 fn analysis_matches_promotion(
@@ -769,78 +754,6 @@ impl ExecutionService {
         Ok(())
     }
 
-    async fn run_signal_cycle(&self) -> Result<()> {
-        let analyses = {
-            let runtime = self.inner.runtime.lock().await;
-            runtime.active_analyses.clone()
-        };
-        if analyses.is_empty() {
-            self.mark_market_data("idle", None).await;
-            return Ok(());
-        }
-
-        let mut specs_by_analysis = BTreeMap::new();
-        let mut required_kline_keys = BTreeSet::new();
-        let mut required_trade_symbols = BTreeSet::new();
-        for analysis in &analyses {
-            let Some(spec) = build_analysis_spec(analysis)? else {
-                continue;
-            };
-            for requirement in spec.required_timeframe_codes() {
-                required_kline_keys.insert((analysis.symbol.clone(), requirement));
-            }
-            required_trade_symbols.insert(analysis.symbol.clone());
-            specs_by_analysis.insert(analysis_runtime_key(analysis), spec);
-        }
-
-        let mut kline_cache = BTreeMap::new();
-        for (symbol, timeframe_code) in required_kline_keys {
-            let rows = self
-                .fetch_market_json::<Vec<PersistedKlineRecord>>(&format!(
-                    "/v1/klines/{symbol}/{timeframe_code}?limit=1000"
-                ))
-                .await?;
-            kline_cache.insert((symbol, timeframe_code), rows);
-        }
-
-        let mut trade_cache = BTreeMap::new();
-        for symbol in required_trade_symbols {
-            let trades = match self
-                .fetch_market_json::<Vec<PersistedTradeRecord>>(&format!(
-                    "/v1/trades/{symbol}?limit=100"
-                ))
-                .await
-            {
-                Ok(rows) => rows,
-                Err(error) => {
-                    warn!(
-                        symbol = %symbol,
-                        error = %error,
-                        "execution proceeding without recent trades; paper fills will fall back to kline close",
-                    );
-                    Vec::new()
-                }
-            };
-            trade_cache.insert(symbol, trades);
-        }
-
-        for analysis in analyses {
-            let Some(spec) = specs_by_analysis.get(&analysis_runtime_key(&analysis)).cloned()
-            else {
-                continue;
-            };
-            let snapshot = build_market_snapshot(&analysis, &spec, &kline_cache, &trade_cache);
-            self.mark_market_data("up", None).await;
-            self.rebuild_evaluator_if_needed(&analysis, &spec, &snapshot)
-                .await?;
-            self.process_trade_exits(&analysis, &snapshot.trades)
-                .await?;
-            self.process_signal_entries(&analysis, &snapshot, &snapshot.trades)
-                .await?;
-        }
-        Ok(())
-    }
-
     async fn rebuild_evaluator_if_needed(
         &self,
         analysis: &ResolvedAnalysisSettingsRecord,
@@ -872,170 +785,6 @@ impl ExecutionService {
             .get(&analysis.timeframe_code)
             .and_then(|rows| rows.iter().map(|row| row.close_time).max());
         Ok(())
-    }
-
-    async fn process_trade_exits(
-        &self,
-        analysis: &ResolvedAnalysisSettingsRecord,
-        trades: &[PersistedTradeRecord],
-    ) -> Result<()> {
-        let maybe_closes = {
-            let mut runtime = self.inner.runtime.lock().await;
-            runtime
-                .promotion_states
-                .values_mut()
-                .filter_map(|state| {
-                    let mut closed = Vec::new();
-                    state.open_positions.retain(|position| {
-                        if !position_matches_analysis(position, analysis) {
-                            return true;
-                        }
-
-                        let next_trade = trades
-                            .iter()
-                            .filter(|trade| {
-                                trade.trade_time > state.last_checked_trade_time.unwrap_or(0)
-                            })
-                            .find(|trade| {
-                                let Ok(price) = trade.price.parse::<f64>() else {
-                                    return false;
-                                };
-                                if position.side == "long" {
-                                    price <= position.stop_loss_price
-                                        || price >= position.take_profit_price
-                                } else {
-                                    price >= position.stop_loss_price
-                                        || price <= position.take_profit_price
-                                }
-                            })
-                            .cloned();
-
-                        if let Some(trade) = next_trade {
-                            closed.push((position.clone(), trade));
-                            false
-                        } else {
-                            true
-                        }
-                    });
-
-                    Some(closed)
-                })
-                .flatten()
-                .collect::<Vec<_>>()
-        };
-
-        for (position, trade) in maybe_closes {
-            self.close_paper_trade(position, trade, "riskExit").await?;
-        }
-
-        let latest_trade_time = trades_max_time(trades);
-        if latest_trade_time.is_some() {
-            let mut runtime = self.inner.runtime.lock().await;
-            for state in runtime.promotion_states.values_mut() {
-                if state
-                    .open_positions
-                    .iter()
-                    .any(|position| position_matches_analysis(position, analysis))
-                {
-                    state.last_checked_trade_time = latest_trade_time;
-                }
-            }
-        }
-        Ok(())
-    }
-
-    async fn process_signal_entries(
-        &self,
-        analysis: &ResolvedAnalysisSettingsRecord,
-        snapshot: &crate::models::MarketSnapshot,
-        trades: &[PersistedTradeRecord],
-    ) -> Result<()> {
-        let Some(primary_rows) = snapshot.klines_by_timeframe.get(&analysis.timeframe_code) else {
-            return Ok(());
-        };
-        let pending_rows = {
-            let runtime = self.inner.runtime.lock().await;
-            let last_processed_close_time = runtime
-                .analysis_states
-                .get(&analysis_runtime_key(analysis))
-                .and_then(|state| state.last_processed_kline_close_time)
-                .unwrap_or(i64::MIN);
-            snapshot
-                .klines_by_timeframe
-                .values()
-                .flat_map(|rows| rows.iter())
-                .filter(|row| {
-                    row.closed
-                        && row.close_time > last_processed_close_time
-                        && (row.timeframe_code == analysis.timeframe_code
-                            || row.close_time
-                                <= primary_rows
-                                    .last()
-                                    .map(|latest| latest.close_time)
-                                    .unwrap_or(i64::MIN))
-                })
-                .filter(|row| {
-                    snapshot
-                        .klines_by_timeframe
-                        .contains_key(&row.timeframe_code)
-                })
-                .cloned()
-                .collect::<Vec<_>>()
-        };
-
-        let mut pending_rows = pending_rows;
-        pending_rows.sort_by(|left, right| {
-            left.close_time.cmp(&right.close_time).then_with(|| {
-                usize::from(left.timeframe_code == analysis.timeframe_code).cmp(&usize::from(
-                    right.timeframe_code == analysis.timeframe_code,
-                ))
-            })
-        });
-
-        for row in pending_rows {
-            let signal = {
-                let mut runtime = self.inner.runtime.lock().await;
-                let Some(state) = runtime
-                    .analysis_states
-                    .get_mut(&analysis_runtime_key(analysis))
-                else {
-                    continue;
-                };
-                let Some(evaluator) = state.evaluator.as_mut() else {
-                    continue;
-                };
-                evaluator.process_live_kline(&synthetic_live_kline(&row, analysis))
-            };
-
-            if let Some(signal) = signal {
-                self.handle_signal_for_analysis(analysis, &signal, trades)
-                    .await?;
-            }
-
-            if row.timeframe_code == analysis.timeframe_code {
-                let mut runtime = self.inner.runtime.lock().await;
-                if let Some(state) = runtime
-                    .analysis_states
-                    .get_mut(&analysis_runtime_key(analysis))
-                {
-                    state.last_processed_kline_close_time = Some(row.close_time);
-                }
-            }
-        }
-
-        Ok(())
-    }
-
-    async fn handle_signal_for_analysis(
-        &self,
-        analysis: &ResolvedAnalysisSettingsRecord,
-        signal: &EmittedSignal,
-        trades: &[PersistedTradeRecord],
-    ) -> Result<()> {
-        let fill = first_trade_fill_after(trades, signal.close_time).unwrap_or(signal.close_price);
-
-        self.handle_signal_with_fill_for_analysis(analysis, signal, fill)
-            .await
     }
 
     async fn handle_signal_with_fill_for_analysis(
@@ -1088,10 +837,6 @@ impl ExecutionService {
         }
 
         for position in existing {
-            if position.side == signal.signal_direction {
-                return Ok(());
-            }
-
             let closing_trade = PersistedTradeRecord {
                 symbol: context.promotion.symbol_code.clone(),
                 aggregate_trade_id: 0,
@@ -1439,38 +1184,6 @@ impl ExecutionService {
     }
 }
 
-fn synthetic_live_kline(
-    row: &PersistedKlineRecord,
-    analysis: &ResolvedAnalysisSettingsRecord,
-) -> MarketDataKlineEvent {
-    MarketDataKlineEvent {
-        event_id: format!("persisted:{}:{}", analysis.id, row.close_time),
-        event_type: "trading-bot.market-data.kline.v1".to_string(),
-        source: "trading-bot-execution".to_string(),
-        occurred_at: row.occurred_at.clone(),
-        exchange: "binance".to_string(),
-        ingestion_mode: "live".to_string(),
-        stream_name: format!("{}:{}", row.symbol, row.timeframe_code),
-        pair_code: analysis.symbol.clone(),
-        symbol: row.symbol.clone(),
-        timeframe_code: row.timeframe_code.clone(),
-        period_ms: row.period_ms,
-        open_time: row.open_time,
-        close_time: row.close_time,
-        event_time: row.event_time,
-        closed: row.closed,
-        open: row.open.clone(),
-        high: row.high.clone(),
-        low: row.low.clone(),
-        close: row.close.clone(),
-        volume: row.volume.clone(),
-        quote_volume: row.quote_volume.clone(),
-        trade_count: row.trade_count,
-        analysis_setting_ids: vec![analysis.id.clone()],
-        strategy_names: vec![analysis.strategy_name.clone()],
-    }
-}
-
 fn to_strategy_kline_record(row: &PersistedKlineRecord) -> StrategyPersistedKlineRecord {
     StrategyPersistedKlineRecord {
         pair_code: row.symbol.clone(),
@@ -1516,17 +1229,6 @@ fn build_market_snapshot(
             .cloned()
             .unwrap_or_default(),
     }
-}
-
-fn first_trade_fill_after(trades: &[PersistedTradeRecord], close_time: i64) -> Option<f64> {
-    trades
-        .iter()
-        .filter(|trade| trade.trade_time >= close_time)
-        .find_map(|trade| trade.price.parse::<f64>().ok())
-}
-
-fn trades_max_time(trades: &[PersistedTradeRecord]) -> Option<i64> {
-    trades.iter().map(|trade| trade.trade_time).max()
 }
 
 fn current_timestamp() -> String {

@@ -1,7 +1,7 @@
 import { MaterialIcons } from "@expo/vector-icons";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { Modal, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { Modal, Platform, Pressable, ScrollView, Text, TextInput, View, useWindowDimensions } from "react-native";
 
 import { AppShell } from "@/src/components/app-shell";
 import { Card } from "@/src/components/card";
@@ -34,6 +34,28 @@ const formatTimestamp = (value: string | null | undefined): string => {
   return new Date(value).toLocaleString().replace(",", "");
 };
 
+const formatCompactTimestamp = (value: string | null | undefined): string => {
+  if (!value) {
+    return "n/a";
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return "n/a";
+  }
+
+  return parsed
+    .toLocaleString([], {
+      year: "2-digit",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    })
+    .replace(",", "");
+};
+
 const sortOptions = {
   openedAt: "Opened",
   closedAt: "Closed",
@@ -45,6 +67,71 @@ const sortOptions = {
 type SortKey = keyof typeof sortOptions;
 type ExecutionMode = "paper" | "live";
 type ExecutionSection = "trades" | "promotion";
+type TradesTableLayout = {
+  statusFlex: number;
+  contextFlex: number;
+  entryFlex: number;
+  riskFlex: number;
+  exitFlex: number;
+  strategyFlex: number;
+  statusMin: number;
+  contextMin: number;
+  entryMin: number;
+  riskMin: number;
+  exitMin: number;
+  strategyMin: number;
+};
+
+const getTradesTableLayout = (width: number): TradesTableLayout => {
+  if (width >= 1600) {
+    return {
+      statusFlex: 0.55,
+      contextFlex: 0.9,
+      entryFlex: 3.05,
+      riskFlex: 1.35,
+      exitFlex: 3.45,
+      strategyFlex: 0.68,
+      statusMin: 92,
+      contextMin: 145,
+      entryMin: 320,
+      riskMin: 190,
+      exitMin: 360,
+      strategyMin: 118,
+    };
+  }
+
+  if (width >= 1280) {
+    return {
+      statusFlex: 0.6,
+      contextFlex: 0.95,
+      entryFlex: 2.95,
+      riskFlex: 1.35,
+      exitFlex: 3.28,
+      strategyFlex: 0.72,
+      statusMin: 88,
+      contextMin: 140,
+      entryMin: 300,
+      riskMin: 180,
+      exitMin: 330,
+      strategyMin: 112,
+    };
+  }
+
+  return {
+    statusFlex: 0.7,
+    contextFlex: 1.0,
+    entryFlex: 2.7,
+    riskFlex: 1.45,
+    exitFlex: 2.98,
+    strategyFlex: 0.86,
+    statusMin: 84,
+    contextMin: 132,
+    entryMin: 270,
+    riskMin: 165,
+    exitMin: 290,
+    strategyMin: 108,
+  };
+};
 
 const formatDuration = (durationMs: number): string => {
   const safeDurationMs = Math.max(0, durationMs);
@@ -107,6 +194,7 @@ export function ExecutionScreenContent({
 }: {
   fixedMode?: ExecutionMode;
 }) {
+  const { width: viewportWidth } = useWindowDimensions();
   const queryClient = useQueryClient();
   const [tabMode, setTabMode] = useState<ExecutionMode>("paper");
   const [section, setSection] = useState<ExecutionSection>("trades");
@@ -126,6 +214,19 @@ export function ExecutionScreenContent({
   const [selectedAnalysisSettingId, setSelectedAnalysisSettingId] = useState<string | null>(null);
   const [selectedRiskProfileName, setSelectedRiskProfileName] = useState<string | null>(null);
   const currentMode = fixedMode ?? tabMode;
+  const tableLayout = useMemo(() => getTradesTableLayout(viewportWidth), [viewportWidth]);
+  const tableMinContentWidth = useMemo(
+    () =>
+      tableLayout.statusMin +
+      tableLayout.contextMin +
+      tableLayout.entryMin +
+      tableLayout.riskMin +
+      tableLayout.exitMin +
+      tableLayout.strategyMin +
+      120,
+    [tableLayout],
+  );
+  const tableWidth = Math.max(viewportWidth - 96, tableMinContentWidth);
 
   useEffect(
     () =>
@@ -569,80 +670,64 @@ export function ExecutionScreenContent({
           </Card>
         ) : (
           <Card>
-          <View
-            style={{
-              flexDirection: "row",
-              justifyContent: "space-between",
-              alignItems: "center",
-              gap: 12,
-              flexWrap: "wrap",
-              marginBottom: 14,
-            }}
-          >
-            {fixedMode ? <View /> : (
-              <View style={{ flexDirection: "row", gap: 10 }}>
-                <ExecutionModeTab
-                  label="Paper"
-                  active={currentMode === "paper"}
-                  onPress={() => {
-                    setTabMode("paper");
-                    setPage(1);
-                  }}
-                />
-                <ExecutionModeTab
-                  label="Live"
-                  active={currentMode === "live"}
-                  onPress={() => {
-                    setTabMode("live");
-                    setPage(1);
-                  }}
+            <View
+              style={{
+                flexDirection: "row",
+                justifyContent: "space-between",
+                alignItems: "center",
+                gap: 12,
+                flexWrap: "wrap",
+                marginBottom: 14,
+              }}
+            >
+              <View style={{ flexDirection: "row", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+                <InlineStat
+                  label="Realized PnL"
+                  value={formatMoney(summaryStats.realizedPnlUsd)}
+                  valueColor={
+                    summaryStats.realizedPnlUsd > 0
+                      ? "#157f3b"
+                      : summaryStats.realizedPnlUsd < 0
+                        ? "#b42318"
+                        : "#101828"
+                  }
                 />
               </View>
-            )}
-            <View style={{ flexDirection: "row", gap: 16, flexWrap: "wrap", alignItems: "center" }}>
-              <InlineStat
-                label="Open trades"
-                value={summaryStats.openTradeCount.toLocaleString()}
-                icon="lock-open"
-                valueColor="#b54708"
-              />
-              <InlineStat
-                label="Closed trades"
-                value={summaryStats.closedTradeCount.toLocaleString()}
-                icon="lock"
-                valueColor="#344054"
-              />
-              <InlineStat
-                label="Realized PnL"
-                value={formatMoney(summaryStats.realizedPnlUsd)}
-                valueColor={
-                  summaryStats.realizedPnlUsd > 0
-                    ? "#157f3b"
-                    : summaryStats.realizedPnlUsd < 0
-                      ? "#b42318"
-                      : "#101828"
-                }
-              />
             </View>
-          </View>
-          <View
-            style={{
-              flexDirection: "row",
-              justifyContent: "space-between",
-              alignItems: "center",
-              gap: 12,
-              flexWrap: "wrap",
-            }}
-          >
-            <View style={{ gap: 4 }}>
-              <Text style={{ fontSize: 20, fontWeight: "700", color: "#101828" }}>
-                {currentMode === "paper" ? "Paper trades" : "Live trades"}
-              </Text>
-            </View>
-          </View>
 
-          <View style={{ gap: 10, marginTop: 10 }}>
-            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
+          <View style={{ gap: 10, marginTop: 10, position: "relative", zIndex: 30 }}>
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10, zIndex: 30 }}>
+              {!fixedMode ? (
+                <View
+                  style={{
+                    minWidth: 220,
+                    flexDirection: "row",
+                    minHeight: 44,
+                    borderRadius: 10,
+                    borderWidth: 1,
+                    borderColor: "#d0d5dd",
+                    backgroundColor: "#ffffff",
+                    padding: 4,
+                  }}
+                >
+                  <ExecutionModeTab
+                    label="Paper"
+                    active={currentMode === "paper"}
+                    onPress={() => {
+                      setTabMode("paper");
+                      setPage(1);
+                    }}
+                  />
+                  <ExecutionModeTab
+                    label="Live"
+                    active={currentMode === "live"}
+                    onPress={() => {
+                      setTabMode("live");
+                      setPage(1);
+                    }}
+                  />
+                </View>
+              ) : null}
               <SingleSelectFilter
                 label="Symbol"
                 value={symbolCode}
@@ -680,19 +765,13 @@ export function ExecutionScreenContent({
                   setPage(1);
                 }}
               />
-              <DateTimeFilter
-                label="Opened from"
-                value={openedFrom}
-                onChange={(value) => {
-                  setOpenedFrom(value);
-                  setPage(1);
-                }}
-              />
-              <DateTimeFilter
-                label="Opened to"
-                value={openedTo}
-                onChange={(value) => {
-                  setOpenedTo(value);
+              <DateTimeRangeFilter
+                label="Opened range"
+                fromValue={openedFrom}
+                toValue={openedTo}
+                onChange={(nextFrom, nextTo) => {
+                  setOpenedFrom(nextFrom);
+                  setOpenedTo(nextTo);
                   setPage(1);
                 }}
               />
@@ -701,6 +780,16 @@ export function ExecutionScreenContent({
                 value={status}
                 options={["open", "closed", "cancelled", "rejected"]}
                 allLabel="All statuses"
+                hideOptionText
+                hideSelectedSummaryText
+                renderOptionAdornment={(option) => (
+                  option === "open" ||
+                  option === "closed" ||
+                  option === "cancelled" ||
+                  option === "rejected" ? (
+                    <StatusBadge status={option} />
+                  ) : null
+                )}
                 onChange={(value) => {
                   setStatus(value as typeof status);
                   setPage(1);
@@ -711,6 +800,13 @@ export function ExecutionScreenContent({
                 value={side}
                 options={["long", "short"]}
                 allLabel="All sides"
+                hideOptionText
+                hideSelectedSummaryText
+                renderOptionAdornment={(option) => (
+                  option === "long" || option === "short" ? (
+                    <SideBadge side={option} />
+                  ) : null
+                )}
                 onChange={(value) => {
                   setSide(value as typeof side);
                   setPage(1);
@@ -719,11 +815,17 @@ export function ExecutionScreenContent({
             </View>
           </View>
 
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ minWidth: "100%" }}>
-            <View style={{ width: "100%", minWidth: "100%", gap: 0, marginTop: 16 }}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={{ zIndex: 1, marginTop: 16 }}
+            contentContainerStyle={{ minWidth: "100%" }}
+          >
+            <View style={{ width: tableWidth, minWidth: tableWidth, gap: 0 }}>
               <ExecutionTableHeader
                 sortBy={sortBy}
                 sortDirection={sortDirection}
+                viewportWidth={viewportWidth}
                 onSort={(nextSortBy) => {
                   setPage(1);
                   if (sortBy === nextSortBy) {
@@ -747,6 +849,7 @@ export function ExecutionScreenContent({
                     symbolDestinationAssets.get(trade.symbolCode) ??
                     deriveAssetsFromSymbolCode(trade.symbolCode)?.destinationAsset
                   }
+                  viewportWidth={viewportWidth}
                   onOpenPromotionDetails={setSelectedPromotionId}
                 />
               ))}
@@ -758,8 +861,6 @@ export function ExecutionScreenContent({
                     borderWidth: 1,
                     borderTopWidth: 0,
                     borderColor: "#eaecf0",
-                    borderBottomLeftRadius: 18,
-                    borderBottomRightRadius: 18,
                     backgroundColor: "#fcfcfd",
                   }}
                 >
@@ -769,35 +870,41 @@ export function ExecutionScreenContent({
                   </Text>
                 </View>
               ) : null}
+              <View
+                style={{
+                  flexDirection: "row",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  flexWrap: "wrap",
+                  gap: 12,
+                  borderWidth: 1,
+                  borderTopWidth: 0,
+                  borderColor: "#eaecf0",
+                  borderBottomLeftRadius: 18,
+                  borderBottomRightRadius: 18,
+                  backgroundColor: "#f8fafc",
+                  paddingHorizontal: 14,
+                  paddingVertical: 12,
+                }}
+              >
+                <Text style={{ color: "#475467" }}>
+                  Page {page} of {totalPages} · {totalCount.toLocaleString()} trades
+                </Text>
+                <View style={{ flexDirection: "row", gap: 10 }}>
+                  <PaginationButton
+                    label="Previous"
+                    disabled={page <= 1}
+                    onPress={() => setPage((current) => Math.max(1, current - 1))}
+                  />
+                  <PaginationButton
+                    label="Next"
+                    disabled={page >= totalPages}
+                    onPress={() => setPage((current) => Math.min(totalPages, current + 1))}
+                  />
+                </View>
+              </View>
             </View>
           </ScrollView>
-
-          <View
-            style={{
-              flexDirection: "row",
-              justifyContent: "space-between",
-              alignItems: "center",
-              flexWrap: "wrap",
-              gap: 12,
-              marginTop: 14,
-            }}
-          >
-            <Text style={{ color: "#475467" }}>
-              Page {page} of {totalPages} · {totalCount.toLocaleString()} trades
-            </Text>
-            <View style={{ flexDirection: "row", gap: 10 }}>
-              <PaginationButton
-                label="Previous"
-                disabled={page <= 1}
-                onPress={() => setPage((current) => Math.max(1, current - 1))}
-              />
-              <PaginationButton
-                label="Next"
-                disabled={page >= totalPages}
-                onPress={() => setPage((current) => Math.min(totalPages, current + 1))}
-              />
-            </View>
-          </View>
           </Card>
         )}
         </View>
@@ -1124,6 +1231,8 @@ function SingleSelectFilter({
   options,
   allLabel,
   renderOptionAdornment,
+  hideOptionText,
+  hideSelectedSummaryText,
   onChange,
 }: {
   label: string;
@@ -1131,6 +1240,8 @@ function SingleSelectFilter({
   options: string[];
   allLabel: string;
   renderOptionAdornment?: (option: string) => ReactNode;
+  hideOptionText?: boolean;
+  hideSelectedSummaryText?: boolean;
   onChange: (value: string) => void;
 }) {
   return (
@@ -1140,6 +1251,8 @@ function SingleSelectFilter({
       options={options}
       allLabel={allLabel}
       renderOptionAdornment={renderOptionAdornment}
+      hideOptionText={hideOptionText}
+      hideSelectedSummaryText={hideSelectedSummaryText}
       onChange={(values) => onChange(values.at(-1) ?? "")}
     />
   );
@@ -1175,19 +1288,22 @@ function PaginationButton({
 function ExecutionTableHeader({
   sortBy,
   sortDirection,
+  viewportWidth,
   onSort,
 }: {
   sortBy: SortKey;
   sortDirection: "asc" | "desc";
+  viewportWidth: number;
   onSort: (sortBy: SortKey) => void;
 }) {
+  const layout = getTradesTableLayout(viewportWidth);
   const columns: Array<{ label: string; flex: number; sortKey?: SortKey }> = [
-    { label: "Status", flex: 0.9 },
-    { label: "Context", flex: 1.8, sortKey: "symbolCode" },
-    { label: "Entry", flex: 2, sortKey: "openedAt" },
-    { label: "Risk info", flex: 1.8 },
-    { label: "Exit", flex: 2.1, sortKey: "closedAt" },
-    { label: "Promoted strategy", flex: 1.3 },
+    { label: "Status", flex: layout.statusFlex },
+    { label: "Context", flex: layout.contextFlex, sortKey: "symbolCode" },
+    { label: "Entry", flex: layout.entryFlex, sortKey: "openedAt" },
+    { label: "Risk info", flex: layout.riskFlex },
+    { label: "Exit", flex: layout.exitFlex, sortKey: "closedAt" },
+    { label: "Promoted strategy", flex: layout.strategyFlex },
   ];
 
   return (
@@ -1211,7 +1327,7 @@ function ExecutionTableHeader({
           onPress={() => column.sortKey && onSort(column.sortKey)}
           style={{
             flex: column.flex,
-            paddingRight: 12,
+            paddingRight: 8,
             flexDirection: "row",
             alignItems: "center",
             gap: 6,
@@ -1251,14 +1367,20 @@ function ExecutionTableRow({
   promotionId,
   baseAsset,
   destinationAsset,
+  viewportWidth,
   onOpenPromotionDetails,
 }: {
   trade: Awaited<ReturnType<typeof getExecutionTrades>>["items"][number];
   promotionId: string | null;
   baseAsset?: string | null;
   destinationAsset?: string | null;
+  viewportWidth: number;
   onOpenPromotionDetails: (promotionId: string) => void;
 }) {
+  const layout = getTradesTableLayout(viewportWidth);
+  const dense = viewportWidth >= 1280;
+  const compact = viewportWidth <= 1120;
+
   return (
     <View
       style={{
@@ -1268,12 +1390,13 @@ function ExecutionTableRow({
         borderTopWidth: 0,
         borderColor: "#eaecf0",
         paddingHorizontal: 14,
-        paddingVertical: 14,
+        paddingVertical: dense ? 10 : 12,
         backgroundColor: "#ffffff",
       }}
     >
       <Cell
-        flex={0.9}
+        flex={layout.statusFlex}
+        minWidth={layout.statusMin}
         title={
           <View style={{ alignSelf: "flex-start" }}>
             <StatusBadge status={trade.status} />
@@ -1281,7 +1404,7 @@ function ExecutionTableRow({
         }
         subtitle=""
       />
-      <View style={{ flex: 1.8, paddingRight: 12, gap: 4 }}>
+      <View style={{ flex: layout.contextFlex, minWidth: layout.contextMin, paddingRight: 4, gap: 4 }}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
           <SymbolAvatar
             baseAsset={baseAsset}
@@ -1292,25 +1415,35 @@ function ExecutionTableRow({
             {trade.symbolCode}
           </Text>
         </View>
-        <Text style={{ color: "#475467" }}>
+        <Text numberOfLines={1} style={{ color: "#475467" }}>
           {trade.timeframeCode} · {trade.strategyName}
         </Text>
       </View>
+      <View
+        style={{
+          flex: layout.entryFlex,
+          minWidth: layout.entryMin,
+          paddingRight: 8,
+          gap: 4,
+        }}
+      >
+        <View
+          style={{
+            flexDirection: "row",
+            gap: 6,
+            flexWrap: "wrap",
+            alignItems: "center",
+          }}
+        >
+          <TimeBadge value={trade.openedAt} />
+          <InfoBadge label={formatPrice(trade.entryPrice)} />
+          <SideBadge side={trade.side} />
+          <InfoBadge label={`Qty ${trade.quantity.toFixed(4)} / ${formatMoney(trade.notionalUsd)}`} />
+        </View>
+      </View>
       <Cell
-        flex={2}
-        title={<TimeBadge value={trade.openedAt} />}
-        subtitle={
-          <View style={{ gap: 6 }}>
-            <InfoBadge label={formatPrice(trade.entryPrice)} />
-            <View style={{ alignSelf: "flex-start" }}>
-              <SideBadge side={trade.side} />
-            </View>
-            <InfoBadge label={`Qty ${trade.quantity.toFixed(4)} / ${formatMoney(trade.notionalUsd)}`} />
-          </View>
-        }
-      />
-      <Cell
-        flex={1.8}
+        flex={layout.riskFlex}
+        minWidth={layout.riskMin}
         title={
           <View style={{ flexDirection: "row", gap: 6, flexWrap: "wrap" }}>
             <RiskPriceBadge kind="SL" value={trade.stopLossPrice} tone="danger" />
@@ -1321,9 +1454,16 @@ function ExecutionTableRow({
           ""
         }
       />
-      <View style={{ flex: 2.1, paddingRight: 12, gap: 4 }}>
-        <TimeBadge value={trade.closedAt} />
-        <View style={{ flexDirection: "row", gap: 6, flexWrap: "wrap" }}>
+      <View style={{ flex: layout.exitFlex, minWidth: layout.exitMin, paddingRight: 10, gap: 4 }}>
+        <View
+          style={{
+            flexDirection: "row",
+            gap: 6,
+            flexWrap: "wrap",
+            alignItems: "center",
+          }}
+        >
+          <TimeBadge value={trade.closedAt} />
           <InfoBadge
             label={trade.exitPrice === null ? "Exit n/a" : formatPrice(trade.exitPrice)}
           />
@@ -1335,7 +1475,7 @@ function ExecutionTableRow({
           <InfoBadge label={`${formatMoney(trade.realizedPnlUsd)} · fees ${formatMoney(trade.feesUsd)}`} />
         </View>
       </View>
-      <View style={{ flex: 1.3, paddingRight: 12, gap: 6 }}>
+      <View style={{ flex: layout.strategyFlex, minWidth: layout.strategyMin, paddingRight: compact ? 0 : 8, gap: 6 }}>
         <ActionLink
           label="Open details"
           disabled={!promotionId}
@@ -1348,15 +1488,17 @@ function ExecutionTableRow({
 
 function Cell({
   flex,
+  minWidth,
   title,
   subtitle,
 }: {
   flex: number;
+  minWidth?: number;
   title: ReactNode;
   subtitle: ReactNode;
 }) {
   return (
-    <View style={{ flex, paddingRight: 12, gap: 4 }}>
+    <View style={{ flex, minWidth, paddingRight: 8, gap: 4 }}>
       {typeof title === "string" ? (
         <Text numberOfLines={2} style={{ color: "#101828", fontWeight: "700" }}>
           {title}
@@ -1386,6 +1528,7 @@ function SideBadge({ side }: { side: "long" | "short" }) {
     />
   );
 }
+
 
 function RiskPriceBadge({
   kind,
@@ -1440,8 +1583,8 @@ function StatusBadge({
       <Badge
         icon="lock"
         label="cancelled"
-        backgroundColor="#fffaeb"
-        foregroundColor="#b54708"
+        backgroundColor="#fef3c7"
+        foregroundColor="#a16207"
       />
     );
   }
@@ -1645,7 +1788,7 @@ function Badge({
       }}
     >
       <MaterialIcons name={icon} size={12} color={foregroundColor} />
-      <Text style={{ color: foregroundColor, fontSize: 12, fontWeight: "700" }}>
+      <Text numberOfLines={1} style={{ color: foregroundColor, fontSize: 12, fontWeight: "700", maxWidth: 260 }}>
         {label}
       </Text>
     </View>
@@ -1656,7 +1799,7 @@ function TimeBadge({ value }: { value: string | null | undefined }) {
   return (
     <Badge
       icon="schedule"
-      label={formatTimestamp(value)}
+      label={formatCompactTimestamp(value)}
       backgroundColor="#eff8ff"
       foregroundColor="#175cd3"
     />
@@ -1730,148 +1873,212 @@ function toIsoDateTime(value: string): string | undefined {
   return parsed.toISOString();
 }
 
-function DateTimeFilter({
+function DateTimeRangeFilter({
   label,
-  value,
+  fromValue,
+  toValue,
   onChange,
 }: {
   label: string;
-  value: string;
-  onChange: (value: string) => void;
+  fromValue: string;
+  toValue: string;
+  onChange: (fromValue: string, toValue: string) => void;
 }) {
-  const dateValue = value.includes("T") ? value.split("T")[0] ?? "" : "";
-  const timeValue = value.includes("T") ? value.split("T")[1] ?? "" : "";
+  const [open, setOpen] = useState(false);
+  const [draftFrom, setDraftFrom] = useState(fromValue);
+  const [draftTo, setDraftTo] = useState(toValue);
 
-  const updateDatePart = (nextDate: string) => {
-    if (!nextDate) {
-      onChange("");
-      return;
-    }
+  const summary = fromValue || toValue ? `${fromValue || "Any"} -> ${toValue || "Any"}` : "Any time";
 
-    onChange(`${nextDate}T${timeValue || "00:00"}`);
-  };
-
-  const updateTimePart = (nextTime: string) => {
-    if (!nextTime) {
-      if (!dateValue) {
-        onChange("");
-        return;
+  const openPanel = () => {
+    setOpen((current) => {
+      const next = !current;
+      if (next) {
+        setDraftFrom(fromValue);
+        setDraftTo(toValue);
       }
-
-      onChange(`${dateValue}T00:00`);
-      return;
-    }
-
-    onChange(`${dateValue || new Date().toISOString().slice(0, 10)}T${nextTime}`);
+      return next;
+    });
   };
 
-  if (Platform.OS === "web") {
-    return (
-      <View
+  return (
+    <View style={{ minWidth: 240, position: "relative", zIndex: open ? 40 : 1 }}>
+      <Pressable
+        onPress={openPanel}
         style={{
-          minWidth: 280,
           borderRadius: 10,
           borderWidth: 1,
           borderColor: "#cbd5e1",
           backgroundColor: "#ffffff",
           paddingHorizontal: 12,
           paddingVertical: 10,
-          gap: 8,
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 10,
         }}
       >
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-          <MaterialIcons name="event" size={18} color="#344054" />
+        <View style={{ gap: 2, flex: 1 }}>
           <Text style={{ fontSize: 12, fontWeight: "700", color: "#475467" }}>{label}</Text>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+            <MaterialIcons name="event" size={18} color="#344054" />
+            <Text numberOfLines={1} style={{ color: "#101828", fontWeight: "600", flex: 1 }}>
+              {summary}
+            </Text>
+          </View>
         </View>
-        <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>
-          <input
-            type="date"
-            value={dateValue}
-            onChange={(event) => updateDatePart(event.target.value)}
-            style={{
-              flex: 1,
-              minWidth: 0,
-              borderRadius: 8,
-              border: "1px solid #d0d5dd",
-              backgroundColor: "#f8fafc",
-              color: "#101828",
-              padding: "10px 12px",
-              fontSize: "14px",
-              fontWeight: 600,
-              fontFamily: "inherit",
+        {fromValue || toValue ? (
+          <Pressable
+            onPress={(event) => {
+              event.stopPropagation();
+              onChange("", "");
             }}
-          />
-          <input
-            type="time"
-            value={timeValue}
-            onChange={(event) => updateTimePart(event.target.value)}
             style={{
-              width: 124,
-              borderRadius: 8,
-              border: "1px solid #d0d5dd",
-              backgroundColor: "#f8fafc",
-              color: "#101828",
-              padding: "10px 12px",
-              fontSize: "14px",
-              fontWeight: 600,
-              fontFamily: "inherit",
+              borderRadius: 999,
+              padding: 4,
             }}
-          />
-          {value ? (
+          >
+            <MaterialIcons name="close" size={16} color="#667085" />
+          </Pressable>
+        ) : (
+          <MaterialIcons name="arrow-drop-down" size={20} color="#344054" />
+        )}
+      </Pressable>
+
+      {open ? (
+        <View
+          style={{
+            position: "absolute",
+            top: 58,
+            left: 0,
+            width: Platform.OS === "web" ? 520 : undefined,
+            minWidth: 320,
+            maxWidth: 520,
+            borderRadius: 12,
+            borderWidth: 1,
+            borderColor: "#d0d5dd",
+            backgroundColor: "#ffffff",
+            padding: 12,
+            gap: 10,
+            zIndex: 50,
+            shadowColor: "#101828",
+            shadowOffset: { width: 0, height: 10 },
+            shadowOpacity: 0.12,
+            shadowRadius: 16,
+            elevation: 10,
+          }}
+        >
+          {Platform.OS === "web" ? (
+            <View style={{ flexDirection: "row", gap: 10, flexWrap: "wrap" }}>
+              <View style={{ flex: 1, minWidth: 220, gap: 6 }}>
+                <Text style={{ fontSize: 12, color: "#475467", fontWeight: "700" }}>From</Text>
+                <input
+                  type="datetime-local"
+                  value={draftFrom}
+                  onChange={(event) => setDraftFrom(event.target.value)}
+                  style={{
+                    borderRadius: 10,
+                    border: "1px solid #d0d5dd",
+                    backgroundColor: "#f8fafc",
+                    color: "#101828",
+                    padding: "10px 12px",
+                    fontSize: "14px",
+                    fontWeight: 600,
+                    fontFamily: "inherit",
+                  }}
+                />
+              </View>
+              <View style={{ flex: 1, minWidth: 220, gap: 6 }}>
+                <Text style={{ fontSize: 12, color: "#475467", fontWeight: "700" }}>To</Text>
+                <input
+                  type="datetime-local"
+                  value={draftTo}
+                  onChange={(event) => setDraftTo(event.target.value)}
+                  style={{
+                    borderRadius: 10,
+                    border: "1px solid #d0d5dd",
+                    backgroundColor: "#f8fafc",
+                    color: "#101828",
+                    padding: "10px 12px",
+                    fontSize: "14px",
+                    fontWeight: 600,
+                    fontFamily: "inherit",
+                  }}
+                />
+              </View>
+            </View>
+          ) : (
+            <View style={{ gap: 10 }}>
+              <TextInput
+                value={draftFrom}
+                onChangeText={setDraftFrom}
+                placeholder="From (YYYY-MM-DDTHH:mm)"
+                placeholderTextColor="#98a2b3"
+                style={{
+                  borderRadius: 10,
+                  borderWidth: 1,
+                  borderColor: "#d0d5dd",
+                  backgroundColor: "#f8fafc",
+                  paddingHorizontal: 12,
+                  paddingVertical: 10,
+                  color: "#101828",
+                  fontWeight: "600",
+                }}
+              />
+              <TextInput
+                value={draftTo}
+                onChangeText={setDraftTo}
+                placeholder="To (YYYY-MM-DDTHH:mm)"
+                placeholderTextColor="#98a2b3"
+                style={{
+                  borderRadius: 10,
+                  borderWidth: 1,
+                  borderColor: "#d0d5dd",
+                  backgroundColor: "#f8fafc",
+                  paddingHorizontal: 12,
+                  paddingVertical: 10,
+                  color: "#101828",
+                  fontWeight: "600",
+                }}
+              />
+            </View>
+          )}
+
+          <View style={{ flexDirection: "row", justifyContent: "flex-end", gap: 10 }}>
             <Pressable
-              onPress={() => onChange("")}
+              onPress={() => {
+                setDraftFrom("");
+                setDraftTo("");
+                onChange("", "");
+                setOpen(false);
+              }}
               style={{
-                borderRadius: 8,
+                borderRadius: 10,
                 borderWidth: 1,
                 borderColor: "#d0d5dd",
-                backgroundColor: "#ffffff",
-                paddingHorizontal: 10,
+                paddingHorizontal: 12,
                 paddingVertical: 10,
               }}
             >
-              <MaterialIcons name="close" size={16} color="#475467" />
+              <Text style={{ color: "#344054", fontWeight: "700" }}>Clear</Text>
             </Pressable>
-          ) : null}
+            <Pressable
+              onPress={() => {
+                onChange(draftFrom.trim(), draftTo.trim());
+                setOpen(false);
+              }}
+              style={{
+                borderRadius: 10,
+                backgroundColor: "#1f3a5f",
+                paddingHorizontal: 12,
+                paddingVertical: 10,
+              }}
+            >
+              <Text style={{ color: "#ffffff", fontWeight: "700" }}>Apply</Text>
+            </Pressable>
+          </View>
         </View>
-      </View>
-    );
-  }
-
-  return (
-    <View
-      style={{
-        minWidth: 220,
-        borderRadius: 10,
-        borderWidth: 1,
-        borderColor: "#cbd5e1",
-        backgroundColor: "#ffffff",
-        paddingHorizontal: 12,
-        paddingVertical: 10,
-        justifyContent: "center",
-      }}
-    >
-      <View style={{ gap: 2 }}>
-        <Text style={{ fontSize: 12, fontWeight: "700", color: "#475467" }}>{label}</Text>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-          <MaterialIcons name="event" size={18} color="#344054" />
-          <TextInput
-            value={value}
-            onChangeText={onChange}
-            placeholder="YYYY-MM-DDTHH:mm"
-            placeholderTextColor="#98a2b3"
-            style={{
-              flex: 1,
-              minWidth: 0,
-              paddingVertical: 0,
-              paddingHorizontal: 0,
-              color: "#101828",
-              fontWeight: "600",
-              backgroundColor: "transparent",
-              outlineStyle: "none" as never,
-            }}
-          />
-        </View>
-      </View>
+      ) : null}
     </View>
   );
 }
@@ -1924,12 +2131,15 @@ function ExecutionModeTab({
     <Pressable
       onPress={onPress}
       style={{
-        borderRadius: 10,
-        paddingHorizontal: 14,
-        paddingVertical: 10,
-        backgroundColor: active ? "#1f3a5f" : "#ffffff",
-        borderWidth: 1,
-        borderColor: active ? "#1f3a5f" : "#d0d5dd",
+        flex: 1,
+        borderRadius: 8,
+        paddingHorizontal: 12,
+        paddingVertical: 12,
+        backgroundColor: active ? "#1f3a5f" : "transparent",
+        borderWidth: active ? 1 : 0,
+        borderColor: "#1f3a5f",
+        alignItems: "center",
+        justifyContent: "center",
       }}
     >
       <Text style={{ color: active ? "#dbeafe" : "#344054", fontWeight: "700" }}>{label}</Text>
@@ -1948,13 +2158,32 @@ function InlineStat({
   icon?: keyof typeof MaterialIcons.glyphMap;
   valueColor?: string;
 }) {
+  const badgePalette =
+    valueColor === "#157f3b"
+      ? { backgroundColor: "#ecfdf3", borderColor: "#abefc6" }
+      : valueColor === "#b42318"
+        ? { backgroundColor: "#fef3f2", borderColor: "#fecdca" }
+        : valueColor === "#b54708"
+          ? { backgroundColor: "#fffaeb", borderColor: "#fedf89" }
+          : { backgroundColor: "#f2f4f7", borderColor: "#d0d5dd" };
+
   return (
-    <View style={{ gap: 2 }}>
-      <Text style={{ fontSize: 12, color: "#475467", fontWeight: "700" }}>{label}</Text>
-      <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-        {icon ? <MaterialIcons name={icon} size={16} color={valueColor} /> : null}
-        <Text style={{ fontSize: 18, color: valueColor, fontWeight: "800" }}>{value}</Text>
-      </View>
+    <View
+      style={{
+        alignSelf: "flex-start",
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 8,
+        borderRadius: 999,
+        borderWidth: 1,
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+        ...badgePalette,
+      }}
+    >
+      {icon ? <MaterialIcons name={icon} size={16} color={valueColor} /> : null}
+      <Text style={{ fontSize: 12, color: valueColor, fontWeight: "700" }}>{label}</Text>
+      <Text style={{ fontSize: 14, color: valueColor, fontWeight: "800" }}>{value}</Text>
     </View>
   );
 }

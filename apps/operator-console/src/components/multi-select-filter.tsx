@@ -18,6 +18,8 @@ export function MultiSelectFilter({
   allLabel,
   allowEmpty = true,
   renderOptionAdornment,
+  hideOptionText = false,
+  hideSelectedSummaryText = false,
 }: {
   label: string;
   value: string[];
@@ -26,6 +28,8 @@ export function MultiSelectFilter({
   allLabel: string;
   allowEmpty?: boolean;
   renderOptionAdornment?: (option: string) => ReactNode;
+  hideOptionText?: boolean;
+  hideSelectedSummaryText?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -93,7 +97,9 @@ export function MultiSelectFilter({
           <Text style={{ fontSize: 12, fontWeight: "700", color: "#475467" }}>{label}</Text>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
             {value.length === 1 && renderOptionAdornment ? renderOptionAdornment(value[0]) : null}
-            <Text style={{ color: "#101828", fontWeight: "600" }}>{summary}</Text>
+            {!(hideSelectedSummaryText && value.length === 1) ? (
+              <Text style={{ color: "#101828", fontWeight: "600" }}>{summary}</Text>
+            ) : null}
           </View>
         </View>
         <MaterialIcons name="arrow-drop-down" size={20} color="#344054" />
@@ -187,14 +193,16 @@ export function MultiSelectFilter({
                     >
                       <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
                         {renderOptionAdornment ? renderOptionAdornment(option) : null}
-                        <Text
-                          style={{
-                            color: selected ? "#ffffff" : "#344054",
-                            fontWeight: "700",
-                          }}
-                        >
-                          {option}
-                        </Text>
+                        {!hideOptionText ? (
+                          <Text
+                            style={{
+                              color: selected ? "#ffffff" : "#344054",
+                              fontWeight: "700",
+                            }}
+                          >
+                            {option}
+                          </Text>
+                        ) : null}
                       </View>
                       {selected ? (
                         <MaterialIcons name="check" size={18} color="#ffffff" />

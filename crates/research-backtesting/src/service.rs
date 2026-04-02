@@ -199,6 +199,32 @@ struct BacktestProgressContext {
     requested_end_time: Option<i64>,
 }
 
+struct BacktestBatchProgressUpdate<'a> {
+    batch_id: &'a str,
+    symbol: &'a str,
+    timeframe_code: &'a str,
+    requested_start_time: i64,
+    requested_end_time: i64,
+    stage: &'a str,
+    progress_percent: f64,
+    total_count: usize,
+    completed_count: usize,
+    running_count: usize,
+}
+
+struct ExecuteBacktestContext {
+    historical_store: Database,
+    trade_page_rows: usize,
+    fee_bps: f64,
+    slippage_bps: f64,
+    data_retrieval_duration_ms_override: Option<i64>,
+    cached_trades: Option<Arc<Vec<HistoricalTradeRecord>>>,
+    progress_context: Option<BacktestProgressContext>,
+    kafka_producer: FutureProducer,
+    backtest_progress_events_topic: String,
+    progress_event_source: String,
+}
+
 async fn publish_batch_progress_from_context(
     kafka_producer: &FutureProducer,
     topic: &str,
@@ -577,7 +603,7 @@ impl ResearchBacktestingService {
     }
 
     pub fn metrics_text(&self) -> Result<String> {
-        self.inner.metrics.encode().map_err(Into::into)
+        self.inner.metrics.encode()
     }
 
     pub async fn status(&self) -> RuntimeStatus {
@@ -667,16 +693,22 @@ impl ResearchBacktestingService {
         let completed = execute_backtest(
             &self.inner.config.service_name,
             resolved,
-            self.inner.historical_store.clone(),
-            self.inner.config.backtest_trade_replay_page_rows,
-            self.inner.config.default_fee_bps,
-            self.inner.config.default_slippage_bps,
-            None,
-            None,
-            progress_context.clone(),
-            self.inner.kafka_producer.clone(),
-            self.inner.config.backtest_progress_events_topic.clone(),
-            self.inner.config.service_name.clone(),
+            ExecuteBacktestContext {
+                historical_store: self.inner.historical_store.clone(),
+                trade_page_rows: self.inner.config.backtest_trade_replay_page_rows,
+                fee_bps: self.inner.config.default_fee_bps,
+                slippage_bps: self.inner.config.default_slippage_bps,
+                data_retrieval_duration_ms_override: None,
+                cached_trades: None,
+                progress_context: progress_context.clone(),
+                kafka_producer: self.inner.kafka_producer.clone(),
+                backtest_progress_events_topic: self
+                    .inner
+                    .config
+                    .backtest_progress_events_topic
+                    .clone(),
+                progress_event_source: self.inner.config.service_name.clone(),
+            },
         )
         .await?;
         let persisted_run = persisted_backtest_run(&completed.response)?;
@@ -854,18 +886,18 @@ impl ResearchBacktestingService {
             } else {
                 (((completed_count as f64) + normalized_progress) / total_count as f64) * 100.0
             };
-            self.publish_backtest_batch_progress_event(
+            self.publish_backtest_batch_progress_event(&BacktestBatchProgressUpdate {
                 batch_id,
-                &context.symbol,
-                &context.timeframe_code,
+                symbol: &context.symbol,
+                timeframe_code: &context.timeframe_code,
                 requested_start_time,
                 requested_end_time,
                 stage,
-                batch_progress_percent,
+                progress_percent: batch_progress_percent,
                 total_count,
                 completed_count,
-                1,
-            )
+                running_count: 1,
+            })
             .await?;
         }
 
@@ -874,16 +906,7 @@ impl ResearchBacktestingService {
 
     async fn publish_backtest_batch_progress_event(
         &self,
-        batch_id: &str,
-        symbol: &str,
-        timeframe_code: &str,
-        requested_start_time: i64,
-        requested_end_time: i64,
-        stage: &str,
-        progress_percent: f64,
-        total_count: usize,
-        completed_count: usize,
-        running_count: usize,
+        update: &BacktestBatchProgressUpdate<'_>,
     ) -> Result<()> {
         let envelope = BacktestBatchProgressEventEnvelope {
             event_id: Uuid::new_v4().to_string(),
@@ -891,16 +914,16 @@ impl ResearchBacktestingService {
             source: self.inner.config.service_name.clone(),
             occurred_at: Utc::now().to_rfc3339(),
             data: BacktestBatchProgressEventData {
-                batch_id: batch_id.to_string(),
-                symbol: symbol.to_string(),
-                timeframe_code: timeframe_code.to_string(),
-                requested_start_time,
-                requested_end_time,
-                stage: stage.to_string(),
-                progress_percent: progress_percent.clamp(0.0, 100.0),
-                total_count,
-                completed_count,
-                running_count,
+                batch_id: update.batch_id.to_string(),
+                symbol: update.symbol.to_string(),
+                timeframe_code: update.timeframe_code.to_string(),
+                requested_start_time: update.requested_start_time,
+                requested_end_time: update.requested_end_time,
+                stage: update.stage.to_string(),
+                progress_percent: update.progress_percent.clamp(0.0, 100.0),
+                total_count: update.total_count,
+                completed_count: update.completed_count,
+                running_count: update.running_count,
             },
         };
         let payload = serde_json::to_string(&envelope)?;
@@ -909,7 +932,7 @@ impl ResearchBacktestingService {
             .kafka_producer
             .send(
                 FutureRecord::to(&self.inner.config.backtest_progress_events_topic)
-                    .key(batch_id)
+                    .key(update.batch_id)
                     .payload(&payload),
                 StdDuration::from_secs(5),
             )
@@ -1022,18 +1045,18 @@ impl ResearchBacktestingService {
         let mut trade_cache: Option<TradeWindowCache> = None;
         let mut started = 0usize;
 
-        self.publish_backtest_batch_progress_event(
-            &batch_id,
-            &item.symbol_code,
-            &item.timeframe_code,
-            item.requested_start_time,
-            item.requested_end_time,
-            "retrieving-data",
-            0.0,
+        self.publish_backtest_batch_progress_event(&BacktestBatchProgressUpdate {
+            batch_id: &batch_id,
+            symbol: &item.symbol_code,
+            timeframe_code: &item.timeframe_code,
+            requested_start_time: item.requested_start_time,
+            requested_end_time: item.requested_end_time,
+            stage: "retrieving-data",
+            progress_percent: 0.0,
             total_count,
-            0,
-            0,
-        )
+            completed_count: 0,
+            running_count: 0,
+        })
         .await?;
 
         for (analysis, run_key) in runnable_analyses {
@@ -1066,18 +1089,18 @@ impl ResearchBacktestingService {
                         "running-backtests"
                     };
                     if let Err(error) = self
-                        .publish_backtest_batch_progress_event(
-                            &batch_id,
-                            &item.symbol_code,
-                            &item.timeframe_code,
-                            item.requested_start_time,
-                            item.requested_end_time,
+                        .publish_backtest_batch_progress_event(&BacktestBatchProgressUpdate {
+                            batch_id: &batch_id,
+                            symbol: &item.symbol_code,
+                            timeframe_code: &item.timeframe_code,
+                            requested_start_time: item.requested_start_time,
+                            requested_end_time: item.requested_end_time,
                             stage,
-                            (started as f64 / total_count as f64) * 100.0,
+                            progress_percent: (started as f64 / total_count as f64) * 100.0,
                             total_count,
-                            started,
-                            0,
-                        )
+                            completed_count: started,
+                            running_count: 0,
+                        })
                         .await
                     {
                         warn!(
@@ -1089,22 +1112,22 @@ impl ResearchBacktestingService {
                 }
                 Err(error) => {
                     let _ = self
-                        .publish_backtest_batch_progress_event(
-                            &batch_id,
-                            &item.symbol_code,
-                            &item.timeframe_code,
-                            item.requested_start_time,
-                            item.requested_end_time,
-                            "failed",
-                            if total_count == 0 {
+                        .publish_backtest_batch_progress_event(&BacktestBatchProgressUpdate {
+                            batch_id: &batch_id,
+                            symbol: &item.symbol_code,
+                            timeframe_code: &item.timeframe_code,
+                            requested_start_time: item.requested_start_time,
+                            requested_end_time: item.requested_end_time,
+                            stage: "failed",
+                            progress_percent: if total_count == 0 {
                                 0.0
                             } else {
                                 (started as f64 / total_count as f64) * 100.0
                             },
                             total_count,
-                            started,
-                            0,
-                        )
+                            completed_count: started,
+                            running_count: 0,
+                        })
                         .await;
                     warn!(
                         error = %error,
@@ -1243,16 +1266,22 @@ impl ResearchBacktestingService {
         let completed = execute_backtest(
             &self.inner.config.service_name,
             resolved,
-            self.inner.historical_store.clone(),
-            self.inner.config.backtest_trade_replay_page_rows,
-            self.inner.config.default_fee_bps,
-            self.inner.config.default_slippage_bps,
-            data_retrieval_duration_ms,
-            cached_trades,
-            progress_context.clone(),
-            self.inner.kafka_producer.clone(),
-            self.inner.config.backtest_progress_events_topic.clone(),
-            self.inner.config.service_name.clone(),
+            ExecuteBacktestContext {
+                historical_store: self.inner.historical_store.clone(),
+                trade_page_rows: self.inner.config.backtest_trade_replay_page_rows,
+                fee_bps: self.inner.config.default_fee_bps,
+                slippage_bps: self.inner.config.default_slippage_bps,
+                data_retrieval_duration_ms_override: data_retrieval_duration_ms,
+                cached_trades,
+                progress_context: progress_context.clone(),
+                kafka_producer: self.inner.kafka_producer.clone(),
+                backtest_progress_events_topic: self
+                    .inner
+                    .config
+                    .backtest_progress_events_topic
+                    .clone(),
+                progress_event_source: self.inner.config.service_name.clone(),
+            },
         )
         .await?;
         let persisted_run = persisted_backtest_run(&completed.response)?;
@@ -2251,7 +2280,7 @@ async fn fetch_trade_window_cache(
             .map(|row| (row.trade_time, row.aggregate_trade_id));
         rows.extend(chunk);
 
-        if page == 1 || page % 5 == 0 {
+        if page == 1 || page.is_multiple_of(5) {
             info!(
                 pair_code = %pair_code,
                 page = page,
@@ -2323,16 +2352,7 @@ fn filter_symbol_complete_ready_items(
 async fn execute_backtest(
     service_name: &str,
     input: ResolvedBacktestInput,
-    historical_store: Database,
-    trade_page_rows: usize,
-    fee_bps: f64,
-    slippage_bps: f64,
-    data_retrieval_duration_ms_override: Option<i64>,
-    cached_trades: Option<Arc<Vec<HistoricalTradeRecord>>>,
-    progress_context: Option<BacktestProgressContext>,
-    kafka_producer: FutureProducer,
-    backtest_progress_events_topic: String,
-    progress_event_source: String,
+    context: ExecuteBacktestContext,
 ) -> Result<CompletedBacktest> {
     let execution_started_at = Instant::now();
     let backtest_id = Uuid::new_v4().to_string();
@@ -2370,7 +2390,7 @@ async fn execute_backtest(
         }
     }
 
-    let page_rows = trade_page_rows.clamp(1, 50_000_000) as i64;
+    let page_rows = context.trade_page_rows.clamp(1, 50_000_000) as i64;
     let pair_code = input.analysis.symbol.clone();
     let timeframe_code = input.analysis.timeframe_code.clone();
     let start_time = input.replay_trade_start_time;
@@ -2381,10 +2401,10 @@ async fn execute_backtest(
     let retrieval_backtest_id = backtest_id.clone();
     let retrieval_page_count = Arc::new(AtomicUsize::new(0));
     let retrieval_rows_total = Arc::new(AtomicUsize::new(0));
-    let progress_context_for_fetch = progress_context.clone();
-    let kafka_producer_for_fetch = kafka_producer.clone();
-    let backtest_progress_events_topic_for_fetch = backtest_progress_events_topic.clone();
-    let progress_event_source_for_fetch = progress_event_source.clone();
+    let progress_context_for_fetch = context.progress_context.clone();
+    let kafka_producer_for_fetch = context.kafka_producer.clone();
+    let backtest_progress_events_topic_for_fetch = context.backtest_progress_events_topic.clone();
+    let progress_event_source_for_fetch = context.progress_event_source.clone();
 
     info!(
         backtest_id = %retrieval_backtest_id,
@@ -2398,13 +2418,13 @@ async fn execute_backtest(
     );
 
     let fetch_page = move |after: Option<(i64, i64)>, remaining: i64| {
-        let db = historical_store.clone();
+        let db = context.historical_store.clone();
         let pair_code = pair_code.clone();
         let timeframe_code = timeframe_code.clone();
         let retrieval_backtest_id = retrieval_backtest_id.clone();
         let retrieval_page_count = retrieval_page_count.clone();
         let retrieval_rows_total = retrieval_rows_total.clone();
-        let cached_trades = cached_trades.clone();
+        let cached_trades = context.cached_trades.clone();
         let progress_context = progress_context_for_fetch.clone();
         let kafka_producer = kafka_producer_for_fetch.clone();
         let backtest_progress_events_topic = backtest_progress_events_topic_for_fetch.clone();
@@ -2454,7 +2474,7 @@ async fn execute_backtest(
             let remaining_row_budget = remaining.saturating_sub(page.len() as i64);
 
             // Keep logs readable: first page + every 5 pages + short page.
-            if page_count == 1 || page_count % 5 == 0 || (page.len() as i64) < limit {
+            if page_count == 1 || page_count.is_multiple_of(5) || (page.len() as i64) < limit {
                 info!(
                     backtest_id = %retrieval_backtest_id,
                     pair_code = %pair_code,
@@ -2520,45 +2540,46 @@ async fn execute_backtest(
         &signals,
         &input.analysis,
         SimulationConfig {
-            fee_bps,
-            slippage_bps,
+            fee_bps: context.fee_bps,
+            slippage_bps: context.slippage_bps,
         },
         input.time_window.requested_end_time,
         max_rows,
         fetch_page,
     )
     .await?;
-    if let Some(context) = progress_context.as_ref() {
+    if let Some(progress_context) = context.progress_context.as_ref() {
         let envelope = BacktestProgressEventEnvelope {
             event_id: Uuid::new_v4().to_string(),
             event_type: "trading-bot.research-backtesting.backtest-progress.v1",
-            source: progress_event_source.clone(),
+            source: context.progress_event_source.clone(),
             occurred_at: Utc::now().to_rfc3339(),
             data: BacktestProgressEventData {
-                control_plane_job_id: context.control_plane_job_id.clone(),
-                analysis_setting_id: context.analysis_setting_id.clone(),
-                risk_profile_name: context.risk_profile_name.clone(),
-                symbol: context.symbol.clone(),
-                timeframe_code: context.timeframe_code.clone(),
-                strategy_name: context.strategy_name.clone(),
+                control_plane_job_id: progress_context.control_plane_job_id.clone(),
+                analysis_setting_id: progress_context.analysis_setting_id.clone(),
+                risk_profile_name: progress_context.risk_profile_name.clone(),
+                symbol: progress_context.symbol.clone(),
+                timeframe_code: progress_context.timeframe_code.clone(),
+                strategy_name: progress_context.strategy_name.clone(),
                 stage: "simulating".to_string(),
                 progress_percent: 100.0,
             },
         };
         if let Ok(payload) = serde_json::to_string(&envelope) {
-            let _ = kafka_producer
+            let _ = context
+                .kafka_producer
                 .send(
-                    FutureRecord::to(&backtest_progress_events_topic)
-                        .key(&context.control_plane_job_id)
+                    FutureRecord::to(&context.backtest_progress_events_topic)
+                        .key(&progress_context.control_plane_job_id)
                         .payload(&payload),
                     StdDuration::from_secs(5),
                 )
                 .await;
             let _ = publish_batch_progress_from_context(
-                &kafka_producer,
-                &backtest_progress_events_topic,
-                &progress_event_source,
-                context,
+                &context.kafka_producer,
+                &context.backtest_progress_events_topic,
+                &context.progress_event_source,
+                progress_context,
                 "simulating",
                 100.0,
             )
@@ -2568,7 +2589,8 @@ async fn execute_backtest(
     let trades = resequence_trades(trades);
     let summary = summarize_backtest(&signals, &trades);
     let backtest_duration_ms = execution_started_at.elapsed().as_millis() as i64;
-    let data_retrieval_duration_ms = data_retrieval_duration_ms_override
+    let data_retrieval_duration_ms = context
+        .data_retrieval_duration_ms_override
         .unwrap_or_else(|| retrieval_started_at.elapsed().as_millis() as i64);
     let dataset = BacktestDatasetSummary {
         fetched_kline_count: input.fetched_kline_count,
@@ -2595,8 +2617,8 @@ async fn execute_backtest(
             dataset,
             execution_assumptions: BacktestExecutionAssumptions {
                 fill_source: "aggregateTrades".to_string(),
-                fee_bps,
-                slippage_bps,
+                fee_bps: context.fee_bps,
+                slippage_bps: context.slippage_bps,
                 stop_loss_source:
                     "aggregateTradesWithRiskProfileSwingGapClampedBetweenMinimumAndMaximum"
                         .to_string(),
@@ -2826,29 +2848,6 @@ mod tests {
                 created_at: "2026-01-01T00:00:00Z".to_string(),
                 updated_at: "2026-01-01T00:00:00Z".to_string(),
             },
-        }
-    }
-
-    fn kline(open_time: i64, close: f64) -> PersistedKlineRecord {
-        PersistedKlineRecord {
-            pair_code: "BTCUSDT".to_string(),
-            symbol: "BTCUSDT".to_string(),
-            timeframe_code: "1m".to_string(),
-            period_ms: 60_000,
-            open_time,
-            close_time: open_time + 59_999,
-            event_time: open_time + 60_000,
-            occurred_at: "2026-01-01T00:00:00Z".to_string(),
-            ingestion_mode: "backfill".to_string(),
-            closed: true,
-            open: close.to_string(),
-            high: close.to_string(),
-            low: close.to_string(),
-            close: close.to_string(),
-            volume: "1".to_string(),
-            quote_volume: "1".to_string(),
-            trade_count: 1,
-            updated_at: "2026-01-01T00:00:00Z".to_string(),
         }
     }
 

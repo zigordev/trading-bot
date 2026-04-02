@@ -99,7 +99,6 @@ struct Strategy2State {
 #[derive(Clone, Debug)]
 struct Candle {
     close_time: i64,
-    open_time: i64,
     close: f64,
     high: f64,
     low: f64,
@@ -455,7 +454,6 @@ impl AnalysisEvaluator {
 
         let candle = Candle {
             close_time: event.close_time,
-            open_time: event.open_time,
             close: event.close.parse::<f64>().ok()?,
             high: event.high.parse::<f64>().ok()?,
             low: event.low.parse::<f64>().ok()?,
