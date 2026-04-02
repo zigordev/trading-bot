@@ -579,7 +579,7 @@ impl MarketDataService {
     }
 
     pub fn metrics_text(&self) -> Result<String> {
-        self.inner.metrics.encode().map_err(Into::into)
+        self.inner.metrics.encode()
     }
 
     pub async fn readiness(&self) -> ReadinessPayload {
@@ -1059,7 +1059,6 @@ impl MarketDataService {
             let mut subscription_check_interval = tokio::time::interval(Duration::from_secs(1));
             subscription_check_interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
 
-            let mut reconnect = false;
             loop {
                 tokio::select! {
                     changed = shutdown_rx.changed() => {
@@ -1070,7 +1069,6 @@ impl MarketDataService {
                     _ = subscription_check_interval.tick() => {
                         let latest_signature = self.inner.runtime_status.read().await.subscriptions.stream_names.join("/");
                         if latest_signature != stream_signature {
-                            reconnect = true;
                             break;
                         }
                     }
@@ -1092,7 +1090,6 @@ impl MarketDataService {
                                                 None,
                                                 Some(error.to_string()),
                                             ).await;
-                                            reconnect = true;
                                             break;
                                         }
                                     }
@@ -1104,7 +1101,6 @@ impl MarketDataService {
                                             None,
                                             Some(error.to_string()),
                                         ).await;
-                                        reconnect = true;
                                         break;
                                     }
                                 }
@@ -1119,7 +1115,6 @@ impl MarketDataService {
                                     None,
                                     Some(format!("market stream closed: {frame:?}")),
                                 ).await;
-                                reconnect = true;
                                 break;
                             }
                             Some(Err(error)) => {
@@ -1129,7 +1124,6 @@ impl MarketDataService {
                                     None,
                                     Some(error.to_string()),
                                 ).await;
-                                reconnect = true;
                                 break;
                             }
                             None => {
@@ -1139,7 +1133,6 @@ impl MarketDataService {
                                     None,
                                     Some("market stream ended".to_string()),
                                 ).await;
-                                reconnect = true;
                                 break;
                             }
                         }
@@ -1147,15 +1140,13 @@ impl MarketDataService {
                 }
             }
 
-            if reconnect {
-                tokio::select! {
-                    changed = shutdown_rx.changed() => {
-                        if changed.is_ok() {
-                            break;
-                        }
+            tokio::select! {
+                changed = shutdown_rx.changed() => {
+                    if changed.is_ok() {
+                        break;
                     }
-                    _ = tokio::time::sleep(Duration::from_secs(1)) => {}
                 }
+                _ = tokio::time::sleep(Duration::from_secs(1)) => {}
             }
         }
     }
@@ -1370,8 +1361,8 @@ impl MarketDataService {
             // anchored to a clamped "required lookback" window, which can leave
             // older leading gaps unfixed. The deep audit re-checks from the
             // earliest kline we have for each pair (bounded by config).
-            if reason == "startup" {
-                if let Err(error) = self
+            if reason == "startup"
+                && let Err(error) = self
                     .run_trade_gap_audit_and_repair(
                         &active,
                         &required_history_plan.trade_by_pair_code,
@@ -1379,13 +1370,12 @@ impl MarketDataService {
                         TradeGapRepairMode::StartupDeep,
                     )
                     .await
-                {
-                    tracing::warn!(
-                        ?error,
-                        reason,
-                        "startup trade gap audit/repair failed (continuing)"
-                    );
-                }
+            {
+                tracing::warn!(
+                    ?error,
+                    reason,
+                    "startup trade gap audit/repair failed (continuing)"
+                );
             }
             Ok(())
         }
@@ -1714,32 +1704,6 @@ impl MarketDataService {
                 },
             },
         }
-    }
-
-    async fn publish_data_readiness_target(
-        &self,
-        pair_code: &str,
-        timeframe_code: &str,
-        strategy_name: &str,
-    ) -> Result<()> {
-        let key = (
-            pair_code.to_string(),
-            timeframe_code.to_string(),
-            strategy_name.to_string(),
-        );
-        let target = self
-            .inner
-            .current_readiness_targets
-            .read()
-            .await
-            .get(&key)
-            .cloned();
-        let Some(target) = target else {
-            return Ok(());
-        };
-
-        let item = self.build_data_readiness_snapshot_item(target).await;
-        self.publish_data_readiness_items(&[item]).await
     }
 
     async fn publish_data_readiness_for_pair(&self, pair_code: &str) -> Result<()> {
