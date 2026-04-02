@@ -31,6 +31,7 @@ export type OpsRealtimeEvent =
       payload: {
         symbols: string[];
         timeframeCodes: string[];
+        strategyNames: string[];
       };
     }
   | {
@@ -99,7 +100,6 @@ export const parseOpsRealtimeEvent = (raw: string): OpsRealtimeEvent | null => {
 
   if (
     parsed.type === "ops.backtests.updated" ||
-    parsed.type === "ops.data-readiness.updated" ||
     parsed.type === "ops.execution.updated"
   ) {
     if (!isStringArray(payload.symbols) || !isStringArray(payload.timeframeCodes)) {
@@ -112,6 +112,26 @@ export const parseOpsRealtimeEvent = (raw: string): OpsRealtimeEvent | null => {
       payload: {
         symbols: payload.symbols,
         timeframeCodes: payload.timeframeCodes,
+      },
+    };
+  }
+
+  if (parsed.type === "ops.data-readiness.updated") {
+    if (
+      !isStringArray(payload.symbols) ||
+      !isStringArray(payload.timeframeCodes) ||
+      !isStringArray(payload.strategyNames)
+    ) {
+      return null;
+    }
+    return {
+      eventId: parsed.eventId,
+      occurredAt: parsed.occurredAt,
+      type: parsed.type,
+      payload: {
+        symbols: payload.symbols,
+        timeframeCodes: payload.timeframeCodes,
+        strategyNames: payload.strategyNames,
       },
     };
   }

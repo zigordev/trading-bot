@@ -126,6 +126,9 @@ export const registerOpsRoutes = (
     ) => Promise<BacktestRunProjectionRecord[]>;
     listDataReadinessProjectionsFn?: (
       pool: Pool,
+      filters?: {
+        strategyName?: string;
+      },
     ) => Promise<DataReadinessProjectionRecord[]>;
     getActiveExecutionPromotionFn?: (
       pool: Pool,
@@ -225,9 +228,10 @@ export const registerOpsRoutes = (
   };
 
   const buildBacktestsSummary = async () => {
-    const [batches, recentRuns] = await Promise.all([
+    const [batches, recentRuns, jobs] = await Promise.all([
       listBacktestBatchesFn(pool, 100),
       listBacktestRunProjectionsFn(pool, 100),
+      listBacktestJobsFn(pool, 200),
     ]);
 
     const latestRunByKey = new Map<string, BacktestRunProjectionRecord>();
@@ -246,16 +250,25 @@ export const registerOpsRoutes = (
 
     return {
       generatedAt: new Date().toISOString(),
+      jobs,
       batches,
       recentRuns,
       latestRuns: [...latestRunByKey.values()],
     };
   };
 
-  const buildDataReadiness = async () => {
+  const buildDataReadiness = async (
+    request?: {
+      query?: {
+        strategyName?: string;
+      };
+    },
+  ) => {
     return {
       generatedAt: new Date().toISOString(),
-      items: await listDataReadinessProjectionsFn(pool),
+      items: await listDataReadinessProjectionsFn(pool, {
+        strategyName: request?.query?.strategyName,
+      }),
     };
   };
 
@@ -311,9 +324,16 @@ export const registerOpsRoutes = (
   app.get("/v1/ops/data-readiness", {
     schema: {
       tags: ["ops"],
-      summary: "Per symbol/timeframe readiness for replay and backtesting inputs",
+      summary: "Per symbol/timeframe/strategy readiness for replay and backtesting inputs",
+      querystring: {
+        type: "object",
+        properties: {
+          strategyName: { type: "string" },
+        },
+      },
     },
-    handler: buildDataReadiness,
+    handler: async (request) =>
+      buildDataReadiness(request as { query?: { strategyName?: string } }),
   });
 
   app.get("/v1/ops/execution/summary", {
@@ -348,6 +368,8 @@ export const registerOpsRoutes = (
           symbolCode: { type: "string" },
           timeframeCode: { type: "string" },
           strategyName: { type: "string" },
+          openedFrom: { type: "string", format: "date-time" },
+          openedTo: { type: "string", format: "date-time" },
           side: { type: "string", enum: ["long", "short"] },
           status: {
             type: "string",
@@ -377,6 +399,10 @@ export const registerOpsRoutes = (
           typeof query.timeframeCode === "string" ? query.timeframeCode : undefined,
         strategyName:
           typeof query.strategyName === "string" ? query.strategyName : undefined,
+        openedFrom:
+          typeof query.openedFrom === "string" ? query.openedFrom : undefined,
+        openedTo:
+          typeof query.openedTo === "string" ? query.openedTo : undefined,
         side:
           query.side === "long" || query.side === "short" ? query.side : undefined,
         status:

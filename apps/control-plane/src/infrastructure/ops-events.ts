@@ -42,6 +42,7 @@ export type OpsWebsocketEvent =
       {
         symbols: string[];
         timeframeCodes: string[];
+        strategyNames: string[];
       }
     >
   | BaseOpsEvent<

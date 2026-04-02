@@ -30,6 +30,28 @@ export type BacktestBatch = {
   updatedAt: string;
 };
 
+export type BacktestJob = {
+  id: string;
+  status: "queued" | "running" | "completed" | "failed";
+  analysisSettingId: string;
+  riskProfileName: string | null;
+  symbolCode: string | null;
+  timeframeCode: string | null;
+  strategyName: string | null;
+  startTime: number | null;
+  endTime: number | null;
+  warmupCandles: number | null;
+  backtestId: string | null;
+  errorMessage: string | null;
+  stage: string | null;
+  progressPercent: number | null;
+  createdAt: string;
+  updatedAt: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+  result: Record<string, unknown> | null;
+};
+
 export type RecentBacktestRun = {
   backtestId: string;
   finishedAt: string;
@@ -60,6 +82,7 @@ export type RecentBacktestRun = {
 
 export type BacktestsSummaryResponse = {
   generatedAt: string;
+  jobs: BacktestJob[];
   batches: BacktestBatch[];
   recentRuns: RecentBacktestRun[];
   latestRuns: RecentBacktestRun[];
@@ -93,6 +116,7 @@ export type DataReadinessResponse = {
     status: "ready" | "partial" | "missing" | "error";
     symbolCode: string;
     timeframeCode: string;
+    strategyName: string;
     analysisSettingIds: string[];
     requestedStartTime: number;
     requestedEndTime: number;
@@ -176,10 +200,24 @@ export type ExecutionTradesQuery = {
   symbolCode?: string;
   timeframeCode?: string;
   strategyName?: string;
+  openedFrom?: string;
+  openedTo?: string;
   side?: "long" | "short";
   status?: "open" | "closed" | "cancelled" | "rejected";
   mode?: "paper" | "live";
 };
+
+export type DataReadinessQuery = {
+  strategyName?: string;
+};
+
+const isDataReadinessQuery = (value: unknown): value is DataReadinessQuery =>
+  typeof value === "object" &&
+  value !== null &&
+  !Array.isArray(value) &&
+  ("strategyName" in value ? typeof (value as { strategyName?: unknown }).strategyName === "string" ||
+      (value as { strategyName?: unknown }).strategyName === undefined : true) &&
+  !("queryKey" in value);
 
 export type BinanceSymbolReference = {
   symbol: string;
@@ -225,8 +263,21 @@ export const getBacktestsSummary = (): Promise<BacktestsSummaryResponse> =>
 export const getRuntimeAnalyses = (): Promise<RuntimeAnalysis[]> =>
   fetchJson("/v1/runtime-config/analysis-settings");
 
-export const getDataReadiness = (): Promise<DataReadinessResponse> =>
-  fetchJson("/v1/ops/data-readiness");
+export const getDataReadiness = (
+  queryOrContext?: DataReadinessQuery | unknown,
+): Promise<DataReadinessResponse> => {
+  const query = isDataReadinessQuery(queryOrContext) ? queryOrContext : {};
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(query)) {
+    if (value === undefined || value === null || value === "") {
+      continue;
+    }
+    params.set(key, String(value));
+  }
+
+  const suffix = params.toString() ? `?${params.toString()}` : "";
+  return fetchJson(`/v1/ops/data-readiness${suffix}`);
+};
 
 export const getExecutionSummary = (): Promise<ExecutionSummaryResponse> =>
   fetchJson("/v1/ops/execution/summary");
