@@ -1,7 +1,7 @@
 import { MaterialIcons } from "@expo/vector-icons";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { Modal, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { Modal, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 
 import { AppShell } from "@/src/components/app-shell";
 import { Card } from "@/src/components/card";
@@ -9,7 +9,6 @@ import { MultiSelectFilter } from "@/src/components/multi-select-filter";
 import { SymbolAvatar } from "@/src/components/symbol-avatar";
 import {
   getBacktestsSummary,
-  type ExecutionSettingsRecord,
   getConfigResourceRecords,
   getExecutionSummary,
   getExecutionTrades,
@@ -21,6 +20,9 @@ const PAGE_SIZE = 10;
 const formatMoney = (value: number | null | undefined): string =>
   value === null || value === undefined ? "n/a" : `$${value.toFixed(2)}`;
 
+const formatPrice = (value: number | null | undefined): string =>
+  value === null || value === undefined ? "n/a" : `$${value.toFixed(4)}`;
+
 const formatPercent = (value: number | null | undefined): string =>
   value === null || value === undefined ? "n/a" : `${value.toFixed(2)}%`;
 
@@ -29,7 +31,7 @@ const formatTimestamp = (value: string | null | undefined): string => {
     return "n/a";
   }
 
-  return new Date(value).toLocaleString();
+  return new Date(value).toLocaleString().replace(",", "");
 };
 
 const sortOptions = {
@@ -41,6 +43,8 @@ const sortOptions = {
 } as const;
 
 type SortKey = keyof typeof sortOptions;
+type ExecutionMode = "paper" | "live";
+type ExecutionSection = "trades" | "promotion";
 
 const formatDuration = (durationMs: number): string => {
   const safeDurationMs = Math.max(0, durationMs);
@@ -98,21 +102,30 @@ const deriveAssetsFromSymbolCode = (
   return null;
 };
 
-export default function ExecutionScreen() {
+export function ExecutionScreenContent({
+  fixedMode,
+}: {
+  fixedMode?: ExecutionMode;
+}) {
   const queryClient = useQueryClient();
+  const [tabMode, setTabMode] = useState<ExecutionMode>("paper");
+  const [section, setSection] = useState<ExecutionSection>("trades");
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
   const [symbolCode, setSymbolCode] = useState<string>("");
   const [timeframeCode, setTimeframeCode] = useState<string>("");
   const [strategyName, setStrategyName] = useState<string>("");
+  const [openedFrom, setOpenedFrom] = useState("");
+  const [openedTo, setOpenedTo] = useState("");
   const [status, setStatus] = useState<"" | "open" | "closed" | "cancelled" | "rejected">("");
   const [side, setSide] = useState<"" | "long" | "short">("");
-  const [mode, setMode] = useState<"" | "paper" | "live">("");
   const [sortBy, setSortBy] = useState<SortKey>("openedAt");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
   const [selectedBacktestId, setSelectedBacktestId] = useState<string | null>(null);
+  const [selectedPromotionId, setSelectedPromotionId] = useState<string | null>(null);
   const [selectedAnalysisSettingId, setSelectedAnalysisSettingId] = useState<string | null>(null);
   const [selectedRiskProfileName, setSelectedRiskProfileName] = useState<string | null>(null);
+  const currentMode = fixedMode ?? tabMode;
 
   useEffect(
     () =>
@@ -140,11 +153,6 @@ export default function ExecutionScreen() {
     queryFn: getExecutionSummary,
   });
 
-  const executionSettingsQuery = useQuery({
-    queryKey: ["config-resource", "execution-settings"],
-    queryFn: () =>
-      getConfigResourceRecords("execution-settings") as Promise<ExecutionSettingsRecord[]>,
-  });
   const symbolsQuery = useQuery({
     queryKey: ["config-resource", "symbols"],
     queryFn: () => getConfigResourceRecords("symbols"),
@@ -170,9 +178,11 @@ export default function ExecutionScreen() {
       symbolCode,
       timeframeCode,
       strategyName,
+      openedFrom,
+      openedTo,
       status,
       side,
-      mode,
+      currentMode,
       sortBy,
       sortDirection,
     ],
@@ -184,17 +194,65 @@ export default function ExecutionScreen() {
         symbolCode: symbolCode || undefined,
         timeframeCode: timeframeCode || undefined,
         strategyName: strategyName || undefined,
+        openedFrom: toIsoDateTime(openedFrom),
+        openedTo: toIsoDateTime(openedTo),
         status: status || undefined,
         side: side || undefined,
-        mode: mode || undefined,
+        mode: currentMode,
         sortBy,
         sortDirection,
+      }),
+  });
+  const closedTradesCountQuery = useQuery({
+    queryKey: ["ops-execution-trades-count", "closed", currentMode],
+    queryFn: () =>
+      getExecutionTrades({
+        page: 1,
+        pageSize: 1,
+        status: "closed",
+        mode: currentMode,
+        sortBy: "openedAt",
+        sortDirection: "desc",
       }),
   });
 
   const trades = executionTradesQuery.data?.items ?? [];
   const totalCount = executionTradesQuery.data?.totalCount ?? 0;
   const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+  const modeActivePromotions = useMemo(
+    () =>
+      (executionSummaryQuery.data?.activePromotions ?? []).filter(
+        (promotion) => promotion.mode === currentMode,
+      ),
+    [executionSummaryQuery.data?.activePromotions, currentMode],
+  );
+  const modeRecentTrades = useMemo(
+    () =>
+      (executionSummaryQuery.data?.recentTrades ?? []).filter((trade) => trade.mode === currentMode),
+    [executionSummaryQuery.data?.recentTrades, currentMode],
+  );
+  const summaryStats = useMemo(
+    () => ({
+      openTradeCount: modeRecentTrades.filter((trade) => trade.status === "open").length,
+      closedTradeCount: closedTradesCountQuery.data?.totalCount ?? 0,
+      realizedPnlUsd: modeRecentTrades.reduce(
+        (sum, trade) => sum + (trade.realizedPnlUsd ?? 0),
+        0,
+      ),
+    }),
+    [closedTradesCountQuery.data?.totalCount, modeRecentTrades],
+  );
+  const selectedPromotion = useMemo(() => {
+    if (!selectedPromotionId) {
+      return null;
+    }
+
+    return (
+      modeActivePromotions.find(
+        (promotion) => promotion.promotionId === selectedPromotionId,
+      ) ?? null
+    );
+  }, [modeActivePromotions, selectedPromotionId]);
   const selectedBacktestRun = useMemo(() => {
     if (!selectedBacktestId) {
       return null;
@@ -249,25 +307,22 @@ export default function ExecutionScreen() {
     selectedRiskProfileName === null ? null : (riskProfilesByName.get(selectedRiskProfileName) ?? null);
 
   const filterOptions = useMemo(() => {
-    const summaryTrades = executionSummaryQuery.data?.recentTrades ?? [];
-    const enabledSettings = executionSettingsQuery.data?.filter((item) => item.enabled) ?? [];
-
     return {
       symbols: Array.from(
         new Set([
-          ...summaryTrades.map((item) => item.symbolCode),
+          ...modeRecentTrades.map((item) => item.symbolCode),
         ]),
       ).sort(),
       timeframes: Array.from(
         new Set([
-          ...summaryTrades.map((item) => item.timeframeCode),
+          ...modeRecentTrades.map((item) => item.timeframeCode),
         ]),
       ).sort(),
       strategies: Array.from(
-        new Set(summaryTrades.map((item) => item.strategyName)),
+        new Set(modeRecentTrades.map((item) => item.strategyName)),
       ).sort(),
     };
-  }, [executionSettingsQuery.data, executionSummaryQuery.data?.recentTrades]);
+  }, [modeRecentTrades]);
 
   const resetFilters = () => {
     setPage(1);
@@ -275,119 +330,142 @@ export default function ExecutionScreen() {
     setSymbolCode("");
     setTimeframeCode("");
     setStrategyName("");
+    setOpenedFrom("");
+    setOpenedTo("");
     setStatus("");
     setSide("");
-    setMode("");
     setSortBy("openedAt");
     setSortDirection("desc");
   };
 
   return (
     <AppShell>
-      <View style={{ gap: 16 }}>
-        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 16 }}>
-          <Card style={{ minWidth: 260, flex: 1 }}>
-            <Text style={{ fontSize: 14, color: "#475467" }}>Active promotions</Text>
-            <Text style={{ fontSize: 24, fontWeight: "700", color: "#101828" }}>
-              {executionSummaryQuery.data?.activePromotions?.length
-                ? `${executionSummaryQuery.data.activePromotions.length} active promotion${executionSummaryQuery.data.activePromotions.length === 1 ? "" : "s"}`
-                : "No promoted config"}
-            </Text>
-            <Text style={{ color: "#475467" }}>
-              {executionSummaryQuery.data?.activePromotions?.length
-                ? "Strategies promoted for execution across the current ranking window."
-                : "Execution can be configured before the live service is wired in."}
-            </Text>
-          </Card>
-
-          <Card style={{ minWidth: 180, flex: 1 }}>
-            <Text style={{ fontSize: 14, color: "#475467" }}>Open trades</Text>
-            <Text style={{ fontSize: 30, fontWeight: "700", color: "#101828" }}>
-              {(executionSummaryQuery.data?.totals.openTradeCount ?? 0).toLocaleString()}
-            </Text>
-          </Card>
-
-          <Card style={{ minWidth: 180, flex: 1 }}>
-            <Text style={{ fontSize: 14, color: "#475467" }}>Recent closed</Text>
-            <Text style={{ fontSize: 30, fontWeight: "700", color: "#101828" }}>
-              {(executionSummaryQuery.data?.totals.closedTradeCount ?? 0).toLocaleString()}
-            </Text>
-          </Card>
-
-          <Card style={{ minWidth: 200, flex: 1 }}>
-            <Text style={{ fontSize: 14, color: "#475467" }}>Realized PnL</Text>
-            <Text style={{ fontSize: 30, fontWeight: "700", color: "#101828" }}>
-              {formatMoney(executionSummaryQuery.data?.totals.realizedPnlUsd)}
-            </Text>
-          </Card>
+      <View style={{ gap: 0 }}>
+        <View
+          style={{
+            marginHorizontal: -24,
+            marginTop: -20,
+          }}
+        >
+          <View
+            style={{
+              width: "100%",
+              backgroundColor: "#dbe2ea",
+              paddingHorizontal: 24,
+              paddingVertical: 10,
+            }}
+          >
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 8,
+                minWidth: "100%",
+                paddingRight: 8,
+              }}
+            >
+              <ExecutionSectionTab
+                label="Trades"
+                icon="receipt-long"
+                active={section === "trades"}
+                onPress={() => setSection("trades")}
+              />
+              <ExecutionSectionTab
+                label="Promotion"
+                icon="military-tech"
+                active={section === "promotion"}
+                onPress={() => setSection("promotion")}
+              />
+            </ScrollView>
+          </View>
         </View>
 
-        {executionSummaryQuery.data?.activePromotions?.length ? (
+        <View style={{ gap: 16, paddingTop: 16 }}>
+        {section === "promotion" ? (
           <Card>
             <View style={{ gap: 4 }}>
               <Text style={{ fontSize: 20, fontWeight: "700", color: "#101828" }}>
                 Promoted strategies
               </Text>
               <Text style={{ color: "#475467" }}>
-                Current active promotion set ranked by compounded backtest score.
+                Current active {currentMode} promotion set ranked by compounded backtest score.
               </Text>
             </View>
-            <View style={{ marginTop: 12, gap: 0 }}>
+            {modeActivePromotions.length === 0 ? (
               <View
                 style={{
-                  flexDirection: "row",
+                  marginTop: 12,
                   borderWidth: 1,
-                  borderBottomWidth: 0,
                   borderColor: "#eaecf0",
-                  borderTopLeftRadius: 12,
-                  borderTopRightRadius: 12,
-                  backgroundColor: "#f8fafc",
-                  paddingHorizontal: 12,
-                  paddingVertical: 10,
+                  borderRadius: 12,
+                  backgroundColor: "#fcfcfd",
+                  paddingHorizontal: 14,
+                  paddingVertical: 16,
                 }}
               >
-                <Text style={{ flex: 1.3, color: "#475467", fontWeight: "700", fontSize: 12 }}>
-                  Strategy
+                <Text style={{ color: "#475467" }}>
+                  No promoted strategies are available for {currentMode} mode.
                 </Text>
-                <Text style={{ flex: 1.2, color: "#475467", fontWeight: "700", fontSize: 12 }}>
-                  Market
-                </Text>
-                <Text style={{ flex: 1.5, color: "#475467", fontWeight: "700", fontSize: 12 }}>
-                  Analysis
-                </Text>
-                <Text style={{ flex: 1.1, color: "#475467", fontWeight: "700", fontSize: 12 }}>
-                  Risk
-                </Text>
-                <Text style={{ flex: 1.6, color: "#475467", fontWeight: "700", fontSize: 12 }}>
-                  Backtest
-                </Text>
-                <Text
-                  style={{
-                    flex: 0.8,
-                    color: "#475467",
-                    fontWeight: "700",
-                    fontSize: 12,
-                    textAlign: "right",
-                  }}
-                >
-                    Score
-                  </Text>
-                </View>
-                {executionSummaryQuery.data.activePromotions.map((promotion, index, items) => (
+              </View>
+            ) : (
+              <View style={{ marginTop: 12, gap: 0 }}>
                 <View
-                  key={promotion.promotionId}
                   style={{
                     flexDirection: "row",
                     borderWidth: 1,
-                    borderTopWidth: 0,
+                    borderBottomWidth: 0,
                     borderColor: "#eaecf0",
-                    borderBottomLeftRadius: index === items.length - 1 ? 12 : 0,
-                    borderBottomRightRadius: index === items.length - 1 ? 12 : 0,
-                    backgroundColor: "#ffffff",
+                    borderTopLeftRadius: 12,
+                    borderTopRightRadius: 12,
+                    backgroundColor: "#f8fafc",
                     paddingHorizontal: 12,
                     paddingVertical: 10,
                   }}
                 >
+                  <Text style={{ flex: 1.3, color: "#475467", fontWeight: "700", fontSize: 12 }}>
+                    Strategy
+                  </Text>
+                  <Text style={{ flex: 1.2, color: "#475467", fontWeight: "700", fontSize: 12 }}>
+                    Market
+                  </Text>
+                  <Text style={{ flex: 1.5, color: "#475467", fontWeight: "700", fontSize: 12 }}>
+                    Analysis
+                  </Text>
+                  <Text style={{ flex: 1.1, color: "#475467", fontWeight: "700", fontSize: 12 }}>
+                    Risk
+                  </Text>
+                  <Text style={{ flex: 1.6, color: "#475467", fontWeight: "700", fontSize: 12 }}>
+                    Backtest
+                  </Text>
+                  <Text
+                    style={{
+                      flex: 0.8,
+                      color: "#475467",
+                      fontWeight: "700",
+                      fontSize: 12,
+                      textAlign: "right",
+                    }}
+                  >
+                    Score
+                  </Text>
+                </View>
+                {modeActivePromotions.map((promotion, index, items) => (
+                  <View
+                    key={promotion.promotionId}
+                    style={{
+                      flexDirection: "row",
+                      borderWidth: 1,
+                      borderTopWidth: 0,
+                      borderColor: "#eaecf0",
+                      borderBottomLeftRadius: index === items.length - 1 ? 12 : 0,
+                      borderBottomRightRadius: index === items.length - 1 ? 12 : 0,
+                      backgroundColor: "#ffffff",
+                      paddingHorizontal: 12,
+                      paddingVertical: 10,
+                    }}
+                  >
                   <View style={{ flex: 1.3, paddingRight: 8 }}>
                     <Text style={{ color: "#101828", fontWeight: "700" }}>
                       {promotion.strategyName}
@@ -484,13 +562,69 @@ export default function ExecutionScreen() {
                   >
                     {promotion.selectionValue.toFixed(2)}
                   </Text>
-                </View>
-              ))}
-            </View>
+                  </View>
+                ))}
+              </View>
+            )}
           </Card>
-        ) : null}
-
-        <Card>
+        ) : (
+          <Card>
+          <View
+            style={{
+              flexDirection: "row",
+              justifyContent: "space-between",
+              alignItems: "center",
+              gap: 12,
+              flexWrap: "wrap",
+              marginBottom: 14,
+            }}
+          >
+            {fixedMode ? <View /> : (
+              <View style={{ flexDirection: "row", gap: 10 }}>
+                <ExecutionModeTab
+                  label="Paper"
+                  active={currentMode === "paper"}
+                  onPress={() => {
+                    setTabMode("paper");
+                    setPage(1);
+                  }}
+                />
+                <ExecutionModeTab
+                  label="Live"
+                  active={currentMode === "live"}
+                  onPress={() => {
+                    setTabMode("live");
+                    setPage(1);
+                  }}
+                />
+              </View>
+            )}
+            <View style={{ flexDirection: "row", gap: 16, flexWrap: "wrap", alignItems: "center" }}>
+              <InlineStat
+                label="Open trades"
+                value={summaryStats.openTradeCount.toLocaleString()}
+                icon="lock-open"
+                valueColor="#b54708"
+              />
+              <InlineStat
+                label="Closed trades"
+                value={summaryStats.closedTradeCount.toLocaleString()}
+                icon="lock"
+                valueColor="#344054"
+              />
+              <InlineStat
+                label="Realized PnL"
+                value={formatMoney(summaryStats.realizedPnlUsd)}
+                valueColor={
+                  summaryStats.realizedPnlUsd > 0
+                    ? "#157f3b"
+                    : summaryStats.realizedPnlUsd < 0
+                      ? "#b42318"
+                      : "#101828"
+                }
+              />
+            </View>
+          </View>
           <View
             style={{
               flexDirection: "row",
@@ -502,46 +636,12 @@ export default function ExecutionScreen() {
           >
             <View style={{ gap: 4 }}>
               <Text style={{ fontSize: 20, fontWeight: "700", color: "#101828" }}>
-                Execution trades
-              </Text>
-              <Text style={{ color: "#475467" }}>
-                Persisted execution ledger for operator review, filtering, and audit.
+                {currentMode === "paper" ? "Paper trades" : "Live trades"}
               </Text>
             </View>
-            <Pressable
-              onPress={resetFilters}
-              style={{
-                borderRadius: 10,
-                borderWidth: 1,
-                borderColor: "#d0d5dd",
-                paddingHorizontal: 14,
-                paddingVertical: 10,
-              }}
-            >
-              <Text style={{ color: "#344054", fontWeight: "700" }}>Reset</Text>
-            </Pressable>
           </View>
 
           <View style={{ gap: 10, marginTop: 10 }}>
-            <TextInput
-              value={search}
-              onChangeText={(value) => {
-                setSearch(value);
-                setPage(1);
-              }}
-              placeholder="Search trade id, backtest id, order id, analysis id"
-              placeholderTextColor="#98a2b3"
-              style={{
-                borderRadius: 12,
-                borderWidth: 1,
-                borderColor: "#d0d5dd",
-                paddingHorizontal: 14,
-                paddingVertical: 12,
-                color: "#101828",
-                backgroundColor: "#ffffff",
-              }}
-            />
-
             <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
               <SingleSelectFilter
                 label="Symbol"
@@ -580,6 +680,22 @@ export default function ExecutionScreen() {
                   setPage(1);
                 }}
               />
+              <DateTimeFilter
+                label="Opened from"
+                value={openedFrom}
+                onChange={(value) => {
+                  setOpenedFrom(value);
+                  setPage(1);
+                }}
+              />
+              <DateTimeFilter
+                label="Opened to"
+                value={openedTo}
+                onChange={(value) => {
+                  setOpenedTo(value);
+                  setPage(1);
+                }}
+              />
               <SingleSelectFilter
                 label="Status"
                 value={status}
@@ -597,16 +713,6 @@ export default function ExecutionScreen() {
                 allLabel="All sides"
                 onChange={(value) => {
                   setSide(value as typeof side);
-                  setPage(1);
-                }}
-              />
-              <SingleSelectFilter
-                label="Mode"
-                value={mode}
-                options={["paper", "live"]}
-                allLabel="All modes"
-                onChange={(value) => {
-                  setMode(value as typeof mode);
                   setPage(1);
                 }}
               />
@@ -632,6 +738,7 @@ export default function ExecutionScreen() {
                 <ExecutionTableRow
                   key={trade.tradeId}
                   trade={trade}
+                  promotionId={derivePromotionIdFromTradeId(trade.tradeId)}
                   baseAsset={
                     symbolBaseAssets.get(trade.symbolCode) ??
                     deriveAssetsFromSymbolCode(trade.symbolCode)?.baseAsset
@@ -640,6 +747,7 @@ export default function ExecutionScreen() {
                     symbolDestinationAssets.get(trade.symbolCode) ??
                     deriveAssetsFromSymbolCode(trade.symbolCode)?.destinationAsset
                   }
+                  onOpenPromotionDetails={setSelectedPromotionId}
                 />
               ))}
               {trades.length === 0 ? (
@@ -690,8 +798,74 @@ export default function ExecutionScreen() {
               />
             </View>
           </View>
-        </Card>
+          </Card>
+        )}
+        </View>
       </View>
+      <Modal
+        visible={selectedPromotionId !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSelectedPromotionId(null)}
+      >
+        <View
+          style={{
+            flex: 1,
+            backgroundColor: "rgba(16, 24, 40, 0.45)",
+            justifyContent: "center",
+            alignItems: "center",
+            padding: 24,
+          }}
+        >
+          <View style={{ width: "100%", maxWidth: 720 }}>
+            <Card>
+              <ModalHeader
+                title="Promoted strategy details"
+                onClose={() => setSelectedPromotionId(null)}
+              />
+              <View style={{ gap: 10, marginTop: 12 }}>
+                <DetailRow label="Promotion id" value={selectedPromotionId ?? "n/a"} />
+                {selectedPromotion ? (
+                  <>
+                    <DetailRow
+                      label="Execution setting"
+                      value={selectedPromotion.executionSettingsName}
+                    />
+                    <DetailRow label="Mode" value={selectedPromotion.mode} />
+                    <DetailRow label="Status" value={selectedPromotion.status} />
+                    <DetailRow
+                      label="Market"
+                      value={`${selectedPromotion.symbolCode} · ${selectedPromotion.timeframeCode}`}
+                    />
+                    <DetailRow label="Strategy" value={selectedPromotion.strategyName} />
+                    <DetailRow label="Risk profile" value={selectedPromotion.riskProfileName} />
+                    <DetailRow
+                      label="Analysis setting id"
+                      value={selectedPromotion.analysisSettingId}
+                    />
+                    <DetailRow
+                      label="Selection value"
+                      value={selectedPromotion.selectionValue.toFixed(2)}
+                    />
+                    <DetailRow
+                      label="Promoted at"
+                      value={formatTimestamp(selectedPromotion.promotedAt)}
+                    />
+                    <DetailRow
+                      label="Source backtest id"
+                      value={selectedPromotion.sourceBacktestId ?? "n/a"}
+                    />
+                  </>
+                ) : (
+                  <Text style={{ color: "#475467" }}>
+                    This promoted strategy is not in the current active promotion set.
+                  </Text>
+                )}
+              </View>
+            </Card>
+          </View>
+        </View>
+      </Modal>
       <Modal
         visible={selectedBacktestId !== null}
         transparent
@@ -1008,13 +1182,12 @@ function ExecutionTableHeader({
   onSort: (sortBy: SortKey) => void;
 }) {
   const columns: Array<{ label: string; flex: number; sortKey?: SortKey }> = [
-    { label: "Trade", flex: 1.3 },
-    { label: "Context", flex: 1.4, sortKey: "symbolCode" },
-    { label: "Timing", flex: 1.8, sortKey: "openedAt" },
-    { label: "Position", flex: 1.7, sortKey: "notionalUsd" },
-    { label: "Risk", flex: 1.5 },
-    { label: "PnL", flex: 1.3, sortKey: "realizedPnlPercent" },
-    { label: "Backtest", flex: 1.4 },
+    { label: "Status", flex: 0.9 },
+    { label: "Context", flex: 1.8, sortKey: "symbolCode" },
+    { label: "Entry", flex: 2, sortKey: "openedAt" },
+    { label: "Risk info", flex: 1.8 },
+    { label: "Exit", flex: 2.1, sortKey: "closedAt" },
+    { label: "Promoted strategy", flex: 1.3 },
   ];
 
   return (
@@ -1075,12 +1248,16 @@ function ExecutionTableHeader({
 
 function ExecutionTableRow({
   trade,
+  promotionId,
   baseAsset,
   destinationAsset,
+  onOpenPromotionDetails,
 }: {
   trade: Awaited<ReturnType<typeof getExecutionTrades>>["items"][number];
+  promotionId: string | null;
   baseAsset?: string | null;
   destinationAsset?: string | null;
+  onOpenPromotionDetails: (promotionId: string) => void;
 }) {
   return (
     <View
@@ -1096,70 +1273,75 @@ function ExecutionTableRow({
       }}
     >
       <Cell
-        flex={1.3}
-        title={trade.tradeId}
-        subtitle={
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+        flex={0.9}
+        title={
+          <View style={{ alignSelf: "flex-start" }}>
             <StatusBadge status={trade.status} />
-            <Text style={{ color: "#475467" }}>{trade.mode}</Text>
           </View>
         }
+        subtitle=""
       />
-      <View style={{ flex: 1.4, paddingRight: 12, gap: 4 }}>
+      <View style={{ flex: 1.8, paddingRight: 12, gap: 4 }}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
           <SymbolAvatar
             baseAsset={baseAsset}
             destinationAsset={destinationAsset}
             size={22}
           />
-          <Text numberOfLines={2} style={{ color: "#101828", fontWeight: "700", flex: 1 }}>
-            {`${trade.symbolCode} · ${trade.timeframeCode}`}
+          <Text numberOfLines={1} style={{ color: "#101828", fontWeight: "700", flex: 1 }}>
+            {trade.symbolCode}
           </Text>
         </View>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-          <Text numberOfLines={2} style={{ color: "#475467" }}>
-            {trade.strategyName}
-          </Text>
-          <SideBadge side={trade.side} />
-        </View>
+        <Text style={{ color: "#475467" }}>
+          {trade.timeframeCode} · {trade.strategyName}
+        </Text>
       </View>
       <Cell
-        flex={1.8}
-        title={formatTimestamp(trade.openedAt)}
+        flex={2}
+        title={<TimeBadge value={trade.openedAt} />}
         subtitle={
-          trade.closedAt ? (
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-              <CloseReasonBadge
-                status={trade.status}
-                closeReason={trade.closeReason}
-              />
-              <Text style={{ color: "#475467" }}>{formatTimestamp(trade.closedAt)}</Text>
+          <View style={{ gap: 6 }}>
+            <InfoBadge label={formatPrice(trade.entryPrice)} />
+            <View style={{ alignSelf: "flex-start" }}>
+              <SideBadge side={trade.side} />
             </View>
-          ) : (
-            <StatusBadge status="open" />
-          )
+            <InfoBadge label={`Qty ${trade.quantity.toFixed(4)} / ${formatMoney(trade.notionalUsd)}`} />
+          </View>
         }
       />
       <Cell
-        flex={1.7}
-        title={`Entry ${trade.entryPrice.toFixed(4)}`}
-        subtitle={`Exit ${trade.exitPrice === null ? "n/a" : trade.exitPrice.toFixed(4)} · Qty ${trade.quantity.toFixed(4)}`}
+        flex={1.8}
+        title={
+          <View style={{ flexDirection: "row", gap: 6, flexWrap: "wrap" }}>
+            <RiskPriceBadge kind="SL" value={trade.stopLossPrice} tone="danger" />
+            <RiskPriceBadge kind="TP" value={trade.takeProfitPrice} tone="success" />
+          </View>
+        }
+        subtitle={
+          ""
+        }
       />
-      <Cell
-        flex={1.5}
-        title={`SL ${trade.stopLossPrice === null ? "n/a" : trade.stopLossPrice.toFixed(4)}`}
-        subtitle={`TP ${trade.takeProfitPrice === null ? "n/a" : trade.takeProfitPrice.toFixed(4)}`}
-      />
-      <Cell
-        flex={1.3}
-        title={<PnlBadge percent={trade.realizedPnlPercent} />}
-        subtitle={`${formatMoney(trade.realizedPnlUsd)} · fees ${formatMoney(trade.feesUsd)}`}
-      />
-      <Cell
-        flex={1.4}
-        title={trade.sourceBacktestId ?? "n/a"}
-        subtitle={trade.analysisSettingId}
-      />
+      <View style={{ flex: 2.1, paddingRight: 12, gap: 4 }}>
+        <TimeBadge value={trade.closedAt} />
+        <View style={{ flexDirection: "row", gap: 6, flexWrap: "wrap" }}>
+          <InfoBadge
+            label={trade.exitPrice === null ? "Exit n/a" : formatPrice(trade.exitPrice)}
+          />
+          <ExitOutcomeBadge
+            status={trade.status}
+            closeReason={trade.closeReason}
+            percent={trade.realizedPnlPercent}
+          />
+          <InfoBadge label={`${formatMoney(trade.realizedPnlUsd)} · fees ${formatMoney(trade.feesUsd)}`} />
+        </View>
+      </View>
+      <View style={{ flex: 1.3, paddingRight: 12, gap: 6 }}>
+        <ActionLink
+          label="Open details"
+          disabled={!promotionId}
+          onPress={() => promotionId && onOpenPromotionDetails(promotionId)}
+        />
+      </View>
     </View>
   );
 }
@@ -1205,6 +1387,27 @@ function SideBadge({ side }: { side: "long" | "short" }) {
   );
 }
 
+function RiskPriceBadge({
+  kind,
+  value,
+  tone,
+}: {
+  kind: "SL" | "TP";
+  value: number | null;
+  tone: "danger" | "success";
+}) {
+  const foregroundColor = tone === "danger" ? "#b42318" : "#157f3b";
+  const backgroundColor = tone === "danger" ? "#fef3f2" : "#ecfdf3";
+  return (
+    <Badge
+      icon={tone === "danger" ? "warning" : "flag"}
+      label={`${kind} ${formatPrice(value)}`}
+      backgroundColor={backgroundColor}
+      foregroundColor={foregroundColor}
+    />
+  );
+}
+
 function StatusBadge({
   status,
 }: {
@@ -1215,8 +1418,8 @@ function StatusBadge({
       <Badge
         icon="lock-open"
         label="open"
-        backgroundColor="#eff8ff"
-        foregroundColor="#175cd3"
+        backgroundColor="#fffaeb"
+        foregroundColor="#b54708"
       />
     );
   }
@@ -1355,6 +1558,68 @@ function PnlBadge({ percent }: { percent: number | null }) {
   );
 }
 
+function ExitOutcomeBadge({
+  status,
+  closeReason,
+  percent,
+}: {
+  status: "open" | "closed" | "cancelled" | "rejected";
+  closeReason: string | null;
+  percent: number | null;
+}) {
+  if (status !== "closed") {
+    return null;
+  }
+
+  const percentLabel = percent === null ? "n/a" : formatPercent(percent);
+
+  if (closeReason === "stopLoss") {
+    return (
+      <Badge
+        icon="trending-down"
+        label={`stop loss ${percentLabel}`}
+        backgroundColor="#fef3f2"
+        foregroundColor="#b42318"
+      />
+    );
+  }
+
+  if (closeReason === "takeProfit") {
+    return (
+      <Badge
+        icon="trending-up"
+        label={`take profit ${percentLabel}`}
+        backgroundColor="#ecfdf3"
+        foregroundColor="#157f3b"
+      />
+    );
+  }
+
+  if (closeReason === "reversal") {
+    return (
+      <Badge
+        icon="swap-horiz"
+        label={`reversal ${percentLabel}`}
+        backgroundColor="#eff8ff"
+        foregroundColor="#175cd3"
+      />
+    );
+  }
+
+  if (closeReason === "riskExit") {
+    return (
+      <Badge
+        icon="rule"
+        label={`risk exit ${percentLabel}`}
+        backgroundColor="#fffaeb"
+        foregroundColor="#b54708"
+      />
+    );
+  }
+
+  return <PnlBadge percent={percent} />;
+}
+
 function Badge({
   icon,
   label,
@@ -1369,6 +1634,7 @@ function Badge({
   return (
     <View
       style={{
+        alignSelf: "flex-start",
         flexDirection: "row",
         alignItems: "center",
         gap: 4,
@@ -1384,4 +1650,315 @@ function Badge({
       </Text>
     </View>
   );
+}
+
+function TimeBadge({ value }: { value: string | null | undefined }) {
+  return (
+    <Badge
+      icon="schedule"
+      label={formatTimestamp(value)}
+      backgroundColor="#eff8ff"
+      foregroundColor="#175cd3"
+    />
+  );
+}
+
+function InfoBadge({ label }: { label: string }) {
+  return (
+    <View
+      style={{
+        alignSelf: "flex-start",
+        borderRadius: 999,
+        backgroundColor: "#f2f4f7",
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+      }}
+    >
+      <Text style={{ color: "#475467", fontSize: 12, fontWeight: "700" }}>{label}</Text>
+    </View>
+  );
+}
+
+function ActionLink({
+  label,
+  disabled,
+  onPress,
+}: {
+  label: string;
+  disabled: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable disabled={disabled} onPress={onPress}>
+      <Text
+        style={{
+          color: disabled ? "#98a2b3" : "#175cd3",
+          fontWeight: "700",
+          textDecorationLine: "underline",
+        }}
+      >
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
+function derivePromotionIdFromTradeId(tradeId: string): string | null {
+  if (!tradeId.startsWith("paper:")) {
+    return null;
+  }
+
+  const withoutPrefix = tradeId.slice("paper:".length);
+  const separatorIndex = withoutPrefix.lastIndexOf(":");
+  if (separatorIndex <= 0) {
+    return null;
+  }
+
+  return withoutPrefix.slice(0, separatorIndex);
+}
+
+function toIsoDateTime(value: string): string | undefined {
+  if (!value.trim()) {
+    return undefined;
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return undefined;
+  }
+
+  return parsed.toISOString();
+}
+
+function DateTimeFilter({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const dateValue = value.includes("T") ? value.split("T")[0] ?? "" : "";
+  const timeValue = value.includes("T") ? value.split("T")[1] ?? "" : "";
+
+  const updateDatePart = (nextDate: string) => {
+    if (!nextDate) {
+      onChange("");
+      return;
+    }
+
+    onChange(`${nextDate}T${timeValue || "00:00"}`);
+  };
+
+  const updateTimePart = (nextTime: string) => {
+    if (!nextTime) {
+      if (!dateValue) {
+        onChange("");
+        return;
+      }
+
+      onChange(`${dateValue}T00:00`);
+      return;
+    }
+
+    onChange(`${dateValue || new Date().toISOString().slice(0, 10)}T${nextTime}`);
+  };
+
+  if (Platform.OS === "web") {
+    return (
+      <View
+        style={{
+          minWidth: 280,
+          borderRadius: 10,
+          borderWidth: 1,
+          borderColor: "#cbd5e1",
+          backgroundColor: "#ffffff",
+          paddingHorizontal: 12,
+          paddingVertical: 10,
+          gap: 8,
+        }}
+      >
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+          <MaterialIcons name="event" size={18} color="#344054" />
+          <Text style={{ fontSize: 12, fontWeight: "700", color: "#475467" }}>{label}</Text>
+        </View>
+        <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>
+          <input
+            type="date"
+            value={dateValue}
+            onChange={(event) => updateDatePart(event.target.value)}
+            style={{
+              flex: 1,
+              minWidth: 0,
+              borderRadius: 8,
+              border: "1px solid #d0d5dd",
+              backgroundColor: "#f8fafc",
+              color: "#101828",
+              padding: "10px 12px",
+              fontSize: "14px",
+              fontWeight: 600,
+              fontFamily: "inherit",
+            }}
+          />
+          <input
+            type="time"
+            value={timeValue}
+            onChange={(event) => updateTimePart(event.target.value)}
+            style={{
+              width: 124,
+              borderRadius: 8,
+              border: "1px solid #d0d5dd",
+              backgroundColor: "#f8fafc",
+              color: "#101828",
+              padding: "10px 12px",
+              fontSize: "14px",
+              fontWeight: 600,
+              fontFamily: "inherit",
+            }}
+          />
+          {value ? (
+            <Pressable
+              onPress={() => onChange("")}
+              style={{
+                borderRadius: 8,
+                borderWidth: 1,
+                borderColor: "#d0d5dd",
+                backgroundColor: "#ffffff",
+                paddingHorizontal: 10,
+                paddingVertical: 10,
+              }}
+            >
+              <MaterialIcons name="close" size={16} color="#475467" />
+            </Pressable>
+          ) : null}
+        </View>
+      </View>
+    );
+  }
+
+  return (
+    <View
+      style={{
+        minWidth: 220,
+        borderRadius: 10,
+        borderWidth: 1,
+        borderColor: "#cbd5e1",
+        backgroundColor: "#ffffff",
+        paddingHorizontal: 12,
+        paddingVertical: 10,
+        justifyContent: "center",
+      }}
+    >
+      <View style={{ gap: 2 }}>
+        <Text style={{ fontSize: 12, fontWeight: "700", color: "#475467" }}>{label}</Text>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+          <MaterialIcons name="event" size={18} color="#344054" />
+          <TextInput
+            value={value}
+            onChangeText={onChange}
+            placeholder="YYYY-MM-DDTHH:mm"
+            placeholderTextColor="#98a2b3"
+            style={{
+              flex: 1,
+              minWidth: 0,
+              paddingVertical: 0,
+              paddingHorizontal: 0,
+              color: "#101828",
+              fontWeight: "600",
+              backgroundColor: "transparent",
+              outlineStyle: "none" as never,
+            }}
+          />
+        </View>
+      </View>
+    </View>
+  );
+}
+
+function ExecutionSectionTab({
+  label,
+  icon,
+  active,
+  onPress,
+}: {
+  label: string;
+  icon: keyof typeof MaterialIcons.glyphMap;
+  active: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={{
+        borderRadius: 10,
+        paddingHorizontal: 14,
+        paddingVertical: 10,
+        backgroundColor: active ? "#1f3a5f" : "transparent",
+        borderWidth: 0,
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 8,
+      }}
+    >
+      <MaterialIcons
+        name={icon}
+        size={18}
+        color={active ? "#ffffff" : "#344054"}
+      />
+      <Text style={{ color: active ? "#ffffff" : "#344054", fontWeight: "700" }}>{label}</Text>
+    </Pressable>
+  );
+}
+
+function ExecutionModeTab({
+  label,
+  active,
+  onPress,
+}: {
+  label: string;
+  active: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={{
+        borderRadius: 10,
+        paddingHorizontal: 14,
+        paddingVertical: 10,
+        backgroundColor: active ? "#1f3a5f" : "#ffffff",
+        borderWidth: 1,
+        borderColor: active ? "#1f3a5f" : "#d0d5dd",
+      }}
+    >
+      <Text style={{ color: active ? "#dbeafe" : "#344054", fontWeight: "700" }}>{label}</Text>
+    </Pressable>
+  );
+}
+
+function InlineStat({
+  label,
+  value,
+  icon,
+  valueColor = "#101828",
+}: {
+  label: string;
+  value: string;
+  icon?: keyof typeof MaterialIcons.glyphMap;
+  valueColor?: string;
+}) {
+  return (
+    <View style={{ gap: 2 }}>
+      <Text style={{ fontSize: 12, color: "#475467", fontWeight: "700" }}>{label}</Text>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+        {icon ? <MaterialIcons name={icon} size={16} color={valueColor} /> : null}
+        <Text style={{ fontSize: 18, color: valueColor, fontWeight: "800" }}>{value}</Text>
+      </View>
+    </View>
+  );
+}
+
+export default function ExecutionScreen() {
+  return <ExecutionScreenContent />;
 }

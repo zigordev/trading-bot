@@ -138,7 +138,10 @@ impl BinancePrivateClient {
     pub async fn create_listen_key(&self) -> Result<String> {
         let response: BinanceListenKeyResponse = self
             .client
-            .post(format!("{}/api/v3/userDataStream", self.rest_base_url.trim_end_matches('/')))
+            .post(format!(
+                "{}/api/v3/userDataStream",
+                self.rest_base_url.trim_end_matches('/')
+            ))
             .header("X-MBX-APIKEY", &self.api_key)
             .send()
             .await
@@ -153,7 +156,10 @@ impl BinancePrivateClient {
 
     pub async fn keepalive_listen_key(&self, listen_key: &str) -> Result<()> {
         self.client
-            .put(format!("{}/api/v3/userDataStream", self.rest_base_url.trim_end_matches('/')))
+            .put(format!(
+                "{}/api/v3/userDataStream",
+                self.rest_base_url.trim_end_matches('/')
+            ))
             .header("X-MBX-APIKEY", &self.api_key)
             .query(&[("listenKey", listen_key)])
             .send()
@@ -174,15 +180,14 @@ impl BinancePrivateClient {
             .await
     }
 
-    pub async fn get_order(
-        &self,
-        symbol: &str,
-        order_id: i64,
-    ) -> Result<BinanceOrderResponse> {
+    pub async fn get_order(&self, symbol: &str, order_id: i64) -> Result<BinanceOrderResponse> {
         self.signed_request(
             Method::GET,
             "/api/v3/order",
-            &[("symbol", symbol.to_string()), ("orderId", order_id.to_string())],
+            &[
+                ("symbol", symbol.to_string()),
+                ("orderId", order_id.to_string()),
+            ],
         )
         .await
     }
@@ -206,15 +211,14 @@ impl BinancePrivateClient {
         .await
     }
 
-    pub async fn cancel_order(
-        &self,
-        symbol: &str,
-        order_id: i64,
-    ) -> Result<BinanceOrderResponse> {
+    pub async fn cancel_order(&self, symbol: &str, order_id: i64) -> Result<BinanceOrderResponse> {
         self.signed_request(
             Method::DELETE,
             "/api/v3/order",
-            &[("symbol", symbol.to_string()), ("orderId", order_id.to_string())],
+            &[
+                ("symbol", symbol.to_string()),
+                ("orderId", order_id.to_string()),
+            ],
         )
         .await
     }
@@ -230,7 +234,10 @@ impl BinancePrivateClient {
     {
         let mut all_params = params.to_vec();
         all_params.push(("recvWindow", self.recv_window.to_string()));
-        all_params.push(("timestamp", chrono::Utc::now().timestamp_millis().to_string()));
+        all_params.push((
+            "timestamp",
+            chrono::Utc::now().timestamp_millis().to_string(),
+        ));
         let query = all_params
             .iter()
             .map(|(key, value)| format!("{key}={value}"))
@@ -288,5 +295,7 @@ pub fn has_any_free_balance(account: &BinanceAccountInformation) -> bool {
 }
 
 pub fn api_key_header(headers: &HeaderMap) -> Option<&str> {
-    headers.get("X-MBX-APIKEY").and_then(|value| value.to_str().ok())
+    headers
+        .get("X-MBX-APIKEY")
+        .and_then(|value| value.to_str().ok())
 }

@@ -66,7 +66,9 @@ pub fn load_config() -> Result<AppConfig> {
     let binance_api_key = std::env::var("BINANCE_API_KEY").ok();
     let binance_api_secret = std::env::var("BINANCE_API_SECRET").ok();
     if default_mode == "live" && (binance_api_key.is_none() || binance_api_secret.is_none()) {
-        bail!("BINANCE_API_KEY and BINANCE_API_SECRET are required when EXECUTION_DEFAULT_MODE=live");
+        bail!(
+            "BINANCE_API_KEY and BINANCE_API_SECRET are required when EXECUTION_DEFAULT_MODE=live"
+        );
     }
 
     Ok(AppConfig {
@@ -128,7 +130,10 @@ mod tests {
         assert_eq!(config.service_name, "trading-bot-execution");
         assert_eq!(config.port, 8120);
         assert_eq!(config.default_mode, "paper");
-        assert_eq!(config.market_data_kline_events_topic, "trading-bot.market-data.kline.v1");
+        assert_eq!(
+            config.market_data_kline_events_topic,
+            "trading-bot.market-data.kline.v1"
+        );
         assert_eq!(config.control_plane_request_timeout_ms, 10000);
         assert_eq!(config.market_data_request_timeout_ms, 15000);
         assert_eq!(config.binance_rest_base_url, "https://api.binance.com");

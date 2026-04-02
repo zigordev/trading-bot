@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 use trading_bot_market_data::models::{PersistedKlineRecord, PersistedTradeRecord};
 use trading_bot_strategy_engine::models::ResolvedAnalysisSettingsRecord;
@@ -109,6 +111,6 @@ pub struct LocalPaperPosition {
 
 #[derive(Clone, Debug, Default)]
 pub struct MarketSnapshot {
-    pub klines: Vec<PersistedKlineRecord>,
+    pub klines_by_timeframe: BTreeMap<String, Vec<PersistedKlineRecord>>,
     pub trades: Vec<PersistedTradeRecord>,
 }
