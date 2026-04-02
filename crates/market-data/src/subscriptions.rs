@@ -10,11 +10,7 @@ use crate::models::{
 pub fn should_refresh_for_config_resource(resource_type: &str) -> bool {
     matches!(
         resource_type,
-        "pairs"
-            | "timeframes"
-            | "strategies"
-            | "risk_profiles"
-            | "analysis_settings"
+        "pairs" | "timeframes" | "strategies" | "risk_profiles" | "analysis_settings"
     )
 }
 
@@ -47,7 +43,10 @@ pub fn derive_active_subscriptions(
 ) -> Result<ActiveSubscriptions> {
     let mut kline_groups = BTreeMap::<String, KlineSubscription>::new();
     let mut pair_groups = BTreeMap::<String, PairStreamSubscription>::new();
-    let enabled_records = records.iter().filter(|record| record.enabled).collect::<Vec<_>>();
+    let enabled_records = records
+        .iter()
+        .filter(|record| record.enabled)
+        .collect::<Vec<_>>();
 
     for pair in pairs.iter().filter(|pair| pair.active) {
         let symbol = to_binance_symbol(&pair.code)?;
@@ -89,18 +88,83 @@ pub fn derive_active_subscriptions(
 
     for record in enabled_records {
         let kline_subscription_id = format!("{}:{}", record.symbol, record.timeframe_code);
-        let Some(kline_entry) = kline_groups.get_mut(&kline_subscription_id) else {
+        let Some(primary_symbol) = kline_groups
+            .get(&kline_subscription_id)
+            .map(|entry| entry.symbol.clone())
+        else {
             continue;
         };
-        kline_entry.analysis_setting_ids.push(record.id.clone());
-        kline_entry
-            .strategy_names
-            .push(record.strategy_name.clone());
+        if let Some(kline_entry) = kline_groups.get_mut(&kline_subscription_id) {
+            kline_entry.analysis_setting_ids.push(record.id.clone());
+            kline_entry
+                .strategy_names
+                .push(record.strategy_name.clone());
+        }
 
         if let Some(pair_entry) = pair_groups.get_mut(&record.symbol) {
             pair_entry.analysis_setting_ids.push(record.id.clone());
             pair_entry.strategy_names.push(record.strategy_name.clone());
         }
+
+        let longer_timeframe_code = record.timeframe.longer_timeframe_code.trim();
+        if longer_timeframe_code.is_empty() || longer_timeframe_code == record.timeframe_code {
+            continue;
+        }
+
+        let strategy_kind = record
+            .strategy
+            .parameters
+            .as_object()
+            .and_then(|parameters| parameters.get("kind"))
+            .and_then(|value| value.as_str())
+            .map(|value| {
+                value
+                    .chars()
+                    .filter(|character| character.is_ascii_alphanumeric())
+                    .collect::<String>()
+                    .to_ascii_lowercase()
+            })
+            .unwrap_or_else(|| {
+                record
+                    .strategy_name
+                    .chars()
+                    .filter(|character| character.is_ascii_alphanumeric())
+                    .collect::<String>()
+                    .to_ascii_lowercase()
+            });
+        if strategy_kind != "strategy1" && strategy_kind != "strategy2" {
+            continue;
+        }
+
+        let longer_period_ms = timeframes
+            .iter()
+            .find(|timeframe| timeframe.code == longer_timeframe_code)
+            .map(|timeframe| timeframe.period_ms)
+            .unwrap_or_else(|| {
+                record
+                    .timeframe
+                    .period_ms
+                    .saturating_mul(record.timeframe.longer_timeframe_multiplier.max(1))
+            });
+        let longer_subscription_id = format!("{}:{longer_timeframe_code}", record.symbol);
+        let longer_stream_name = build_kline_stream_name(&primary_symbol, longer_timeframe_code);
+        let longer_entry = kline_groups
+            .entry(longer_subscription_id.clone())
+            .or_insert_with(|| KlineSubscription {
+                subscription_id: longer_subscription_id,
+                pair_code: record.symbol.clone(),
+                symbol: primary_symbol.clone(),
+                timeframe_code: longer_timeframe_code.to_string(),
+                binance_interval: longer_timeframe_code.to_string(),
+                period_ms: longer_period_ms,
+                stream_name: longer_stream_name,
+                analysis_setting_ids: Vec::new(),
+                strategy_names: Vec::new(),
+            });
+        longer_entry.analysis_setting_ids.push(record.id.clone());
+        longer_entry
+            .strategy_names
+            .push(record.strategy_name.clone());
     }
 
     let mut kline_subscriptions = kline_groups.into_values().collect::<Vec<_>>();
@@ -232,7 +296,10 @@ mod tests {
         let active = derive_active_subscriptions(
             &[pair("BTC/USDT")],
             &[timeframe("1m", 60_000)],
-            &[resolved("analysis-1", "ema"), resolved("analysis-2", "breakout")],
+            &[
+                resolved("analysis-1", "ema"),
+                resolved("analysis-2", "breakout"),
+            ],
         )
         .expect("subscriptions should derive");
 
@@ -283,5 +350,40 @@ mod tests {
                 .any(|subscription| subscription.pair_code == "ETHUSDT"
                     && subscription.timeframe_code == "5m")
         );
+    }
+
+    #[test]
+    fn derives_longer_timeframe_subscription_for_legacy_multi_timeframe_strategies() {
+        let mut record = resolved("analysis-1", "strategy1");
+        record.strategy.parameters = json!({ "kind": "strategy1" });
+        record.symbol = "BTCUSDT".to_string();
+        record.symbol_entity.code = "BTCUSDT".to_string();
+        record.timeframe_code = "3m".to_string();
+        record.timeframe.code = "3m".to_string();
+        record.timeframe.period_ms = 180_000;
+        record.timeframe.longer_timeframe_code = "15m".to_string();
+        record.timeframe.longer_timeframe_multiplier = 5;
+
+        let active =
+            derive_active_subscriptions(&[pair("BTCUSDT")], &[timeframe("3m", 180_000)], &[record])
+                .expect("subscriptions should derive");
+
+        assert!(
+            active
+                .kline_subscriptions
+                .iter()
+                .any(|subscription| subscription.pair_code == "BTCUSDT"
+                    && subscription.timeframe_code == "3m")
+        );
+        let longer = active
+            .kline_subscriptions
+            .iter()
+            .find(|subscription| {
+                subscription.pair_code == "BTCUSDT" && subscription.timeframe_code == "15m"
+            })
+            .expect("15m subscription should be derived");
+        assert_eq!(longer.period_ms, 900_000);
+        assert_eq!(longer.analysis_setting_ids, vec!["analysis-1"]);
+        assert_eq!(longer.strategy_names, vec!["strategy1"]);
     }
 }

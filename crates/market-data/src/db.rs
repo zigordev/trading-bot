@@ -10,7 +10,9 @@ use tracing::warn;
 
 use crate::{
     config::AppConfig,
-    models::{NormalizedKlineEvent, NormalizedTradeEvent, PersistedKlineRecord, PersistedTradeRecord},
+    models::{
+        NormalizedKlineEvent, NormalizedTradeEvent, PersistedKlineRecord, PersistedTradeRecord,
+    },
 };
 
 #[derive(Clone)]
@@ -1586,8 +1588,6 @@ impl Database {
         Ok(ids)
     }
 
-    
-
     // latest_research_backtest_runs has been removed; callers should query
     // research_backtest_runs directly for latest-per-key projections.
 
@@ -1989,11 +1989,10 @@ impl Database {
                 continue;
             }
             let row = serde_json::from_str::<StoredBacktestRunRow>(&line)?;
-            let response_summary = serde_json::from_str::<StoredBacktestRunResponseSummary>(
-                &row.response_json,
-            )
-            .unwrap_or_default()
-            .summary;
+            let response_summary =
+                serde_json::from_str::<StoredBacktestRunResponseSummary>(&row.response_json)
+                    .unwrap_or_default()
+                    .summary;
             records.push(StoredBacktestRun {
                 summary: StoredBacktestRunSummary {
                     backtest_id: row.backtest_id,
@@ -2433,9 +2432,8 @@ mod tests {
     fn json_each_row_codec_accepts_large_backtest_line() {
         let payload = "x".repeat(16 * 1024);
         let mut codec = LinesCodec::new_with_max_length(JSON_EACH_ROW_MAX_LINE_LENGTH);
-        let mut bytes = bytes::BytesMut::from(
-            format!("{{\"response_json\":\"{}\"}}\n", payload).as_bytes(),
-        );
+        let mut bytes =
+            bytes::BytesMut::from(format!("{{\"response_json\":\"{}\"}}\n", payload).as_bytes());
 
         let line = codec
             .decode(&mut bytes)

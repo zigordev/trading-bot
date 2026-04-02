@@ -250,7 +250,10 @@ fn resolve_until_time(
     config: SimulationConfig,
 ) -> Result<PositionResolution> {
     loop {
-        let Some(next_event_time) = replay_trades.get(*trade_cursor).map(|record| record.trade_time) else {
+        let Some(next_event_time) = replay_trades
+            .get(*trade_cursor)
+            .map(|record| record.trade_time)
+        else {
             break;
         };
         if next_event_time >= end_time_exclusive {
@@ -445,26 +448,29 @@ fn fill_at_or_after(
 ) -> Option<Fill> {
     advance_trade_cursor_to_time(replay_trades, trade_cursor, signal_time);
 
-    replay_trades.get(*trade_cursor).and_then(|record| {
-        let raw_price = record.price.parse::<f64>().ok()?;
-        *trade_cursor += 1;
-        Some(Fill {
-            time: record.trade_time,
-            effective_price: apply_slippage(raw_price, direction, is_entry, slippage_bps),
-            source: "aggTrade",
+    replay_trades
+        .get(*trade_cursor)
+        .and_then(|record| {
+            let raw_price = record.price.parse::<f64>().ok()?;
+            *trade_cursor += 1;
+            Some(Fill {
+                time: record.trade_time,
+                effective_price: apply_slippage(raw_price, direction, is_entry, slippage_bps),
+                source: "aggTrade",
+            })
         })
-    }).or_else(|| {
-        (fallback_price > 0.0).then(|| {
-            fallback_fill(
-                signal_time,
-                fallback_price,
-                direction,
-                is_entry,
-                slippage_bps,
-                "klineFallback",
-            )
+        .or_else(|| {
+            (fallback_price > 0.0).then(|| {
+                fallback_fill(
+                    signal_time,
+                    fallback_price,
+                    direction,
+                    is_entry,
+                    slippage_bps,
+                    "klineFallback",
+                )
+            })
         })
-    })
 }
 
 fn advance_trade_cursor_to_time(
@@ -605,9 +611,10 @@ mod tests {
             signal_direction: direction.to_string(),
             close_time,
             close_price,
-            fast_ema: 1.0,
-            slow_ema: 0.5,
+            fast_ema: Some(1.0),
+            slow_ema: Some(0.5),
             kline_event_id: format!("signal-{sequence}"),
+            details: serde_json::json!({}),
         }
     }
 
@@ -672,5 +679,4 @@ mod tests {
         assert_eq!(result[0].exit_reason, "takeProfit");
         assert_eq!(result[0].exit_fill_source, "aggTrade");
     }
-
 }

@@ -21,7 +21,7 @@ This repository currently contains the first migration slice:
 - historian inspection and replay-oriented query endpoints in `market-data`
 - runnable Rust `research-backtesting` service
 - direct ClickHouse kline and aggregate-trade replay for offline backtests
-- offline `emaCross` replay using the shared strategy logic crate
+- offline replay using the shared strategy logic crate (`emaCross`, `strategy1`, `strategy2`)
 - env-driven timeframe-specific backtest windows
 - trade-tape-aware stop-loss, take-profit, reversal, fee, and slippage simulation in offline backtests
 - persisted ClickHouse-backed backtest run storage plus list/get retrieval

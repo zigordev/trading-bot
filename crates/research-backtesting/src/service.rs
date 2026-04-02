@@ -1,5 +1,5 @@
-use std::collections::HashSet;
 use std::collections::BTreeSet;
+use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
@@ -8,8 +8,7 @@ use anyhow::{Context, Result, bail};
 use chrono::{DateTime, TimeZone, Utc};
 use futures_util::StreamExt;
 use rdkafka::{
-    ClientConfig,
-    Message,
+    ClientConfig, Message,
     consumer::{Consumer, StreamConsumer},
     producer::{FutureProducer, FutureRecord},
 };
@@ -276,6 +275,7 @@ struct DataReadinessSnapshotItem {
     #[serde(alias = "pairCode")]
     symbol_code: String,
     timeframe_code: String,
+    strategy_name: String,
     #[serde(default)]
     analysis_setting_ids: Vec<String>,
     requested_start_time: i64,
@@ -288,6 +288,7 @@ struct ControlPlaneDataReadinessRecord {
     status: String,
     symbol_code: String,
     timeframe_code: String,
+    strategy_name: String,
     #[serde(default)]
     analysis_setting_ids: Vec<String>,
     requested_start_time: i64,
@@ -438,7 +439,10 @@ impl ResearchBacktestingService {
 
     async fn consume_data_readiness_events(&self) -> Result<()> {
         let consumer = ClientConfig::new()
-            .set("bootstrap.servers", &self.inner.config.kafka_bootstrap_servers)
+            .set(
+                "bootstrap.servers",
+                &self.inner.config.kafka_bootstrap_servers,
+            )
             .set(
                 "group.id",
                 &self.inner.config.data_readiness_events_consumer_group_id,
@@ -463,10 +467,7 @@ impl ResearchBacktestingService {
                         continue;
                     };
 
-                    if let Err(error) = self
-                        .handle_data_readiness_message(payload)
-                        .await
-                    {
+                    if let Err(error) = self.handle_data_readiness_message(payload).await {
                         warn!(error = %error, "failed to process data-readiness snapshot");
                     }
                 }
@@ -527,11 +528,15 @@ impl ResearchBacktestingService {
 
         for item in ready_items {
             started = started.saturating_add(
-                self.trigger_backtests_for_ready_dataset(&item, reason).await?,
+                self.trigger_backtests_for_ready_dataset(&item, reason)
+                    .await?,
             );
         }
 
-        info!(reason, started, "scheduled backtest scan processed ready datasets");
+        info!(
+            reason,
+            started, "scheduled backtest scan processed ready datasets"
+        );
         Ok(started)
     }
 
@@ -546,10 +551,7 @@ impl ResearchBacktestingService {
         &self,
         symbols: impl IntoIterator<Item = &'a String>,
     ) -> Result<Vec<DataReadinessSnapshotItem>> {
-        let wanted = symbols
-            .into_iter()
-            .cloned()
-            .collect::<BTreeSet<String>>();
+        let wanted = symbols.into_iter().cloned().collect::<BTreeSet<String>>();
         let rows = self.fetch_data_readiness_from_control_plane().await?;
         Ok(filter_symbol_complete_ready_items(rows)
             .into_iter()
@@ -570,9 +572,7 @@ impl ResearchBacktestingService {
             .send()
             .await?;
         let response = response.error_for_status()?;
-        let rows = response
-            .json::<ControlPlaneDataReadinessResponse>()
-            .await?;
+        let rows = response.json::<ControlPlaneDataReadinessResponse>().await?;
         Ok(rows.items)
     }
 
@@ -936,6 +936,7 @@ impl ResearchBacktestingService {
             .filter(|analysis| analysis.enabled)
             .filter(|analysis| analysis.symbol == item.symbol_code)
             .filter(|analysis| analysis.timeframe_code == item.timeframe_code)
+            .filter(|analysis| analysis.strategy_name == item.strategy_name)
             .filter(|analysis| {
                 analysis_id_filter.is_empty() || analysis_id_filter.contains(&analysis.id)
             })
@@ -1012,7 +1013,10 @@ impl ResearchBacktestingService {
 
         let batch_id = format!(
             "{}:{}:{}:{}",
-            item.symbol_code, item.timeframe_code, item.requested_start_time, item.requested_end_time
+            item.symbol_code,
+            item.timeframe_code,
+            item.requested_start_time,
+            item.requested_end_time
         );
         let total_count = runnable_analyses.len();
         let mut trade_cache: Option<TradeWindowCache> = None;
@@ -1349,76 +1353,100 @@ impl ResearchBacktestingService {
         )?;
         let replay_trade_start_time = time_window.requested_start_time;
         let replay_trade_end_time = time_window.requested_end_time;
-        let expected_candles = expected_candle_count(
-            time_window.effective_warmup_start_time,
-            time_window.requested_end_time,
-            analysis.timeframe.period_ms,
-        )?;
-        if expected_candles > self.inner.config.max_backtest_klines {
-            bail!(
-                "requested replay needs {} klines, which exceeds BACKTEST_MAX_KLINES={}",
-                expected_candles,
-                self.inner.config.max_backtest_klines
-            );
-        }
+        let expected_candles_by_timeframe = spec
+            .required_kline_requirements()
+            .into_iter()
+            .map(|requirement| {
+                let period_ms = requirement_period_ms(&analysis, &requirement.timeframe_code)?;
+                let expected_candles = expected_candle_count(
+                    time_window.effective_warmup_start_time,
+                    time_window.requested_end_time,
+                    period_ms,
+                )?;
+                if expected_candles > self.inner.config.max_backtest_klines {
+                    bail!(
+                        "requested replay needs {} klines for {} {}, which exceeds BACKTEST_MAX_KLINES={}",
+                        expected_candles,
+                        analysis.symbol,
+                        requirement.timeframe_code,
+                        self.inner.config.max_backtest_klines
+                    );
+                }
+                Ok((requirement.timeframe_code, expected_candles, period_ms))
+            })
+            .collect::<Result<Vec<_>>>()?;
         // Use all available trades up to the configured hard cap.
         let expected_trades = self.inner.config.max_backtest_trades;
 
-        if let Some(blocker) = kline_coverage_blocker_from_store(
-            &self.inner.historical_store,
-            &analysis.symbol,
-            &analysis.timeframe_code,
-            time_window.effective_warmup_start_time,
-            time_window.requested_end_time,
-            analysis.timeframe.period_ms,
-        )
-        .await?
-        {
-            warn!(
-                symbol = %analysis.symbol,
-                timeframe_code = %analysis.timeframe_code,
-                requested_start_time = time_window.requested_start_time,
-                requested_end_time = time_window.requested_end_time,
-                effective_warmup_start_time = time_window.effective_warmup_start_time,
-                blocker = %blocker,
-                "backtest window does not have full historical kline coverage"
-            );
-
-            bail!(
-                "insufficient historical klines in ClickHouse for {} {} within {}..{}; backtesting requires exact market_data_klines coverage ({})",
-                analysis.symbol,
-                analysis.timeframe_code,
+        let mut warmup_rows_by_timeframe = BTreeMap::new();
+        let mut replay_rows = Vec::new();
+        let mut fetched_kline_count = 0usize;
+        for (timeframe_code, expected_candles, period_ms) in expected_candles_by_timeframe {
+            if let Some(blocker) = kline_coverage_blocker_from_store(
+                &self.inner.historical_store,
+                &analysis.symbol,
+                &timeframe_code,
                 time_window.effective_warmup_start_time,
                 time_window.requested_end_time,
-                blocker
-            );
-        }
-
-        let rows = self
-            .inner
-            .historical_store
-            .replay_klines(
-                &analysis.symbol,
-                &analysis.timeframe_code,
-                Some(time_window.effective_warmup_start_time),
-                Some(time_window.requested_end_time),
-                expected_candles as i64,
+                period_ms,
             )
             .await?
-            .into_iter()
-            .map(map_historical_kline_row)
-            .filter(|row| row.closed)
-            .collect::<Vec<_>>();
-
-        let mut warmup_rows = Vec::new();
-        let mut replay_rows = Vec::new();
-        for row in rows {
-            if row.open_time < time_window.requested_start_time {
-                warmup_rows.push(row);
-            } else if row.open_time >= time_window.requested_start_time
-                && row.open_time < time_window.requested_end_time
             {
-                replay_rows.push(row);
+                warn!(
+                    symbol = %analysis.symbol,
+                    timeframe_code = %timeframe_code,
+                    requested_start_time = time_window.requested_start_time,
+                    requested_end_time = time_window.requested_end_time,
+                    effective_warmup_start_time = time_window.effective_warmup_start_time,
+                    blocker = %blocker,
+                    "backtest window does not have full historical kline coverage"
+                );
+
+                bail!(
+                    "insufficient historical klines in ClickHouse for {} {} within {}..{}; backtesting requires exact market_data_klines coverage ({})",
+                    analysis.symbol,
+                    timeframe_code,
+                    time_window.effective_warmup_start_time,
+                    time_window.requested_end_time,
+                    blocker
+                );
+            }
+
+            let rows = self
+                .inner
+                .historical_store
+                .replay_klines(
+                    &analysis.symbol,
+                    &timeframe_code,
+                    Some(time_window.effective_warmup_start_time),
+                    Some(time_window.requested_end_time),
+                    expected_candles as i64,
+                )
+                .await?
+                .into_iter()
+                .map(map_historical_kline_row)
+                .filter(|row| row.closed)
+                .collect::<Vec<_>>();
+            fetched_kline_count = fetched_kline_count.saturating_add(rows.len());
+
+            if timeframe_code == analysis.timeframe_code {
+                let mut warmup_rows = Vec::new();
+                for row in rows {
+                    if row.open_time < time_window.requested_start_time {
+                        warmup_rows.push(row);
+                    } else if row.open_time >= time_window.requested_start_time
+                        && row.open_time < time_window.requested_end_time
+                    {
+                        replay_rows.push(row);
+                    }
+                }
+                warmup_rows_by_timeframe.insert(timeframe_code, warmup_rows);
+            } else {
+                let warmup_rows = rows
+                    .into_iter()
+                    .filter(|row| row.open_time < time_window.requested_start_time)
+                    .collect::<Vec<_>>();
+                warmup_rows_by_timeframe.insert(timeframe_code, warmup_rows);
             }
         }
 
@@ -1479,8 +1507,9 @@ impl ResearchBacktestingService {
         Ok(ResolvedBacktestInput {
             analysis,
             time_window,
-            warmup_rows,
+            warmup_rows_by_timeframe,
             replay_rows,
+            fetched_kline_count,
             replay_trade_start_time,
             replay_trade_end_time,
             replay_trade_max_rows: expected_trades,
@@ -1757,7 +1786,7 @@ fn readiness_run_key(
 fn resolve_time_window(
     analysis: &ResolvedAnalysisSettingsRecord,
     request: &BacktestRequest,
-    _spec: &AnalysisSpec,
+    spec: &AnalysisSpec,
     backtest_warmup_candles: usize,
     backtesting_timerange_ms_by_timeframe: &std::collections::BTreeMap<String, i64>,
 ) -> Result<BacktestTimeWindow> {
@@ -1795,10 +1824,23 @@ fn resolve_time_window(
             }
         };
 
-    let effective_warmup_candles = request.warmup_candles.unwrap_or(backtest_warmup_candles);
-    let warmup_ms = (effective_warmup_candles as i64)
-        .checked_mul(analysis.timeframe.period_ms)
-        .context("warmup window overflowed i64")?;
+    let effective_warmup_candles = request
+        .warmup_candles
+        .unwrap_or(backtest_warmup_candles)
+        .max(spec.max_warmup_candles());
+    let warmup_ms = spec
+        .required_kline_requirements()
+        .into_iter()
+        .map(|requirement| {
+            let period_ms = requirement_period_ms(analysis, &requirement.timeframe_code)?;
+            (requirement.warmup_candles as i64)
+                .checked_mul(period_ms)
+                .context("warmup window overflowed i64")
+        })
+        .collect::<Result<Vec<_>>>()?
+        .into_iter()
+        .max()
+        .unwrap_or_else(|| (effective_warmup_candles as i64) * analysis.timeframe.period_ms);
     let effective_warmup_start_time = requested_start_time.saturating_sub(warmup_ms);
 
     Ok(BacktestTimeWindow {
@@ -1811,6 +1853,29 @@ fn resolve_time_window(
         period_ms: analysis.timeframe.period_ms,
         end_time_is_exclusive: true,
     })
+}
+
+fn requirement_period_ms(
+    analysis: &ResolvedAnalysisSettingsRecord,
+    timeframe_code: &str,
+) -> Result<i64> {
+    if timeframe_code == analysis.timeframe_code {
+        return Ok(analysis.timeframe.period_ms);
+    }
+
+    if timeframe_code == analysis.timeframe.longer_timeframe_code {
+        return analysis
+            .timeframe
+            .period_ms
+            .checked_mul(analysis.timeframe.longer_timeframe_multiplier)
+            .context("longer timeframe period overflowed i64");
+    }
+
+    bail!(
+        "analysis setting {} references unsupported timeframe dependency {}",
+        analysis.id,
+        timeframe_code
+    )
 }
 
 fn configured_duration_ms(
@@ -1921,11 +1986,7 @@ async fn trade_coverage_blocker_from_store(
         .trade_window_coverage_in_range(pair_code, requested_start_time, requested_end_time)
         .await?;
     let aggregate_trade_id_coverage = historical_store
-        .trade_aggregate_id_coverage_in_range(
-            pair_code,
-            requested_start_time,
-            requested_end_time,
-        )
+        .trade_aggregate_id_coverage_in_range(pair_code, requested_start_time, requested_end_time)
         .await?;
     let true_boundaries = fetch_true_trade_window_boundaries(
         client,
@@ -1999,15 +2060,25 @@ async fn fetch_true_trade_window_boundaries(
     start_time: i64,
     end_time: i64,
 ) -> Result<Option<TrueTradeWindowBoundaries>> {
-    let Some(first_row) =
-        fetch_first_agg_trade_in_window(client, binance_reference_base_url, pair_code, start_time, end_time)
-            .await?
+    let Some(first_row) = fetch_first_agg_trade_in_window(
+        client,
+        binance_reference_base_url,
+        pair_code,
+        start_time,
+        end_time,
+    )
+    .await?
     else {
         return Ok(None);
     };
-    let Some(last_row) =
-        fetch_last_agg_trade_in_window(client, binance_reference_base_url, pair_code, start_time, end_time)
-            .await?
+    let Some(last_row) = fetch_last_agg_trade_in_window(
+        client,
+        binance_reference_base_url,
+        pair_code,
+        start_time,
+        end_time,
+    )
+    .await?
     else {
         return Ok(None);
     };
@@ -2067,7 +2138,10 @@ async fn fetch_last_agg_trade_in_window(
         ],
     )
     .await?;
-    let Some(best_trade) = rows.into_iter().max_by_key(|row| (row.trade_time, row.aggregate_trade_id)) else {
+    let Some(best_trade) = rows
+        .into_iter()
+        .max_by_key(|row| (row.trade_time, row.aggregate_trade_id))
+    else {
         return Ok(None);
     };
 
@@ -2232,30 +2306,16 @@ fn replay_trades_page_from_cache(
 fn filter_symbol_complete_ready_items(
     rows: Vec<ControlPlaneDataReadinessRecord>,
 ) -> Vec<DataReadinessSnapshotItem> {
-    let mut rows_by_symbol = std::collections::BTreeMap::<
-        String,
-        Vec<ControlPlaneDataReadinessRecord>,
-    >::new();
-
-    for row in rows {
-        rows_by_symbol
-            .entry(row.symbol_code.clone())
-            .or_default()
-            .push(row);
-    }
-
-    rows_by_symbol
-        .into_values()
-        .filter(|rows| !rows.is_empty() && rows.iter().all(|row| row.status == "ready"))
-        .flat_map(|rows| {
-            rows.into_iter().map(|row| DataReadinessSnapshotItem {
-                status: row.status,
-                symbol_code: row.symbol_code,
-                timeframe_code: row.timeframe_code,
-                analysis_setting_ids: row.analysis_setting_ids,
-                requested_start_time: row.requested_start_time,
-                requested_end_time: row.requested_end_time,
-            })
+    rows.into_iter()
+        .filter(|row| row.status == "ready")
+        .map(|row| DataReadinessSnapshotItem {
+            status: row.status,
+            symbol_code: row.symbol_code,
+            timeframe_code: row.timeframe_code,
+            strategy_name: row.strategy_name,
+            analysis_setting_ids: row.analysis_setting_ids,
+            requested_start_time: row.requested_start_time,
+            requested_end_time: row.requested_end_time,
         })
         .collect()
 }
@@ -2285,7 +2345,12 @@ async fn execute_backtest(
     };
 
     let mut evaluator = AnalysisEvaluator::new(spec.clone());
-    evaluator.warm_from_klines(&input.warmup_rows);
+    let warmup_rows = input
+        .warmup_rows_by_timeframe
+        .values()
+        .flat_map(|rows| rows.iter().cloned())
+        .collect::<Vec<_>>();
+    evaluator.warm_from_klines(&warmup_rows);
 
     let mut signals = Vec::new();
     for row in &input.replay_rows {
@@ -2300,6 +2365,7 @@ async fn execute_backtest(
                 fast_ema: emitted.fast_ema,
                 slow_ema: emitted.slow_ema,
                 kline_event_id: emitted.kline_event_id,
+                details: emitted.details,
             });
         }
     }
@@ -2505,8 +2571,8 @@ async fn execute_backtest(
     let data_retrieval_duration_ms = data_retrieval_duration_ms_override
         .unwrap_or_else(|| retrieval_started_at.elapsed().as_millis() as i64);
     let dataset = BacktestDatasetSummary {
-        fetched_kline_count: input.warmup_rows.len() + input.replay_rows.len(),
-        warmup_kline_count: input.warmup_rows.len(),
+        fetched_kline_count: input.fetched_kline_count,
+        warmup_kline_count: input.warmup_rows_by_timeframe.values().map(Vec::len).sum(),
         replay_kline_count: input.replay_rows.len(),
         fetched_trade_count: trade_stats.fetched_trade_count,
         replay_trade_count: trade_stats.fetched_trade_count,
@@ -2534,8 +2600,8 @@ async fn execute_backtest(
                 stop_loss_source:
                     "aggregateTradesWithRiskProfileSwingGapClampedBetweenMinimumAndMaximum"
                         .to_string(),
-                take_profit_source:
-                    "aggregateTradesWithRiskProfileRrrAppliedToStopLossDistance".to_string(),
+                take_profit_source: "aggregateTradesWithRiskProfileRrrAppliedToStopLossDistance"
+                    .to_string(),
             },
             summary,
             signals,
@@ -2636,10 +2702,8 @@ fn summarize_backtest(
     } else {
         0.0
     };
-    let (equity_curve_pnl_percent, max_drawdown_percent) =
-        calculate_equity_curve_metrics(trades);
-    let score =
-        equity_curve_pnl_percent - (0.75 * max_drawdown_percent) - (12.0 * reversal_ratio);
+    let (equity_curve_pnl_percent, max_drawdown_percent) = calculate_equity_curve_metrics(trades);
+    let score = equity_curve_pnl_percent - (0.75 * max_drawdown_percent) - (12.0 * reversal_ratio);
 
     BacktestSummary {
         signal_count: signals.len(),
@@ -2685,7 +2749,11 @@ fn calculate_equity_curve_metrics(trades: &[SimulatedTradeRecord]) -> (f64, f64)
 
 #[cfg(test)]
 mod tests {
-    use std::{future::Future, pin::Pin, sync::{Arc, Mutex}};
+    use std::{
+        future::Future,
+        pin::Pin,
+        sync::{Arc, Mutex},
+    };
 
     use serde_json::json;
     use trading_bot_market_data::models::PersistedTradeRecord;
@@ -2804,9 +2872,10 @@ mod tests {
             signal_direction: direction.to_string(),
             close_time,
             close_price,
-            fast_ema: 1.0,
-            slow_ema: 0.5,
+            fast_ema: Some(1.0),
+            slow_ema: Some(0.5),
             kline_event_id: format!("signal-{sequence}"),
+            details: serde_json::json!({}),
         }
     }
 
@@ -2909,7 +2978,7 @@ mod tests {
         .expect("window");
         assert_eq!(window.requested_start_time, 1_000_000);
         assert_eq!(window.requested_end_time, 1_000_000 + DAY_MS);
-        assert_eq!(window.effective_warmup_candles, 3);
+        assert_eq!(window.effective_warmup_candles, 4);
     }
 
     #[test]
@@ -2919,12 +2988,11 @@ mod tests {
             min_time: Some(1_000),
             max_time: Some(2_000),
         };
-        let aggregate_trade_id_coverage =
-            trading_bot_market_data::db::AggregateTradeIdCoverage {
-                first_aggregate_trade_id: Some(41),
-                last_aggregate_trade_id: Some(50),
-                distinct_trade_count: 7,
-            };
+        let aggregate_trade_id_coverage = trading_bot_market_data::db::AggregateTradeIdCoverage {
+            first_aggregate_trade_id: Some(41),
+            last_aggregate_trade_id: Some(50),
+            distinct_trade_count: 7,
+        };
         let true_boundaries = Some(TrueTradeWindowBoundaries {
             first_aggregate_trade_id: 41,
             last_aggregate_trade_id: 50,
@@ -2932,12 +3000,8 @@ mod tests {
             last_trade_time: 2_000,
         });
 
-        let blocker = trade_coverage_blocker(
-            5,
-            &coverage,
-            &aggregate_trade_id_coverage,
-            true_boundaries,
-        );
+        let blocker =
+            trade_coverage_blocker(5, &coverage, &aggregate_trade_id_coverage, true_boundaries);
 
         assert_eq!(
             blocker,
@@ -3010,10 +3074,7 @@ mod tests {
             {
                 let pages = Arc::clone(&pages);
                 move |_after, _limit| {
-                    let page = pages
-                        .lock()
-                        .expect("pages mutex poisoned")
-                        .remove(0);
+                    let page = pages.lock().expect("pages mutex poisoned").remove(0);
                     let fut = async move { Ok(page) };
                     Box::pin(fut)
                         as Pin<Box<dyn Future<Output = Result<Vec<PersistedTradeRecord>>> + Send>>

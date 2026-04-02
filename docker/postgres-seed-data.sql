@@ -52,6 +52,8 @@ INSERT INTO public.risk_profiles VALUES ('e8f5a1b9-2b6e-42e8-8df8-3fd4c0c77f05',
 --
 
 INSERT INTO public.strategies VALUES ('1e341a7c-e979-4b14-b27e-bc40986e3a13', 'emaCross', 'EMA crossover strategy', true, '{"kind": "emaCross"}', '2026-03-16 10:42:15.13+00', '2026-03-16 10:42:15.13+00');
+INSERT INTO public.strategies VALUES ('4f60d488-8cb7-4bdb-93ea-11bf8f9d6d0a', 'strategy1', 'Legacy trend pullback strategy', true, '{"kind": "strategy1"}', '2026-03-16 10:42:15.13+00', '2026-03-16 10:42:15.13+00');
+INSERT INTO public.strategies VALUES ('e6cb6e84-04a0-4c41-8dd5-9008bbd31ce3', 'strategy2', 'Legacy momentum confirmation strategy', true, '{"kind": "strategy2"}', '2026-03-16 10:42:15.13+00', '2026-03-16 10:42:15.13+00');
 
 
 --
@@ -73,7 +75,11 @@ VALUES
   ('f2b7510d-ff31-4e1e-ad26-9b95e8b37c2d', 'ema-cross-9-21', 'emaCross', '{"fastPeriod": 9, "slowPeriod": 21}', true, '2026-03-16 10:42:15.168+00', '2026-03-16 10:42:15.168+00'),
   ('d4b017c7-88cb-4a54-b20c-7d3bebb78d81', 'ema-cross-5-13', 'emaCross', '{"fastPeriod": 5, "slowPeriod": 13}', true, '2026-03-16 10:45:18.015+00', '2026-03-16 10:45:18.015+00'),
   ('a9999998-ca30-414d-b2ae-e18f8e1fe26a', 'ema-cross-8-21', 'emaCross', '{"fastPeriod": 8, "slowPeriod": 21}', true, '2026-03-16 10:45:18.051+00', '2026-03-16 10:45:18.051+00'),
-  ('7f93de85-2179-4e63-a8cb-333005ccddb1', 'ema-cross-12-26', 'emaCross', '{"fastPeriod": 12, "slowPeriod": 26}', true, '2026-03-16 10:45:18.083+00', '2026-03-16 10:45:18.083+00');
+  ('7f93de85-2179-4e63-a8cb-333005ccddb1', 'ema-cross-12-26', 'emaCross', '{"fastPeriod": 12, "slowPeriod": 26}', true, '2026-03-16 10:45:18.083+00', '2026-03-16 10:45:18.083+00'),
+  ('8f6b1b2f-51e9-4b2a-8b4a-b9c07b9a41a1', 'legacy-strategy1-default', 'strategy1', '{"longerTimeframeEmaPeriods": 200, "macdFastPeriods": 12, "macdSlowPeriods": 26, "macdSignalPeriods": 9, "stochasticPeriods": 14, "stochasticSignalPeriods": 3}', true, '2026-03-29 10:00:00+00', '2026-03-29 10:00:00+00'),
+  ('2d76cb5c-e7ef-486f-bf1b-9fbc424d91c8', 'legacy-strategy1-fast', 'strategy1', '{"longerTimeframeEmaPeriods": 100, "macdFastPeriods": 8, "macdSlowPeriods": 21, "macdSignalPeriods": 5, "stochasticPeriods": 14, "stochasticSignalPeriods": 3}', true, '2026-03-29 10:05:00+00', '2026-03-29 10:05:00+00'),
+  ('5f124473-4b8f-49ef-8f46-494db2d14798', 'legacy-strategy2-default', 'strategy2', '{"longerTimeframeEmaPeriods": 200, "macdFastPeriods": 12, "macdSlowPeriods": 26, "macdSignalPeriods": 9, "stochasticPeriods": 14, "stochasticSignalPeriods": 3, "rsiPeriods": 14}', true, '2026-03-29 10:10:00+00', '2026-03-29 10:10:00+00'),
+  ('bd5d9c26-9860-4a6a-86e7-8dd2dc8a31d7', 'legacy-strategy2-fast', 'strategy2', '{"longerTimeframeEmaPeriods": 100, "macdFastPeriods": 8, "macdSlowPeriods": 21, "macdSignalPeriods": 5, "stochasticPeriods": 14, "stochasticSignalPeriods": 3, "rsiPeriods": 10}', true, '2026-03-29 10:15:00+00', '2026-03-29 10:15:00+00');
 
 
 --
@@ -90,8 +96,7 @@ INSERT INTO public.execution_settings
     selection_metric,
     require_positive_pnl,
     min_trade_count,
-    allowed_symbols_json,
-    allowed_timeframes_json,
+    max_promotions,
     replace_open_position_policy,
     created_at,
     updated_at
@@ -104,10 +109,9 @@ VALUES
     'paper',
     true,
     'totalPnlPercent',
-    false,
-    5,
-    '[]'::jsonb,
-    '[]'::jsonb,
+    true,
+    1,
+    10,
     'flatten',
     '2026-03-29 09:00:00+00',
     '2026-03-29 09:00:00+00'

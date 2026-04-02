@@ -247,10 +247,7 @@ pub fn load_config() -> Result<AppConfig> {
         config_refresh_debounce_ms: parse_u64("CONFIG_REFRESH_DEBOUNCE_MS", 500)?,
         readiness_max_config_age_ms: parse_u64("READINESS_MAX_CONFIG_AGE_MS", 120000)?,
         binance_rest_base_url: env_or_default("BINANCE_REST_BASE_URL", "https://api.binance.com"),
-        binance_ws_base_url: env_or_default(
-            "BINANCE_WS_BASE_URL",
-            "wss://stream.binance.com:9443",
-        ),
+        binance_ws_base_url: env_or_default("BINANCE_WS_BASE_URL", "wss://stream.binance.com:9443"),
         binance_rest_max_retries: parse_usize("BINANCE_REST_MAX_RETRIES", 5)?,
         binance_rest_retry_backoff_ms: parse_u64("BINANCE_REST_RETRY_BACKOFF_MS", 500)?,
         binance_rest_request_weight_limit_per_minute: parse_u64(
