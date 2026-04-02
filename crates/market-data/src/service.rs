@@ -33,7 +33,9 @@ use crate::{
         ActiveSubscriptions, KlineSubscription, NormalizedKlineEvent, PairStreamSubscription,
         PersistedKlineRecord, PersistedTradeRecord, ResolvedAnalysisSettingsRecord,
     },
-    subscriptions::{derive_active_subscriptions, should_refresh_for_config_resource, to_binance_symbol},
+    subscriptions::{
+        derive_active_subscriptions, should_refresh_for_config_resource, to_binance_symbol,
+    },
 };
 
 #[derive(Clone)]
@@ -52,8 +54,9 @@ struct Inner {
     required_kline_history_ms: RwLock<HashMap<String, i64>>,
     required_trade_history_ms: RwLock<HashMap<String, i64>>,
     required_trade_gap_threshold_ms: RwLock<HashMap<String, i64>>,
-    current_readiness_targets: RwLock<HashMap<(String, String), DataReadinessTarget>>,
-    trade_window_boundaries_cache: RwLock<HashMap<(String, i64, i64), Option<TrueTradeWindowBoundaries>>>,
+    current_readiness_targets: RwLock<HashMap<(String, String, String), DataReadinessTarget>>,
+    trade_window_boundaries_cache:
+        RwLock<HashMap<(String, i64, i64), Option<TrueTradeWindowBoundaries>>>,
     maintenance_gate: Mutex<()>,
     compaction_gate: Mutex<()>,
     refresh_tx: mpsc::Sender<String>,
@@ -138,6 +141,7 @@ struct DataReadinessSnapshotItem {
     status: String,
     pair_code: String,
     timeframe_code: String,
+    strategy_name: String,
     analysis_setting_ids: Vec<String>,
     requested_start_time: i64,
     requested_end_time: i64,
@@ -200,11 +204,18 @@ struct ConfigChangeEventEnvelope {
 struct DataReadinessTarget {
     pair_code: String,
     timeframe_code: String,
-    period_ms: i64,
+    strategy_name: String,
     analysis_setting_ids: Vec<String>,
     requested_start_time: i64,
     requested_end_time: i64,
     required_history_ms: i64,
+    kline_requirements: Vec<DataReadinessKlineRequirement>,
+}
+
+#[derive(Clone, Debug)]
+struct DataReadinessKlineRequirement {
+    timeframe_code: String,
+    period_ms: i64,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -579,8 +590,8 @@ impl MarketDataService {
             .set(if db_ok { 1 } else { 0 });
 
         let status = self.inner.runtime_status.read().await.clone();
-        let runtime_config_max_age_ms = (self.inner.config.readiness_max_config_age_ms as i64)
-            .max(2 * 60 * 60 * 1000);
+        let runtime_config_max_age_ms =
+            (self.inner.config.readiness_max_config_age_ms as i64).max(2 * 60 * 60 * 1000);
         let runtime_config_ok = status.runtime_config.loaded
             && status
                 .runtime_config
@@ -606,7 +617,11 @@ impl MarketDataService {
         } else {
             "down"
         };
-        let market_stream = if status.stream.connected { "up" } else { "down" };
+        let market_stream = if status.stream.connected {
+            "up"
+        } else {
+            "down"
+        };
         let database = if db_ok { "up" } else { "down" };
         let status_text = if runtime_config == "up"
             && kafka_producer == "up"
@@ -695,7 +710,10 @@ impl MarketDataService {
             timeframe_code,
             start_time,
             end_time,
-            period_ms,
+            &[DataReadinessKlineRequirement {
+                timeframe_code: timeframe_code.to_string(),
+                period_ms,
+            }],
             end_time.saturating_sub(start_time),
         )
         .await
@@ -707,20 +725,20 @@ impl MarketDataService {
         timeframe_code: &str,
         requested_start_time: i64,
         requested_end_time: i64,
-        period_ms: i64,
+        kline_requirements: &[DataReadinessKlineRequirement],
         required_history_ms: i64,
     ) -> Result<BacktestDataReadiness> {
-        let kline_start_time = requested_end_time.saturating_sub(required_history_ms.max(period_ms));
-        let kline_coverage = self
-            .inner
-            .database
-            .kline_window_coverage_in_range(
-                pair_code,
-                timeframe_code,
-                kline_start_time,
-                requested_end_time.saturating_sub(1),
-            )
-            .await?;
+        let primary_period_ms = kline_requirements
+            .iter()
+            .find(|requirement| requirement.timeframe_code == timeframe_code)
+            .map(|requirement| requirement.period_ms)
+            .or_else(|| {
+                kline_requirements
+                    .first()
+                    .map(|requirement| requirement.period_ms)
+            })
+            .unwrap_or(60_000);
+        let kline_start_time = requested_end_time.saturating_sub(required_history_ms.max(1));
         let trade_coverage = self
             .inner
             .database
@@ -743,18 +761,74 @@ impl MarketDataService {
                 requested_end_time,
             )
             .await?;
-        let trade_gap_threshold_ms = (period_ms / 4).clamp(1_000, 60_000);
-        let latest_trade = self.inner.database.latest_trade_checkpoint(pair_code).await?;
+        let trade_gap_threshold_ms = (primary_period_ms / 4).clamp(1_000, 60_000);
+        let latest_trade = self
+            .inner
+            .database
+            .latest_trade_checkpoint(pair_code)
+            .await?;
 
-        let required_klines =
-            exact_candle_count_exclusive(kline_start_time, requested_end_time, period_ms)?;
-        let missing_kline_count = missing_kline_count(&kline_coverage, required_klines);
-        let kline = map_dimension(
-            &kline_coverage,
-            kline_coverage.max_time,
-            missing_kline_count,
-            required_klines,
-        );
+        let mut kline_dimensions = Vec::with_capacity(kline_requirements.len());
+        let mut aggregated_kline_rows = 0u64;
+        let mut aggregated_missing_kline_count = 0u64;
+        let mut all_kline_complete = true;
+        let mut kline_min_time = None;
+        let mut kline_max_time = None;
+        let mut kline_latest_time = None;
+
+        for requirement in kline_requirements {
+            let kline_coverage = self
+                .inner
+                .database
+                .kline_window_coverage_in_range(
+                    pair_code,
+                    &requirement.timeframe_code,
+                    kline_start_time,
+                    requested_end_time.saturating_sub(1),
+                )
+                .await?;
+            let required_klines = exact_candle_count_exclusive(
+                kline_start_time,
+                requested_end_time,
+                requirement.period_ms,
+            )?;
+            let missing_kline_count = missing_kline_count(&kline_coverage, required_klines);
+            let dimension = map_dimension(
+                &kline_coverage,
+                kline_coverage.max_time,
+                missing_kline_count,
+                required_klines,
+            );
+            let complete =
+                kline_coverage_complete(required_klines, &kline_coverage, missing_kline_count);
+            aggregated_kline_rows = aggregated_kline_rows.saturating_add(dimension.row_count);
+            aggregated_missing_kline_count =
+                aggregated_missing_kline_count.saturating_add(dimension.missing_count);
+            all_kline_complete &= complete;
+            kline_min_time = min_option_i64(kline_min_time, dimension.min_time);
+            kline_max_time = max_option_i64(kline_max_time, dimension.max_time);
+            kline_latest_time = max_option_i64(kline_latest_time, dimension.latest_time);
+            kline_dimensions.push((requirement, dimension, complete));
+        }
+
+        let kline = ReadinessDimension {
+            row_count: aggregated_kline_rows,
+            min_time: kline_min_time,
+            max_time: kline_max_time,
+            latest_time: kline_latest_time,
+            missing_count: aggregated_missing_kline_count,
+            complete: all_kline_complete,
+            coverage_percent: if kline_dimensions.is_empty() {
+                0.0
+            } else if all_kline_complete {
+                100.0
+            } else {
+                kline_dimensions
+                    .iter()
+                    .map(|(_, dimension, _)| dimension.coverage_percent)
+                    .fold(100.0, f64::min)
+            },
+        };
         let missing_trade_count = missing_trade_count(
             &trade_coverage,
             &trade_aggregate_id_coverage,
@@ -768,25 +842,31 @@ impl MarketDataService {
             &trade_aggregate_id_coverage,
             trade_boundary_ids,
         );
-        let kline_complete =
-            kline_coverage_complete(required_klines, &kline_coverage, missing_kline_count);
-        let kline = ReadinessDimension {
-            complete: kline_complete,
-            ..kline
-        };
 
         let (status, details) = if kline.complete && trades.complete {
             ("ready".to_string(), None)
-        } else if kline.row_count == 0 && trade_coverage.row_count == 0
-        {
+        } else if kline.row_count == 0 && trade_coverage.row_count == 0 {
             (
                 "missing".to_string(),
-                Some("no replay-grade dataset was found for this pair/timeframe window".to_string()),
+                Some(
+                    "no replay-grade dataset was found for this pair/timeframe window".to_string(),
+                ),
             )
         } else {
             (
                 "partial".to_string(),
-                Some("one or more replay inputs are incomplete for the requested window".to_string()),
+                Some(if kline_requirements.len() > 1 {
+                    format!(
+                        "one or more replay inputs are incomplete for the requested window; required kline timeframes: {}",
+                        kline_requirements
+                            .iter()
+                            .map(|requirement| requirement.timeframe_code.clone())
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    )
+                } else {
+                    "one or more replay inputs are incomplete for the requested window".to_string()
+                }),
             )
         };
         Ok(BacktestDataReadiness {
@@ -796,7 +876,7 @@ impl MarketDataService {
             timeframe_code: timeframe_code.to_string(),
             start_time: requested_start_time,
             end_time: requested_end_time,
-            period_ms,
+            period_ms: primary_period_ms,
             kline,
             trades,
         })
@@ -1086,25 +1166,15 @@ impl MarketDataService {
                 self.inner.database.upsert_kline(&event).await?;
                 self.publish_kline_event(&event).await?;
                 self.inner.metrics.kline_publish_total.inc();
-                self.mark_stream(
-                    true,
-                    None,
-                    Some(event.occurred_at.clone()),
-                    None,
-                )
-                .await;
+                self.mark_stream(true, None, Some(event.occurred_at.clone()), None)
+                    .await;
             }
             NormalizedWsEvent::Trade(event) => {
                 self.inner.database.upsert_trade(&event).await?;
                 self.publish_trade_event(&event).await?;
                 self.inner.metrics.trade_publish_total.inc();
-                self.mark_stream(
-                    true,
-                    None,
-                    Some(event.occurred_at.clone()),
-                    None,
-                )
-                .await;
+                self.mark_stream(true, None, Some(event.occurred_at.clone()), None)
+                    .await;
             }
         }
         Ok(())
@@ -1255,12 +1325,20 @@ impl MarketDataService {
             .cloned()
             .map(|target| {
                 (
-                    (target.pair_code.clone(), target.timeframe_code.clone()),
+                    (
+                        target.pair_code.clone(),
+                        target.timeframe_code.clone(),
+                        target.strategy_name.clone(),
+                    ),
                     target,
                 )
             })
             .collect();
-        self.inner.trade_window_boundaries_cache.write().await.clear();
+        self.inner
+            .trade_window_boundaries_cache
+            .write()
+            .await
+            .clear();
         tracing::info!(
             reason,
             kline_subscriptions = active.kline_subscriptions.len(),
@@ -1281,8 +1359,8 @@ impl MarketDataService {
             );
         }
 
-        let readiness_publish_handle = self
-            .start_periodic_data_readiness_publish(records.clone(), reason.to_string());
+        let readiness_publish_handle =
+            self.start_periodic_data_readiness_publish(records.clone(), reason.to_string());
 
         let refresh_result: Result<()> = async {
             self.run_backfill_and_gap_repair(&active, &required_history_plan)
@@ -1321,11 +1399,7 @@ impl MarketDataService {
         refresh_result?;
 
         if let Err(error) = self.publish_data_readiness_snapshot(&records).await {
-            tracing::warn!(
-                ?error,
-                reason,
-                "failed to publish data-readiness snapshot"
-            );
+            tracing::warn!(?error, reason, "failed to publish data-readiness snapshot");
         }
         Ok(())
     }
@@ -1422,7 +1496,7 @@ impl MarketDataService {
         records: &[ResolvedAnalysisSettingsRecord],
     ) -> Vec<DataReadinessTarget> {
         let snapshot_end = Self::last_closed_hour_ms(Utc::now().timestamp_millis());
-        let mut grouped: HashMap<(String, String), DataReadinessTarget> = HashMap::new();
+        let mut grouped: HashMap<(String, String, String), DataReadinessTarget> = HashMap::new();
 
         for record in records.iter().filter(|record| record.enabled) {
             let configured_duration_ms = self
@@ -1436,10 +1510,24 @@ impl MarketDataService {
                         .saturating_mul(record.timeframe.period_ms.max(1))
                 })
                 .max(record.timeframe.period_ms.max(1));
-            let warmup_candles = self.inner.config.backtest_warmup_candles;
-            let required_history_ms = configured_duration_ms
-                .saturating_add((warmup_candles as i64).saturating_mul(record.timeframe.period_ms));
-            let key = (record.symbol.clone(), record.timeframe_code.clone());
+            let kline_requirements = Self::data_readiness_kline_requirements(
+                record,
+                self.inner.config.backtest_warmup_candles,
+            );
+            let warmup_ms = kline_requirements
+                .iter()
+                .map(|requirement| {
+                    Self::required_warmup_candles(record, requirement.timeframe_code.as_str())
+                        .saturating_mul(requirement.period_ms)
+                })
+                .max()
+                .unwrap_or(record.timeframe.period_ms);
+            let required_history_ms = configured_duration_ms.saturating_add(warmup_ms);
+            let key = (
+                record.symbol.clone(),
+                record.timeframe_code.clone(),
+                record.strategy_name.clone(),
+            );
 
             grouped
                 .entry(key)
@@ -1453,15 +1541,80 @@ impl MarketDataService {
                 .or_insert_with(|| DataReadinessTarget {
                     pair_code: record.symbol.clone(),
                     timeframe_code: record.timeframe_code.clone(),
-                    period_ms: record.timeframe.period_ms,
+                    strategy_name: record.strategy_name.clone(),
                     analysis_setting_ids: vec![record.id.clone()],
                     requested_start_time: snapshot_end.saturating_sub(configured_duration_ms),
                     requested_end_time: snapshot_end,
                     required_history_ms,
+                    kline_requirements,
                 });
         }
 
         grouped.into_values().collect()
+    }
+
+    fn data_readiness_kline_requirements(
+        record: &ResolvedAnalysisSettingsRecord,
+        _default_backtest_warmup_candles: usize,
+    ) -> Vec<DataReadinessKlineRequirement> {
+        let mut requirements = vec![DataReadinessKlineRequirement {
+            timeframe_code: record.timeframe_code.clone(),
+            period_ms: record.timeframe.period_ms,
+        }];
+
+        let strategy_kind = record
+            .strategy
+            .parameters
+            .as_object()
+            .and_then(|parameters| parameters.get("kind"))
+            .and_then(|value| value.as_str())
+            .map(|value| value.to_ascii_lowercase())
+            .unwrap_or_else(|| record.strategy_name.to_ascii_lowercase());
+
+        if (strategy_kind == "strategy1" || strategy_kind == "strategy2")
+            && !record.timeframe.longer_timeframe_code.is_empty()
+            && record.timeframe.longer_timeframe_code != record.timeframe_code
+        {
+            let longer_period_ms = record
+                .timeframe
+                .period_ms
+                .saturating_mul(record.timeframe.longer_timeframe_multiplier.max(1));
+            requirements.push(DataReadinessKlineRequirement {
+                timeframe_code: record.timeframe.longer_timeframe_code.clone(),
+                period_ms: longer_period_ms,
+            });
+        }
+
+        requirements
+    }
+
+    fn required_warmup_candles(
+        record: &ResolvedAnalysisSettingsRecord,
+        timeframe_code: &str,
+    ) -> i64 {
+        let default_warmup = 200i64;
+        let strategy_kind = record
+            .strategy
+            .parameters
+            .as_object()
+            .and_then(|parameters| parameters.get("kind"))
+            .and_then(|value| value.as_str())
+            .map(|value| value.to_ascii_lowercase())
+            .unwrap_or_else(|| record.strategy_name.to_ascii_lowercase());
+
+        match strategy_kind.as_str() {
+            "emacross" if timeframe_code == record.timeframe_code => record
+                .technical_analysis_settings
+                .as_object()
+                .and_then(|settings| settings.get("slowPeriod"))
+                .and_then(|value| json_usize(Some(value)))
+                .map(|value| value as i64)
+                .unwrap_or(21)
+                .saturating_add(1)
+                .max(default_warmup),
+            "strategy1" | "strategy2" => 1000,
+            _ => default_warmup,
+        }
     }
 
     fn build_placeholder_data_readiness_items(
@@ -1475,6 +1628,7 @@ impl MarketDataService {
                 status: "partial".to_string(),
                 pair_code: target.pair_code,
                 timeframe_code: target.timeframe_code,
+                strategy_name: target.strategy_name,
                 analysis_setting_ids: target.analysis_setting_ids,
                 requested_start_time: target.requested_start_time,
                 requested_end_time: target.requested_end_time,
@@ -1512,7 +1666,7 @@ impl MarketDataService {
                 &target.timeframe_code,
                 target.requested_start_time,
                 target.requested_end_time,
-                target.period_ms,
+                &target.kline_requirements,
                 target.required_history_ms,
             )
             .await
@@ -1521,6 +1675,7 @@ impl MarketDataService {
                 status: readiness.status,
                 pair_code: readiness.pair_code,
                 timeframe_code: readiness.timeframe_code,
+                strategy_name: target.strategy_name,
                 analysis_setting_ids: target.analysis_setting_ids,
                 requested_start_time: target.requested_start_time,
                 requested_end_time: target.requested_end_time,
@@ -1533,6 +1688,7 @@ impl MarketDataService {
                 status: "error".to_string(),
                 pair_code: target.pair_code,
                 timeframe_code: target.timeframe_code,
+                strategy_name: target.strategy_name,
                 analysis_setting_ids: target.analysis_setting_ids,
                 requested_start_time: target.requested_start_time,
                 requested_end_time: target.requested_end_time,
@@ -1564,8 +1720,13 @@ impl MarketDataService {
         &self,
         pair_code: &str,
         timeframe_code: &str,
+        strategy_name: &str,
     ) -> Result<()> {
-        let key = (pair_code.to_string(), timeframe_code.to_string());
+        let key = (
+            pair_code.to_string(),
+            timeframe_code.to_string(),
+            strategy_name.to_string(),
+        );
         let target = self
             .inner
             .current_readiness_targets
@@ -1704,23 +1865,33 @@ impl MarketDataService {
                         .saturating_mul(record.timeframe.period_ms.max(1))
                 })
                 .max(record.timeframe.period_ms.max(1));
-
-            let warmup_candles = self.inner.config.backtest_warmup_candles;
-            let warmup_ms =
-                (warmup_candles as i64).saturating_mul(record.timeframe.period_ms.max(1));
-            let kline_headroom_ms = (self.inner.config.backtest_kline_headroom_candles as i64)
-                .saturating_mul(record.timeframe.period_ms.max(1));
             let headroom_ms = self.inner.config.scheduled_backtest_history_headroom_ms as i64;
-            let required_kline_history_ms = configured_duration_ms
-                .saturating_add(warmup_ms)
-                .saturating_add(kline_headroom_ms);
             let required_trade_history_ms = configured_duration_ms.saturating_add(headroom_ms);
+            let kline_requirements = Self::data_readiness_kline_requirements(
+                record,
+                self.inner.config.backtest_warmup_candles,
+            );
+            let max_required_warmup_ms = kline_requirements
+                .iter()
+                .map(|requirement| {
+                    Self::required_warmup_candles(record, requirement.timeframe_code.as_str())
+                        .saturating_mul(requirement.period_ms.max(1))
+                })
+                .max()
+                .unwrap_or(record.timeframe.period_ms.max(1));
 
-            let kline_key = (record.symbol.clone(), record.timeframe_code.clone());
-            kline_by_key
-                .entry(kline_key)
-                .and_modify(|current| *current = (*current).max(required_kline_history_ms))
-                .or_insert(required_kline_history_ms);
+            for requirement in kline_requirements {
+                let kline_headroom_ms = (self.inner.config.backtest_kline_headroom_candles as i64)
+                    .saturating_mul(requirement.period_ms.max(1));
+                let required_kline_history_ms = configured_duration_ms
+                    .saturating_add(max_required_warmup_ms)
+                    .saturating_add(kline_headroom_ms);
+                let kline_key = (record.symbol.clone(), requirement.timeframe_code.clone());
+                kline_by_key
+                    .entry(kline_key)
+                    .and_modify(|current| *current = (*current).max(required_kline_history_ms))
+                    .or_insert(required_kline_history_ms);
+            }
 
             trade_by_pair_code
                 .entry(record.symbol.clone())
@@ -2368,8 +2539,8 @@ impl MarketDataService {
         } else {
             0
         };
-        let required_count = (required_end_ms.saturating_sub(required_start_ms))
-            .saturating_div(period_ms) as usize;
+        let required_count =
+            (required_end_ms.saturating_sub(required_start_ms)).saturating_div(period_ms) as usize;
 
         let current_count = self
             .inner
@@ -2488,17 +2659,14 @@ impl MarketDataService {
         }
 
         if let Err(error) = self
-            .publish_data_readiness_target(
-                &subscription.pair_code,
-                &subscription.timeframe_code,
-            )
+            .publish_data_readiness_for_pair(&subscription.pair_code)
             .await
         {
             tracing::warn!(
                 ?error,
                 pair_code = %subscription.pair_code,
                 timeframe_code = %subscription.timeframe_code,
-                "failed to publish final kline data-readiness update"
+                "failed to publish final kline data-readiness updates"
             );
         }
 
@@ -2702,8 +2870,13 @@ impl MarketDataService {
                 "trade aggTradeId backfill refilling missing range"
             );
 
-            self.backfill_pair_trades_for_id_range(subscription, range, max_batch_rows, max_batches)
-                .await?;
+            self.backfill_pair_trades_for_id_range(
+                subscription,
+                range,
+                max_batch_rows,
+                max_batches,
+            )
+            .await?;
         }
 
         Ok(())
@@ -2785,8 +2958,8 @@ impl MarketDataService {
                                 .historical_trade_backfill_use_rowbinary_insert,
                         )
                         .await?;
-                    total_rows_flushed_to_clickhouse = total_rows_flushed_to_clickhouse
-                        .saturating_add(inserted_rows);
+                    total_rows_flushed_to_clickhouse =
+                        total_rows_flushed_to_clickhouse.saturating_add(inserted_rows);
                     buffered_events.clear();
                 }
             }
@@ -3130,7 +3303,6 @@ impl MarketDataService {
             status.kafka.last_error = Some(error);
         }
     }
-
 }
 
 fn map_dimension(
@@ -3169,9 +3341,7 @@ fn map_trade_dimension(
     let edge_ready = match (coverage.min_time, coverage.max_time, true_boundaries) {
         (Some(min_t), Some(max_t), Some(boundaries)) => {
             let latest_acceptable_min = boundaries.first_trade_time.saturating_add(tolerance_ms);
-            let earliest_acceptable_max = boundaries
-                .last_trade_time
-                .saturating_sub(tolerance_ms);
+            let earliest_acceptable_max = boundaries.last_trade_time.saturating_sub(tolerance_ms);
             min_t <= latest_acceptable_min && max_t >= earliest_acceptable_max
         }
         _ => false,
@@ -3194,7 +3364,8 @@ fn map_trade_dimension(
     let coverage_percent = if coverage.row_count == 0 || expected_trade_count <= 0 {
         0.0
     } else {
-        ((present_trade_count.min(expected_trade_count as u64) as f64) / expected_trade_count as f64
+        ((present_trade_count.min(expected_trade_count as u64) as f64)
+            / expected_trade_count as f64
             * 100.0)
             .clamp(0.0, 100.0)
     };
@@ -3232,10 +3403,7 @@ fn kline_coverage_complete(
     coverage.row_count >= required_klines && missing_count == 0
 }
 
-fn missing_kline_count(
-    coverage: &crate::db::WindowCoverage,
-    required_klines: u64,
-) -> u64 {
+fn missing_kline_count(coverage: &crate::db::WindowCoverage, required_klines: u64) -> u64 {
     let present_count = coverage.row_count.min(required_klines);
     required_klines.saturating_sub(present_count)
 }
@@ -3260,6 +3428,32 @@ fn missing_trade_count(
         .distinct_trade_count
         .max(coverage.row_count);
     expected_trade_count.saturating_sub(present_trade_count)
+}
+
+fn json_usize(value: Option<&Value>) -> Option<usize> {
+    match value {
+        Some(Value::Number(number)) => number.as_u64().map(|parsed| parsed as usize),
+        Some(Value::String(raw)) => raw.parse::<usize>().ok(),
+        _ => None,
+    }
+}
+
+fn min_option_i64(current: Option<i64>, next: Option<i64>) -> Option<i64> {
+    match (current, next) {
+        (Some(current), Some(next)) => Some(current.min(next)),
+        (Some(current), None) => Some(current),
+        (None, Some(next)) => Some(next),
+        (None, None) => None,
+    }
+}
+
+fn max_option_i64(current: Option<i64>, next: Option<i64>) -> Option<i64> {
+    match (current, next) {
+        (Some(current), Some(next)) => Some(current.max(next)),
+        (Some(current), None) => Some(current),
+        (None, Some(next)) => Some(next),
+        (None, None) => None,
+    }
 }
 
 #[cfg(test)]

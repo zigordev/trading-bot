@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 use trading_bot_strategy_engine::models::{PersistedKlineRecord, ResolvedAnalysisSettingsRecord};
 
@@ -58,9 +60,10 @@ pub struct BacktestSignalRecord {
     pub signal_direction: String,
     pub close_time: i64,
     pub close_price: f64,
-    pub fast_ema: f64,
-    pub slow_ema: f64,
+    pub fast_ema: Option<f64>,
+    pub slow_ema: Option<f64>,
     pub kline_event_id: String,
+    pub details: serde_json::Value,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -197,8 +200,9 @@ pub struct PersistedBacktestRunSummary {
 pub struct ResolvedBacktestInput {
     pub analysis: ResolvedAnalysisSettingsRecord,
     pub time_window: BacktestTimeWindow,
-    pub warmup_rows: Vec<PersistedKlineRecord>,
+    pub warmup_rows_by_timeframe: BTreeMap<String, Vec<PersistedKlineRecord>>,
     pub replay_rows: Vec<PersistedKlineRecord>,
+    pub fetched_kline_count: usize,
     pub replay_trade_start_time: i64,
     pub replay_trade_end_time: i64,
     pub replay_trade_max_rows: usize,

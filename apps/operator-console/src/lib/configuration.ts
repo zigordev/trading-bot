@@ -64,7 +64,7 @@ export const configResources = {
         name: "parameters",
         label: "Parameters JSON",
         kind: "json",
-        placeholder: '{\n  "kind": "emaCross"\n}',
+        placeholder: '{\n  "kind": "strategy1"\n}',
       },
     ],
   },

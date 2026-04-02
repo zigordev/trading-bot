@@ -331,7 +331,7 @@ Legacy strategy behavior:
 
 Current strategy behavior:
 
-- current supported strategy kind is only `emaCross`
+- current supported strategy kinds are `emaCross`, `strategy1`, and `strategy2`
 - the shared strategy library only exposes the evaluator logic used by offline replay
 
 So the current platform is narrower but cleaner. It does less today, but the part it does is more
@@ -402,7 +402,7 @@ These parts are intentionally not complete yet:
 - portfolio and position state
 - partial-fill and order-book-aware backtesting
 - optimization workflows
-- additional strategy kinds beyond `emaCross`
+- additional strategy kinds beyond `emaCross`, `strategy1`, and `strategy2`
 
 ## What Is Still Missing
 
