@@ -95,6 +95,13 @@ const parseEnvelope = (value: string): DataReadinessSnapshotEnvelope | null => {
             item.kline && typeof item.kline === "object" && !Array.isArray(item.kline)
               ? (item.kline as Record<string, unknown>)
               : null,
+          klineDimensions: Array.isArray(item.klineDimensions)
+            ? item.klineDimensions
+                .filter(
+                  (value): value is Record<string, unknown> =>
+                    typeof value === "object" && value !== null && !Array.isArray(value),
+                )
+            : null,
           trades:
             item.trades && typeof item.trades === "object" && !Array.isArray(item.trades)
               ? (item.trades as Record<string, unknown>)

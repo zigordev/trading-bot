@@ -92,6 +92,7 @@ export type DataReadinessProjectionRecord = {
   requiredHistoryMs: number;
   details: string | null;
   kline: Record<string, unknown> | null;
+  klineDimensions: Record<string, unknown>[] | null;
   trades: Record<string, unknown> | null;
   sourceEventId: string;
   sourceOccurredAt: string;
@@ -380,6 +381,12 @@ const mapDataReadinessProjectionRow = (
   requiredHistoryMs: Number(row.required_history_ms),
   details: row.details === null ? null : String(row.details),
   kline: parseJsonObject(row.kline_json),
+  klineDimensions: Array.isArray(row.kline_dimensions_json)
+    ? row.kline_dimensions_json
+        .filter((value): value is Record<string, unknown> =>
+          typeof value === "object" && value !== null && !Array.isArray(value),
+        )
+    : null,
   trades: parseJsonObject(row.trades_json),
   sourceEventId: String(row.source_event_id),
   sourceOccurredAt:
@@ -622,6 +629,7 @@ export const ensureOpsSchema = async (pool: Pool): Promise<void> => {
       required_history_ms BIGINT NOT NULL,
       details TEXT,
       kline_json JSONB,
+      kline_dimensions_json JSONB,
       trades_json JSONB,
       source_event_id TEXT NOT NULL,
       source_occurred_at TIMESTAMPTZ NOT NULL,
@@ -636,6 +644,11 @@ export const ensureOpsSchema = async (pool: Pool): Promise<void> => {
   await pool.query(`
     ALTER TABLE ops_data_readiness
       ADD COLUMN IF NOT EXISTS strategy_name TEXT
+  `);
+
+  await pool.query(`
+    ALTER TABLE ops_data_readiness
+      ADD COLUMN IF NOT EXISTS kline_dimensions_json JSONB
   `);
 
   await pool.query(`
@@ -1320,6 +1333,7 @@ export const replaceDataReadinessProjections = async (
             required_history_ms,
             details,
             kline_json,
+            kline_dimensions_json,
             trades_json,
             source_event_id,
             source_occurred_at
@@ -1336,8 +1350,9 @@ export const replaceDataReadinessProjections = async (
             $9,
             $10::jsonb,
             $11::jsonb,
-            $12,
-            $13::timestamptz
+            $12::jsonb,
+            $13,
+            $14::timestamptz
           )
           ON CONFLICT (symbol_code, timeframe_code, strategy_name) DO UPDATE
              SET status = EXCLUDED.status,
@@ -1347,13 +1362,14 @@ export const replaceDataReadinessProjections = async (
                  required_history_ms = EXCLUDED.required_history_ms,
                  details = EXCLUDED.details,
                  kline_json = EXCLUDED.kline_json,
+                 kline_dimensions_json = EXCLUDED.kline_dimensions_json,
                  trades_json = EXCLUDED.trades_json,
                  source_event_id = EXCLUDED.source_event_id,
                  source_occurred_at = EXCLUDED.source_occurred_at,
                  updated_at = NOW()
            WHERE ops_data_readiness.source_occurred_at <= EXCLUDED.source_occurred_at
              AND (
-               NOT $14::boolean
+               NOT $15::boolean
                OR (
                  COALESCE((ops_data_readiness.kline_json->>'rowCount')::bigint, 0) = 0
                  AND COALESCE((ops_data_readiness.trades_json->>'rowCount')::bigint, 0) = 0
@@ -1371,6 +1387,7 @@ export const replaceDataReadinessProjections = async (
           item.requiredHistoryMs,
           item.details,
           item.kline === null ? null : JSON.stringify(item.kline),
+          item.klineDimensions === null ? null : JSON.stringify(item.klineDimensions),
           item.trades === null ? null : JSON.stringify(item.trades),
           item.sourceEventId,
           item.sourceOccurredAt,
@@ -1415,6 +1432,7 @@ export const listDataReadinessProjections = async (
         required_history_ms,
         details,
         kline_json,
+        kline_dimensions_json,
         trades_json,
         source_event_id,
         source_occurred_at,

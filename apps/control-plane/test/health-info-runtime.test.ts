@@ -220,6 +220,27 @@ test("GET /v1/ops/execution endpoints return injected execution projections", as
       createdAt: "2026-03-28T10:00:00.000Z",
       updatedAt: "2026-03-28T10:00:00.000Z",
     }),
+    listActiveExecutionPromotionsFn: async () => [
+      {
+        promotionId: "promo-1",
+        executionSettingsName: "paper-default",
+        analysisSettingId: "analysis-1",
+        sourceBacktestId: "backtest-1",
+        symbolCode: "BTCUSDT",
+        timeframeCode: "1m",
+        strategyName: "ema-cross",
+        riskProfileName: "default-risk",
+        mode: "paper",
+        selectionMetric: "score",
+        selectionValue: 12.4,
+        status: "active",
+        promotedAt: "2026-03-28T10:00:00.000Z",
+        sourceEventId: "event-1",
+        sourceOccurredAt: "2026-03-28T10:00:00.000Z",
+        createdAt: "2026-03-28T10:00:00.000Z",
+        updatedAt: "2026-03-28T10:00:00.000Z",
+      },
+    ],
     listExecutionTradesFn: async () => ({
       items: [
         {
