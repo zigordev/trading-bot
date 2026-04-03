@@ -80,6 +80,17 @@ export type RecentBacktestRun = {
   score: number;
 };
 
+export type DataReadinessDimension = {
+  timeframeCode?: string;
+  rowCount?: number;
+  minTime?: number | null;
+  maxTime?: number | null;
+  latestTime?: number | null;
+  missingCount?: number;
+  complete?: boolean;
+  coveragePercent?: number;
+};
+
 export type BacktestsSummaryResponse = {
   generatedAt: string;
   jobs: BacktestJob[];
@@ -122,8 +133,9 @@ export type DataReadinessResponse = {
     requestedEndTime: number;
     requiredHistoryMs: number;
     details: string | null;
-    kline: Record<string, unknown> | null;
-    trades: Record<string, unknown> | null;
+    kline: DataReadinessDimension | null;
+    klineDimensions?: DataReadinessDimension[];
+    trades: DataReadinessDimension | null;
   }[];
 };
 

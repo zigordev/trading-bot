@@ -15,6 +15,7 @@ import {
   saveConfigResource,
 } from "@/src/lib/api";
 import { subscribeOpsRealtimeEvent } from "@/src/lib/ops-events";
+import { displayedReadinessPercent } from "@/src/lib/readiness";
 
 export default function OverviewScreen() {
   const queryClient = useQueryClient();
@@ -136,6 +137,12 @@ export default function OverviewScreen() {
     ]),
   );
   const analysisDetailById = buildAnalysisDetailMap(runtimeAnalysesQuery.data ?? []);
+  const timeframePeriodByCode = new Map(
+    (timeframesQuery.data ?? []).map((record) => [
+      String(record.code ?? ""),
+      Number(record.periodMs ?? 0),
+    ]),
+  );
   const activeSymbols = [...(symbolsQuery.data ?? [])]
     .filter((record) => Boolean(record.active))
     .sort((left, right) => String(left.code ?? "").localeCompare(String(right.code ?? "")))
@@ -180,9 +187,9 @@ export default function OverviewScreen() {
             : readinessItems.reduce(
                 (sum, item) =>
                   sum +
-                  Math.min(
-                    Number(item.kline?.coveragePercent ?? 0),
-                    Number(item.trades?.coveragePercent ?? 0),
+                  displayedReadinessPercent(
+                    item,
+                    timeframePeriodByCode.get(item.timeframeCode),
                   ),
                 0,
               ) / readinessItems.length,

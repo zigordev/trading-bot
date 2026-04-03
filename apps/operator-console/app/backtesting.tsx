@@ -19,8 +19,23 @@ import {
   type RecentBacktestRun,
 } from "@/src/lib/api";
 import { subscribeOpsRealtimeEvent } from "@/src/lib/ops-events";
+import {
+  displayedKlineCoveragePercent,
+  displayedReadinessPercent,
+  displayedTradesCoveragePercent,
+} from "@/src/lib/readiness";
 
 type DataReadinessItem = DataReadinessResponse["items"][number];
+
+const klineDimensionsForItem = (item: DataReadinessItem) =>
+  item.klineDimensions && item.klineDimensions.length > 0
+    ? item.klineDimensions
+    : [
+        {
+          timeframeCode: item.timeframeCode,
+          ...(item.kline ?? {}),
+        },
+      ];
 
 type HistoryCombination = {
   key: string;
@@ -71,18 +86,39 @@ const formatDuration = (durationMs: number): string => {
   return `${hours}h ${remainingMinutes}m`;
 };
 
+const formatCoverageTimestamp = (value: number | null | undefined): string | null => {
+  if (!Number.isFinite(value)) {
+    return null;
+  }
+
+  return new Date(Number(value)).toLocaleString();
+};
+
+const formatCoverageRange = (
+  startTime: number | null | undefined,
+  endTime: number | null | undefined,
+): string | null => {
+  const startLabel = formatCoverageTimestamp(startTime);
+  const endLabel = formatCoverageTimestamp(endTime);
+
+  if (startLabel && endLabel) {
+    return `${startLabel} -> ${endLabel}`;
+  }
+  if (startLabel) {
+    return `From ${startLabel}`;
+  }
+  if (endLabel) {
+    return `To ${endLabel}`;
+  }
+  return null;
+};
+
 const formatScore = (value: number): string => value.toFixed(2);
 
 const scorePalette = (value: number) => ({
   backgroundColor: value >= 0 ? "#ecfdf3" : "#fef3f2",
   textColor: value >= 0 ? "#157f3b" : "#b42318",
 });
-
-const readinessPercent = (item: DataReadinessItem): number =>
-  Math.min(
-    Number(item.kline?.coveragePercent ?? 0),
-    Number(item.trades?.coveragePercent ?? 0),
-  );
 
 const backtestKey = (value: {
   symbolCode: string;
@@ -178,6 +214,12 @@ export default function BacktestingScreen() {
     ]),
   );
   const analysisDetailById = buildAnalysisDetailMap(runtimeAnalysesQuery.data ?? []);
+  const timeframePeriodByCode = new Map(
+    (timeframesQuery.data ?? []).map((record) => [
+      String(record.code ?? ""),
+      Number(record.periodMs ?? 0),
+    ]),
+  );
 
   const symbolOptions = Array.from(
     new Set((symbolsQuery.data ?? []).map((record) => String(record.code ?? ""))),
@@ -309,7 +351,10 @@ export default function BacktestingScreen() {
           .filter((item) => item.symbolCode === symbolCode)
           .map((item) => ({
             ...item,
-            readinessPercent: readinessPercent(item),
+            readinessPercent: displayedReadinessPercent(
+              item,
+              timeframePeriodByCode.get(item.timeframeCode),
+            ),
             runningJob: runningJobByKey.get(
               backtestKey({
                 symbolCode: item.symbolCode,
@@ -651,13 +696,31 @@ export default function BacktestingScreen() {
                                   <TableCell label={item.timeframeCode} flex={0.8} />
                                   <TableCell label={item.strategyName} flex={1.1} />
                                   <View style={{ flex: 1.9, gap: 8 }}>
-                                    <ReadinessDataBadge
-                                      label="Klines"
-                                      percent={Number(item.kline?.coveragePercent ?? 0)}
-                                    />
+                                    {klineDimensionsForItem(item).map(
+                                      (dimension, dimensionIndex) => (
+                                        <ReadinessDataBadge
+                                          key={`${rowKey}:kline:${dimension.timeframeCode ?? dimensionIndex}`}
+                                          label={`Klines ${dimension.timeframeCode ?? item.timeframeCode}`}
+                                          percent={
+                                            dimension.timeframeCode === item.timeframeCode
+                                              ? displayedKlineCoveragePercent(
+                                                  item,
+                                                  timeframePeriodByCode.get(item.timeframeCode),
+                                                )
+                                              : Number(dimension.coveragePercent ?? 0)
+                                          }
+                                          count={Number(dimension.rowCount ?? 0)}
+                                          startTime={Number(dimension.minTime ?? NaN)}
+                                          endTime={Number(dimension.maxTime ?? NaN)}
+                                        />
+                                      ),
+                                    )}
                                     <ReadinessDataBadge
                                       label="Trades"
-                                      percent={Number(item.trades?.coveragePercent ?? 0)}
+                                      percent={displayedTradesCoveragePercent(item)}
+                                      count={Number(item.trades?.rowCount ?? 0)}
+                                      startTime={Number(item.trades?.minTime ?? NaN)}
+                                      endTime={Number(item.trades?.maxTime ?? NaN)}
                                     />
                                   </View>
                                   <View style={{ flex: 1.4 }}>
@@ -1132,22 +1195,34 @@ function InlineStatePill({
 function ReadinessDataBadge({
   label,
   percent,
+  count,
+  startTime,
+  endTime,
 }: {
   label: string;
   percent: number;
+  count: number;
+  startTime?: number | null;
+  endTime?: number | null;
 }) {
   const complete = percent >= 100;
   const displayPercent = complete
     ? "100%"
     : `${Math.floor(Math.max(percent, 0) * 10) / 10}%`;
+  const displayCount = Number.isFinite(count)
+    ? Math.max(0, Math.floor(count)).toLocaleString()
+    : "0";
+  const coverageRange = formatCoverageRange(startTime, endTime);
+  const noCoverageYet = !coverageRange && Math.max(count, 0) === 0;
   return (
     <View
       style={{
         alignSelf: "flex-start",
-        borderRadius: 999,
+        borderRadius: 16,
         paddingHorizontal: 10,
-        paddingVertical: 4,
+        paddingVertical: 6,
         backgroundColor: complete ? "#ecfdf3" : "#fef3f2",
+        gap: 2,
       }}
     >
       <Text
@@ -1157,8 +1232,27 @@ function ReadinessDataBadge({
           fontSize: 12,
         }}
       >
-        {label} {displayPercent}
+        {label} {displayPercent} · {displayCount}
       </Text>
+      {coverageRange ? (
+        <Text
+          style={{
+            color: complete ? "#027a48" : "#b42318",
+            fontSize: 11,
+          }}
+        >
+          {coverageRange}
+        </Text>
+      ) : noCoverageYet ? (
+        <Text
+          style={{
+            color: complete ? "#027a48" : "#b42318",
+            fontSize: 11,
+          }}
+        >
+          No covered period yet
+        </Text>
+      ) : null}
     </View>
   );
 }

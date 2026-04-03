@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{BTreeMap, HashMap},
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -123,6 +123,14 @@ pub struct ReadinessDimension {
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct KlineReadinessDimension {
+    pub timeframe_code: String,
+    #[serde(flatten)]
+    pub dimension: ReadinessDimension,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct BacktestDataReadiness {
     pub status: String,
     pub details: Option<String>,
@@ -132,6 +140,7 @@ pub struct BacktestDataReadiness {
     pub end_time: i64,
     pub period_ms: i64,
     pub kline: ReadinessDimension,
+    pub kline_dimensions: Vec<KlineReadinessDimension>,
     pub trades: ReadinessDimension,
 }
 
@@ -148,6 +157,7 @@ struct DataReadinessSnapshotItem {
     required_history_ms: i64,
     details: Option<String>,
     kline: ReadinessDimension,
+    kline_dimensions: Vec<KlineReadinessDimension>,
     trades: ReadinessDimension,
 }
 
@@ -811,6 +821,14 @@ impl MarketDataService {
             kline_dimensions.push((requirement, dimension, complete));
         }
 
+        let per_timeframe_kline_dimensions = kline_dimensions
+            .iter()
+            .map(|(requirement, dimension, _)| KlineReadinessDimension {
+                timeframe_code: requirement.timeframe_code.clone(),
+                dimension: dimension.clone(),
+            })
+            .collect::<Vec<_>>();
+
         let kline = ReadinessDimension {
             row_count: aggregated_kline_rows,
             min_time: kline_min_time,
@@ -818,7 +836,7 @@ impl MarketDataService {
             latest_time: kline_latest_time,
             missing_count: aggregated_missing_kline_count,
             complete: all_kline_complete,
-            coverage_percent: if kline_dimensions.is_empty() {
+            coverage_percent: if per_timeframe_kline_dimensions.is_empty() {
                 0.0
             } else if all_kline_complete {
                 100.0
@@ -878,6 +896,7 @@ impl MarketDataService {
             end_time: requested_end_time,
             period_ms: primary_period_ms,
             kline,
+            kline_dimensions: per_timeframe_kline_dimensions,
             trades,
         })
     }
@@ -1633,6 +1652,22 @@ impl MarketDataService {
                     complete: false,
                     coverage_percent: 0.0,
                 },
+                kline_dimensions: target
+                    .kline_requirements
+                    .iter()
+                    .map(|requirement| KlineReadinessDimension {
+                        timeframe_code: requirement.timeframe_code.clone(),
+                        dimension: ReadinessDimension {
+                            row_count: 0,
+                            min_time: None,
+                            max_time: None,
+                            latest_time: None,
+                            missing_count: 0,
+                            complete: false,
+                            coverage_percent: 0.0,
+                        },
+                    })
+                    .collect(),
                 trades: ReadinessDimension {
                     row_count: 0,
                     min_time: None,
@@ -1672,6 +1707,7 @@ impl MarketDataService {
                 required_history_ms: target.required_history_ms,
                 details: readiness.details,
                 kline: readiness.kline,
+                kline_dimensions: readiness.kline_dimensions,
                 trades: readiness.trades,
             },
             Err(error) => DataReadinessSnapshotItem {
@@ -1693,6 +1729,22 @@ impl MarketDataService {
                     complete: false,
                     coverage_percent: 0.0,
                 },
+                kline_dimensions: target
+                    .kline_requirements
+                    .iter()
+                    .map(|requirement| KlineReadinessDimension {
+                        timeframe_code: requirement.timeframe_code.clone(),
+                        dimension: ReadinessDimension {
+                            row_count: 0,
+                            min_time: None,
+                            max_time: None,
+                            latest_time: None,
+                            missing_count: 0,
+                            complete: false,
+                            coverage_percent: 0.0,
+                        },
+                    })
+                    .collect(),
                 trades: ReadinessDimension {
                     row_count: 0,
                     min_time: None,
@@ -1779,28 +1831,43 @@ impl MarketDataService {
         records: &[ResolvedAnalysisSettingsRecord],
         active: &ActiveSubscriptions,
     ) -> RequiredHistoryPlan {
+        Self::build_required_history_plan_from_settings(
+            records,
+            active,
+            self.inner.config.historical_backfill_limit,
+            &self.inner.config.backtesting_timerange_ms_by_timeframe,
+            self.inner.config.backtest_kline_headroom_candles,
+            self.inner.config.scheduled_backtest_history_headroom_ms,
+            self.inner.config.backtest_warmup_candles,
+            self.inner.config.trade_gap_repair_min_gap_ms,
+        )
+    }
+
+    fn build_required_history_plan_from_settings(
+        records: &[ResolvedAnalysisSettingsRecord],
+        active: &ActiveSubscriptions,
+        historical_backfill_limit: usize,
+        backtesting_timerange_ms_by_timeframe: &BTreeMap<String, i64>,
+        backtest_kline_headroom_candles: usize,
+        scheduled_backtest_history_headroom_ms: u64,
+        backtest_warmup_candles: usize,
+        trade_gap_repair_min_gap_ms: u64,
+    ) -> RequiredHistoryPlan {
         let mut kline_by_key: HashMap<(String, String), i64> = HashMap::new();
         let mut trade_by_pair_code: HashMap<String, i64> = HashMap::new();
         let mut trade_gap_threshold_by_pair_code: HashMap<String, i64> = HashMap::new();
 
         for subscription in &active.kline_subscriptions {
-            let configured_duration_ms = self
-                .inner
-                .config
-                .backtesting_timerange_ms_by_timeframe
-                .get(&subscription.timeframe_code)
-                .copied()
-                .unwrap_or_else(|| {
-                    (self.inner.config.historical_backfill_limit as i64)
-                        .saturating_mul(subscription.period_ms.max(1))
-                })
-                .max(subscription.period_ms.max(1));
-            let kline_headroom_ms = (self.inner.config.backtest_kline_headroom_candles as i64)
+            let configured_duration_ms = Self::configured_backtest_duration_ms(
+                backtesting_timerange_ms_by_timeframe,
+                historical_backfill_limit,
+                subscription.timeframe_code.as_str(),
+                subscription.period_ms,
+            );
+            let kline_headroom_ms = (backtest_kline_headroom_candles as i64)
                 .saturating_mul(subscription.period_ms.max(1));
-            let headroom_ms = self.inner.config.scheduled_backtest_history_headroom_ms as i64;
             let required_kline_history_ms =
                 configured_duration_ms.saturating_add(kline_headroom_ms);
-            let required_trade_history_ms = configured_duration_ms.saturating_add(headroom_ms);
 
             let key = (
                 subscription.pair_code.clone(),
@@ -1810,30 +1877,20 @@ impl MarketDataService {
                 .entry(key)
                 .and_modify(|current| *current = (*current).max(required_kline_history_ms))
                 .or_insert(required_kline_history_ms);
-
-            trade_by_pair_code
-                .entry(subscription.pair_code.clone())
-                .and_modify(|current| *current = (*current).max(required_trade_history_ms))
-                .or_insert(required_trade_history_ms);
         }
 
         for record in records.iter().filter(|record| record.enabled) {
-            let configured_duration_ms = self
-                .inner
-                .config
-                .backtesting_timerange_ms_by_timeframe
-                .get(&record.timeframe_code)
-                .copied()
-                .unwrap_or_else(|| {
-                    (self.inner.config.historical_backfill_limit as i64)
-                        .saturating_mul(record.timeframe.period_ms.max(1))
-                })
-                .max(record.timeframe.period_ms.max(1));
-            let headroom_ms = self.inner.config.scheduled_backtest_history_headroom_ms as i64;
+            let configured_duration_ms = Self::configured_backtest_duration_ms(
+                backtesting_timerange_ms_by_timeframe,
+                historical_backfill_limit,
+                record.timeframe_code.as_str(),
+                record.timeframe.period_ms,
+            );
+            let headroom_ms = scheduled_backtest_history_headroom_ms as i64;
             let required_trade_history_ms = configured_duration_ms.saturating_add(headroom_ms);
             let kline_requirements = Self::data_readiness_kline_requirements(
                 record,
-                self.inner.config.backtest_warmup_candles,
+                backtest_warmup_candles,
             );
             let max_required_warmup_ms = kline_requirements
                 .iter()
@@ -1845,7 +1902,7 @@ impl MarketDataService {
                 .unwrap_or(record.timeframe.period_ms.max(1));
 
             for requirement in kline_requirements {
-                let kline_headroom_ms = (self.inner.config.backtest_kline_headroom_candles as i64)
+                let kline_headroom_ms = (backtest_kline_headroom_candles as i64)
                     .saturating_mul(requirement.period_ms.max(1));
                 let required_kline_history_ms = configured_duration_ms
                     .saturating_add(max_required_warmup_ms)
@@ -1869,16 +1926,14 @@ impl MarketDataService {
                 subscription.pair_code.clone(),
                 subscription.timeframe_code.clone(),
             );
-            let fallback_ms = (self.inner.config.historical_backfill_limit as i64)
+            let fallback_ms = (historical_backfill_limit as i64)
                 .saturating_mul(subscription.period_ms.max(1));
             let required_ms = kline_by_key.get(&key).copied().unwrap_or(fallback_ms);
             kline_by_subscription_id.insert(subscription.subscription_id.clone(), required_ms);
             trade_gap_threshold_by_pair_code
                 .entry(subscription.pair_code.clone())
-                .and_modify(|current| {
-                    *current = (*current).min(self.inner.config.trade_gap_repair_min_gap_ms as i64)
-                })
-                .or_insert(self.inner.config.trade_gap_repair_min_gap_ms as i64);
+                .and_modify(|current| *current = (*current).min(trade_gap_repair_min_gap_ms as i64))
+                .or_insert(trade_gap_repair_min_gap_ms as i64);
         }
 
         RequiredHistoryPlan {
@@ -1888,23 +1943,42 @@ impl MarketDataService {
         }
     }
 
+    fn configured_backtest_duration_ms(
+        backtesting_timerange_ms_by_timeframe: &BTreeMap<String, i64>,
+        historical_backfill_limit: usize,
+        timeframe_code: &str,
+        period_ms: i64,
+    ) -> i64 {
+        backtesting_timerange_ms_by_timeframe
+            .get(timeframe_code)
+            .copied()
+            .unwrap_or_else(|| {
+                (historical_backfill_limit as i64).saturating_mul(period_ms.max(1))
+            })
+            .max(period_ms.max(1))
+    }
+
     async fn run_backfill_and_gap_repair(
         &self,
         active: &ActiveSubscriptions,
         required_history_plan: &RequiredHistoryPlan,
     ) -> Result<()> {
         let result: Result<()> = async {
-            tokio::try_join!(
-                self.run_kline_backfill_and_gap_repair(
-                    &active.kline_subscriptions,
-                    &required_history_plan.kline_by_subscription_id,
-                ),
-                self.run_trade_backfill_and_gap_repair(
-                    &active.pair_subscriptions,
-                    &required_history_plan.trade_by_pair_code,
-                    &required_history_plan.trade_gap_threshold_by_pair_code,
-                )
-            )?;
+            // Trade backfill anchors to the earliest persisted kline for each
+            // pair. On an empty/stale store, run kline repair first so trade
+            // backfill does not skip the current required window and fall
+            // through to the much larger startup deep audit.
+            self.run_kline_backfill_and_gap_repair(
+                &active.kline_subscriptions,
+                &required_history_plan.kline_by_subscription_id,
+            )
+            .await?;
+            self.run_trade_backfill_and_gap_repair(
+                &active.pair_subscriptions,
+                &required_history_plan.trade_by_pair_code,
+                &required_history_plan.trade_gap_threshold_by_pair_code,
+            )
+            .await?;
             Ok(())
         }
         .await;
@@ -2821,7 +2895,7 @@ impl MarketDataService {
         max_batch_rows: usize,
         max_batches: usize,
     ) -> Result<()> {
-        for (index, range) in missing_ranges.into_iter().enumerate() {
+        for (index, range) in missing_ranges.into_iter().rev().enumerate() {
             tracing::warn!(
                 table = "market_data_trades",
                 pair_code = %subscription.pair_code,
@@ -2853,14 +2927,15 @@ impl MarketDataService {
         max_batch_rows: usize,
         max_batches: usize,
     ) -> Result<()> {
-        let mut next_from_id = range.start_id.max(0);
+        let mut next_end_id_exclusive = range.end_id_exclusive.max(0);
         let mut batches_used = 0usize;
         let mut buffered_events = Vec::new();
+        let page_rows = max_batch_rows.max(1);
         let insert_batch_rows = self
             .inner
             .config
             .historical_trade_backfill_insert_batch_rows
-            .max(max_batch_rows);
+            .max(page_rows);
         let started_at = Instant::now();
         let mut total_rows_in_binance_responses = 0usize;
         let mut total_rows_accepted = 0usize;
@@ -2868,22 +2943,29 @@ impl MarketDataService {
         let required_batches_for_range = range
             .end_id_exclusive
             .saturating_sub(range.start_id)
-            .saturating_add(max_batch_rows as i64)
+            .saturating_add(page_rows as i64)
             .saturating_sub(1)
-            .saturating_div(max_batch_rows.max(1) as i64)
+            .saturating_div(page_rows as i64)
             .saturating_add(5) as usize;
         let allowed_batches = max_batches
             .saturating_mul(10)
             .max(required_batches_for_range);
 
-        while next_from_id < range.end_id_exclusive && batches_used < allowed_batches {
+        // Fill the newest side of the missing range first so readiness for the
+        // active replay window converges before older retained history.
+        while next_end_id_exclusive > range.start_id && batches_used < allowed_batches {
+            let Some(page_start) =
+                Self::next_trade_backfill_page_start(range, next_end_id_exclusive, page_rows)
+            else {
+                break;
+            };
             let rows = self
                 .fetch_binance_json::<Vec<Value>>(
                     "/api/v3/aggTrades",
                     &[
                         ("symbol", subscription.symbol.clone()),
-                        ("fromId", next_from_id.to_string()),
-                        ("limit", max_batch_rows.to_string()),
+                        ("fromId", page_start.to_string()),
+                        ("limit", page_rows.to_string()),
                     ],
                 )
                 .await?;
@@ -2893,18 +2975,15 @@ impl MarketDataService {
 
             total_rows_in_binance_responses =
                 total_rows_in_binance_responses.saturating_add(rows.len());
-            let mut last_seen_aggregate_trade_id = None;
             let mut accepted_this_page = 0usize;
 
             for row in rows {
                 let event =
                     normalize_rest_trade(subscription, row, &self.inner.config.service_name)?;
-                last_seen_aggregate_trade_id = Some(event.aggregate_trade_id);
-
                 if event.aggregate_trade_id < range.start_id {
                     continue;
                 }
-                if event.aggregate_trade_id >= range.end_id_exclusive {
+                if event.aggregate_trade_id >= next_end_id_exclusive {
                     break;
                 }
 
@@ -2930,16 +3009,7 @@ impl MarketDataService {
 
             total_rows_accepted = total_rows_accepted.saturating_add(accepted_this_page);
             batches_used = batches_used.saturating_add(1);
-
-            match last_seen_aggregate_trade_id {
-                Some(last_seen) if last_seen >= range.end_id_exclusive.saturating_sub(1) => {
-                    break;
-                }
-                Some(last_seen) if last_seen.saturating_add(1) > next_from_id => {
-                    next_from_id = last_seen.saturating_add(1);
-                }
-                _ => break,
-            }
+            next_end_id_exclusive = page_start;
         }
 
         if !buffered_events.is_empty() {
@@ -2972,6 +3042,23 @@ impl MarketDataService {
         );
 
         Ok(())
+    }
+
+    fn next_trade_backfill_page_start(
+        range: AggregateTradeIdRange,
+        next_end_id_exclusive: i64,
+        max_batch_rows: usize,
+    ) -> Option<i64> {
+        if next_end_id_exclusive <= range.start_id {
+            return None;
+        }
+
+        Some(
+            next_end_id_exclusive
+                .saturating_sub(max_batch_rows.max(1) as i64)
+                .max(range.start_id)
+                .max(0),
+        )
     }
 
     async fn fetch_binance_json<T>(&self, path: &str, query: &[(&str, String)]) -> Result<T>
@@ -3422,7 +3509,18 @@ fn max_option_i64(current: Option<i64>, next: Option<i64>) -> Option<i64> {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
+    use serde_json::json;
+
     use super::{AggregateTradeIdRange, MarketDataService};
+    use crate::{
+        models::{
+            PairRecord, ResolvedAnalysisSettingsRecord, RiskProfileRecord, StrategyRecord,
+            TimeframeRecord,
+        },
+        subscriptions::derive_active_subscriptions,
+    };
 
     #[test]
     fn merge_aggregate_trade_id_ranges_merges_overlaps_and_touching_ranges() {
@@ -3458,5 +3556,152 @@ mod tests {
                 },
             ]
         );
+    }
+
+    #[test]
+    fn next_trade_backfill_page_start_prioritizes_recent_ids() {
+        let range = AggregateTradeIdRange {
+            start_id: 10,
+            end_id_exclusive: 35,
+        };
+
+        assert_eq!(
+            MarketDataService::next_trade_backfill_page_start(range, 35, 10),
+            Some(25)
+        );
+        assert_eq!(
+            MarketDataService::next_trade_backfill_page_start(range, 25, 10),
+            Some(15)
+        );
+        assert_eq!(
+            MarketDataService::next_trade_backfill_page_start(range, 15, 10),
+            Some(10)
+        );
+        assert_eq!(
+            MarketDataService::next_trade_backfill_page_start(range, 10, 10),
+            None
+        );
+    }
+
+    #[test]
+    fn required_trade_history_ignores_auxiliary_longer_timeframe_kline_subscriptions() {
+        let mut record = resolved("analysis-1", "strategy1");
+        record.strategy.parameters = json!({ "kind": "strategy1" });
+        record.symbol = "BTCUSDT".to_string();
+        record.symbol_entity.code = "BTCUSDT".to_string();
+        record.timeframe_code = "3m".to_string();
+        record.timeframe.code = "3m".to_string();
+        record.timeframe.period_ms = 180_000;
+        record.timeframe.longer_timeframe_code = "15m".to_string();
+        record.timeframe.longer_timeframe_multiplier = 5;
+
+        let active = derive_active_subscriptions(
+            &[pair("BTCUSDT")],
+            &[timeframe("3m", 180_000)],
+            &[record.clone()],
+        )
+        .expect("subscriptions should derive");
+
+        assert!(
+            active
+                .kline_subscriptions
+                .iter()
+                .any(|subscription| subscription.timeframe_code == "15m")
+        );
+
+        let plan = MarketDataService::build_required_history_plan_from_settings(
+            &[record],
+            &active,
+            10_000,
+            &BTreeMap::from([("3m".to_string(), 1_800_000_000)]),
+            4,
+            48 * 60 * 60 * 1000,
+            200,
+            15_000,
+        );
+
+        assert_eq!(
+            plan.trade_by_pair_code.get("BTCUSDT").copied(),
+            Some(1_972_800_000)
+        );
+    }
+
+    fn resolved(id: &str, strategy_name: &str) -> ResolvedAnalysisSettingsRecord {
+        ResolvedAnalysisSettingsRecord {
+            id: id.to_string(),
+            symbol: "BTC/USDT".to_string(),
+            timeframe_code: "1m".to_string(),
+            strategy_name: strategy_name.to_string(),
+            risk_profile_name: "default-risk".to_string(),
+            technical_analysis_settings: json!({ "fast": 9, "slow": 21 }),
+            enabled: true,
+            created_at: "2026-03-12T18:00:00Z".to_string(),
+            updated_at: "2026-03-12T18:00:00Z".to_string(),
+            symbol_entity: PairRecord {
+                id: "pair-1".to_string(),
+                code: "BTC/USDT".to_string(),
+                active: true,
+                base_asset: "BTC".to_string(),
+                destination_asset: "USDT".to_string(),
+                created_at: "2026-03-12T18:00:00Z".to_string(),
+                updated_at: "2026-03-12T18:00:00Z".to_string(),
+            },
+            timeframe: TimeframeRecord {
+                id: "timeframe-1".to_string(),
+                code: "1m".to_string(),
+                longer_timeframe_code: "5m".to_string(),
+                longer_timeframe_multiplier: 5,
+                period_ms: 60_000,
+                active: true,
+                created_at: "2026-03-12T18:00:00Z".to_string(),
+                updated_at: "2026-03-12T18:00:00Z".to_string(),
+            },
+            strategy: StrategyRecord {
+                id: format!("strategy-{strategy_name}"),
+                name: strategy_name.to_string(),
+                description: "strategy".to_string(),
+                activated: true,
+                parameters: json!({}),
+                created_at: "2026-03-12T18:00:00Z".to_string(),
+                updated_at: "2026-03-12T18:00:00Z".to_string(),
+            },
+            risk_profile: RiskProfileRecord {
+                id: "risk-1".to_string(),
+                name: "default-risk".to_string(),
+                description: "risk".to_string(),
+                maximum_stop_loss: 2.0,
+                minimum_stop_loss: 1.0,
+                swing_gap: 0.5,
+                rrr: 2.0,
+                enabled: true,
+                created_at: "2026-03-12T18:00:00Z".to_string(),
+                updated_at: "2026-03-12T18:00:00Z".to_string(),
+            },
+        }
+    }
+
+    fn pair(code: &str) -> PairRecord {
+        PairRecord {
+            id: format!("pair-{code}"),
+            code: code.to_string(),
+            active: true,
+            base_asset: "BTC".to_string(),
+            destination_asset: "USDT".to_string(),
+            created_at: "2026-03-12T18:00:00Z".to_string(),
+            updated_at: "2026-03-12T18:00:00Z".to_string(),
+        }
+    }
+
+    fn timeframe(code: &str, period_ms: i64) -> TimeframeRecord {
+        TimeframeRecord {
+            id: format!("timeframe-{code}"),
+            code: code.to_string(),
+            longer_timeframe_code: "5m".to_string(),
+            longer_timeframe_multiplier: 5,
+            period_ms,
+            active: true,
+            created_at: "2026-03-12T18:00:00Z".to_string(),
+            updated_at: "2026-03-12T18:00:00Z".to_string(),
+        }
     }
 }
