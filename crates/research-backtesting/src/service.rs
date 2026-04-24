@@ -1,5 +1,5 @@
 use std::collections::BTreeSet;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
@@ -55,6 +55,13 @@ struct Inner {
     historical_store: Database,
     status: tokio::sync::RwLock<RuntimeStatus>,
     running_readiness_windows: tokio::sync::Mutex<HashSet<String>>,
+    running_readiness_batches: tokio::sync::Mutex<HashMap<String, ReadinessBatchWindow>>,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct ReadinessBatchWindow {
+    requested_start_time: i64,
+    requested_end_time: i64,
 }
 
 #[derive(Clone, Debug, Default, Serialize)]
@@ -404,6 +411,7 @@ impl ResearchBacktestingService {
                     otel_exporter_configured: config.otel_exporter_otlp_endpoint.is_some(),
                 }),
                 running_readiness_windows: tokio::sync::Mutex::new(HashSet::new()),
+                running_readiness_batches: tokio::sync::Mutex::new(HashMap::new()),
             }),
         };
 
@@ -947,217 +955,247 @@ impl ResearchBacktestingService {
         item: &DataReadinessSnapshotItem,
         source_event_id: &str,
     ) -> Result<usize> {
-        let analysis_id_filter = item
-            .analysis_setting_ids
-            .iter()
-            .cloned()
-            .collect::<HashSet<_>>();
-        let analyses = self
-            .fetch_runtime_analysis_settings()
-            .await?
-            .into_iter()
-            .filter(|analysis| analysis.enabled)
-            .filter(|analysis| analysis.symbol == item.symbol_code)
-            .filter(|analysis| analysis.timeframe_code == item.timeframe_code)
-            .filter(|analysis| analysis.strategy_name == item.strategy_name)
-            .filter(|analysis| {
-                analysis_id_filter.is_empty() || analysis_id_filter.contains(&analysis.id)
-            })
-            .collect::<Vec<_>>();
-        let mut analyses = analyses;
+        let batch_key =
+            readiness_batch_key(&item.symbol_code, &item.timeframe_code, &item.strategy_name);
+        let requested_window = ReadinessBatchWindow {
+            requested_start_time: item.requested_start_time,
+            requested_end_time: item.requested_end_time,
+        };
 
-        if analyses.is_empty() {
+        if let Some(active_window) = self
+            .try_mark_readiness_batch_in_flight(&batch_key, requested_window)
+            .await
+        {
+            info!(
+                symbol = %item.symbol_code,
+                timeframe_code = %item.timeframe_code,
+                strategy_name = %item.strategy_name,
+                requested_start_time = item.requested_start_time,
+                requested_end_time = item.requested_end_time,
+                active_requested_start_time = active_window.requested_start_time,
+                active_requested_end_time = active_window.requested_end_time,
+                source_event_id,
+                "skipping readiness-triggered backtests because another batch is already running for this row"
+            );
             return Ok(0);
         }
 
-        analyses.sort_by_key(|analysis| {
-            std::cmp::Reverse(
-                self.inner
-                    .config
-                    .backtesting_timerange_ms_by_timeframe
-                    .get(&analysis.timeframe_code)
-                    .copied()
-                    .unwrap_or_default(),
-            )
-        });
+        let result = async {
+            let analysis_id_filter = item
+                .analysis_setting_ids
+                .iter()
+                .cloned()
+                .collect::<HashSet<_>>();
+            let analyses = self
+                .fetch_runtime_analysis_settings()
+                .await?
+                .into_iter()
+                .filter(|analysis| analysis.enabled)
+                .filter(|analysis| analysis.symbol == item.symbol_code)
+                .filter(|analysis| analysis.timeframe_code == item.timeframe_code)
+                .filter(|analysis| analysis.strategy_name == item.strategy_name)
+                .filter(|analysis| {
+                    analysis_id_filter.is_empty() || analysis_id_filter.contains(&analysis.id)
+                })
+                .collect::<Vec<_>>();
+            let mut analyses = analyses;
 
-        let mut runnable_analyses = Vec::new();
-        let mut skipped_existing = 0usize;
-
-        for analysis in analyses {
-            let run_key = readiness_run_key(
-                &analysis.id,
-                &analysis.symbol,
-                &analysis.timeframe_code,
-                &analysis.risk_profile_name,
-                item.requested_start_time,
-                item.requested_end_time,
-            );
-
-            if self.readiness_window_in_flight(&run_key).await {
-                continue;
+            if analyses.is_empty() {
+                return Ok(0);
             }
 
-            if self
-                .inner
-                .historical_store
-                .backtest_run_exists_for_window(
+            analyses.sort_by_key(|analysis| {
+                std::cmp::Reverse(
+                    self.inner
+                        .config
+                        .backtesting_timerange_ms_by_timeframe
+                        .get(&analysis.timeframe_code)
+                        .copied()
+                        .unwrap_or_default(),
+                )
+            });
+
+            let mut runnable_analyses = Vec::new();
+            let mut skipped_existing = 0usize;
+
+            for analysis in analyses {
+                let run_key = readiness_run_key(
                     &analysis.id,
                     &analysis.symbol,
                     &analysis.timeframe_code,
                     &analysis.risk_profile_name,
                     item.requested_start_time,
                     item.requested_end_time,
-                )
-                .await?
-            {
-                skipped_existing += 1;
-                continue;
+                );
+
+                if self.readiness_window_in_flight(&run_key).await {
+                    continue;
+                }
+
+                if self
+                    .inner
+                    .historical_store
+                    .backtest_run_exists_for_window(
+                        &analysis.id,
+                        &analysis.symbol,
+                        &analysis.timeframe_code,
+                        &analysis.risk_profile_name,
+                        item.requested_start_time,
+                        item.requested_end_time,
+                    )
+                    .await?
+                {
+                    skipped_existing += 1;
+                    continue;
+                }
+
+                runnable_analyses.push((analysis, run_key));
             }
 
-            runnable_analyses.push((analysis, run_key));
-        }
+            if runnable_analyses.is_empty() {
+                if skipped_existing > 0 {
+                    info!(
+                        symbol = %item.symbol_code,
+                        timeframe_code = %item.timeframe_code,
+                        requested_start_time = item.requested_start_time,
+                        requested_end_time = item.requested_end_time,
+                        started = 0,
+                        skipped_existing,
+                        source_event_id,
+                        "processed readiness-triggered backtests"
+                    );
+                }
+                return Ok(0);
+            }
 
-        if runnable_analyses.is_empty() {
-            if skipped_existing > 0 {
+            let batch_id = format!(
+                "{}:{}:{}:{}",
+                item.symbol_code,
+                item.timeframe_code,
+                item.requested_start_time,
+                item.requested_end_time
+            );
+            let total_count = runnable_analyses.len();
+            let mut trade_cache: Option<TradeWindowCache> = None;
+            let mut started = 0usize;
+
+            self.publish_backtest_batch_progress_event(&BacktestBatchProgressUpdate {
+                batch_id: &batch_id,
+                symbol: &item.symbol_code,
+                timeframe_code: &item.timeframe_code,
+                requested_start_time: item.requested_start_time,
+                requested_end_time: item.requested_end_time,
+                stage: "retrieving-data",
+                progress_percent: 0.0,
+                total_count,
+                completed_count: 0,
+                running_count: 0,
+            })
+            .await?;
+
+            for (analysis, run_key) in runnable_analyses {
+                self.mark_readiness_window_in_flight(&run_key).await;
+
+                let request = BacktestRequest {
+                    control_plane_job_id: Some(format!("readiness-{}", Uuid::new_v4())),
+                    batch_id: Some(batch_id.clone()),
+                    batch_total_count: Some(total_count),
+                    batch_completed_count: Some(started),
+                    analysis_setting_id: analysis.id.clone(),
+                    symbol_code: Some(analysis.symbol.clone()),
+                    timeframe_code: Some(analysis.timeframe_code.clone()),
+                    risk_profile_name: Some(analysis.risk_profile_name.clone()),
+                    start_time: Some(item.requested_start_time),
+                    end_time: Some(item.requested_end_time),
+                    warmup_candles: None,
+                };
+                let result = self
+                    .run_backtest_with_trade_cache(request, &mut trade_cache)
+                    .await;
+                self.unmark_readiness_window_in_flight(&run_key).await;
+
+                match result {
+                    Ok(_) => {
+                        started += 1;
+                        let stage = if started >= total_count {
+                            "completed"
+                        } else {
+                            "running-backtests"
+                        };
+                        if let Err(error) = self
+                            .publish_backtest_batch_progress_event(&BacktestBatchProgressUpdate {
+                                batch_id: &batch_id,
+                                symbol: &item.symbol_code,
+                                timeframe_code: &item.timeframe_code,
+                                requested_start_time: item.requested_start_time,
+                                requested_end_time: item.requested_end_time,
+                                stage,
+                                progress_percent: (started as f64 / total_count as f64) * 100.0,
+                                total_count,
+                                completed_count: started,
+                                running_count: 0,
+                            })
+                            .await
+                        {
+                            warn!(
+                                error = %error,
+                                batch_id = %batch_id,
+                                "failed to publish backtest-batch progress event"
+                            );
+                        }
+                    }
+                    Err(error) => {
+                        let _ = self
+                            .publish_backtest_batch_progress_event(&BacktestBatchProgressUpdate {
+                                batch_id: &batch_id,
+                                symbol: &item.symbol_code,
+                                timeframe_code: &item.timeframe_code,
+                                requested_start_time: item.requested_start_time,
+                                requested_end_time: item.requested_end_time,
+                                stage: "failed",
+                                progress_percent: if total_count == 0 {
+                                    0.0
+                                } else {
+                                    (started as f64 / total_count as f64) * 100.0
+                                },
+                                total_count,
+                                completed_count: started,
+                                running_count: 0,
+                            })
+                            .await;
+                        warn!(
+                            error = %error,
+                            analysis_setting_id = %analysis.id,
+                            risk_profile_name = %analysis.risk_profile_name,
+                            symbol = %analysis.symbol,
+                            timeframe_code = %analysis.timeframe_code,
+                            requested_start_time = item.requested_start_time,
+                            requested_end_time = item.requested_end_time,
+                            source_event_id,
+                            "readiness-triggered backtest failed"
+                        );
+                    }
+                }
+            }
+
+            if started > 0 || skipped_existing > 0 {
                 info!(
                     symbol = %item.symbol_code,
                     timeframe_code = %item.timeframe_code,
                     requested_start_time = item.requested_start_time,
                     requested_end_time = item.requested_end_time,
-                    started = 0,
+                    started,
                     skipped_existing,
                     source_event_id,
                     "processed readiness-triggered backtests"
                 );
             }
-            return Ok(0);
+            Ok(started)
         }
+        .await;
 
-        let batch_id = format!(
-            "{}:{}:{}:{}",
-            item.symbol_code,
-            item.timeframe_code,
-            item.requested_start_time,
-            item.requested_end_time
-        );
-        let total_count = runnable_analyses.len();
-        let mut trade_cache: Option<TradeWindowCache> = None;
-        let mut started = 0usize;
-
-        self.publish_backtest_batch_progress_event(&BacktestBatchProgressUpdate {
-            batch_id: &batch_id,
-            symbol: &item.symbol_code,
-            timeframe_code: &item.timeframe_code,
-            requested_start_time: item.requested_start_time,
-            requested_end_time: item.requested_end_time,
-            stage: "retrieving-data",
-            progress_percent: 0.0,
-            total_count,
-            completed_count: 0,
-            running_count: 0,
-        })
-        .await?;
-
-        for (analysis, run_key) in runnable_analyses {
-            self.mark_readiness_window_in_flight(&run_key).await;
-
-            let request = BacktestRequest {
-                control_plane_job_id: Some(format!("readiness-{}", Uuid::new_v4())),
-                batch_id: Some(batch_id.clone()),
-                batch_total_count: Some(total_count),
-                batch_completed_count: Some(started),
-                analysis_setting_id: analysis.id.clone(),
-                symbol_code: Some(analysis.symbol.clone()),
-                timeframe_code: Some(analysis.timeframe_code.clone()),
-                risk_profile_name: Some(analysis.risk_profile_name.clone()),
-                start_time: Some(item.requested_start_time),
-                end_time: Some(item.requested_end_time),
-                warmup_candles: None,
-            };
-            let result = self
-                .run_backtest_with_trade_cache(request, &mut trade_cache)
-                .await;
-            self.unmark_readiness_window_in_flight(&run_key).await;
-
-            match result {
-                Ok(_) => {
-                    started += 1;
-                    let stage = if started >= total_count {
-                        "completed"
-                    } else {
-                        "running-backtests"
-                    };
-                    if let Err(error) = self
-                        .publish_backtest_batch_progress_event(&BacktestBatchProgressUpdate {
-                            batch_id: &batch_id,
-                            symbol: &item.symbol_code,
-                            timeframe_code: &item.timeframe_code,
-                            requested_start_time: item.requested_start_time,
-                            requested_end_time: item.requested_end_time,
-                            stage,
-                            progress_percent: (started as f64 / total_count as f64) * 100.0,
-                            total_count,
-                            completed_count: started,
-                            running_count: 0,
-                        })
-                        .await
-                    {
-                        warn!(
-                            error = %error,
-                            batch_id = %batch_id,
-                            "failed to publish backtest-batch progress event"
-                        );
-                    }
-                }
-                Err(error) => {
-                    let _ = self
-                        .publish_backtest_batch_progress_event(&BacktestBatchProgressUpdate {
-                            batch_id: &batch_id,
-                            symbol: &item.symbol_code,
-                            timeframe_code: &item.timeframe_code,
-                            requested_start_time: item.requested_start_time,
-                            requested_end_time: item.requested_end_time,
-                            stage: "failed",
-                            progress_percent: if total_count == 0 {
-                                0.0
-                            } else {
-                                (started as f64 / total_count as f64) * 100.0
-                            },
-                            total_count,
-                            completed_count: started,
-                            running_count: 0,
-                        })
-                        .await;
-                    warn!(
-                        error = %error,
-                        analysis_setting_id = %analysis.id,
-                        risk_profile_name = %analysis.risk_profile_name,
-                        symbol = %analysis.symbol,
-                        timeframe_code = %analysis.timeframe_code,
-                        requested_start_time = item.requested_start_time,
-                        requested_end_time = item.requested_end_time,
-                        source_event_id,
-                        "readiness-triggered backtest failed"
-                    );
-                }
-            }
-        }
-
-        if started > 0 || skipped_existing > 0 {
-            info!(
-                symbol = %item.symbol_code,
-                timeframe_code = %item.timeframe_code,
-                requested_start_time = item.requested_start_time,
-                requested_end_time = item.requested_end_time,
-                started,
-                skipped_existing,
-                source_event_id,
-                "processed readiness-triggered backtests"
-            );
-        }
-
-        Ok(started)
+        self.unmark_readiness_batch_in_flight(&batch_key).await;
+        result
     }
 
     async fn readiness_window_in_flight(&self, run_key: &str) -> bool {
@@ -1182,6 +1220,28 @@ impl ResearchBacktestingService {
             .lock()
             .await
             .remove(run_key);
+    }
+
+    async fn try_mark_readiness_batch_in_flight(
+        &self,
+        batch_key: &str,
+        requested_window: ReadinessBatchWindow,
+    ) -> Option<ReadinessBatchWindow> {
+        let mut guard = self.inner.running_readiness_batches.lock().await;
+        if let Some(active_window) = guard.get(batch_key).copied() {
+            return Some(active_window);
+        }
+
+        guard.insert(batch_key.to_string(), requested_window);
+        None
+    }
+
+    async fn unmark_readiness_batch_in_flight(&self, batch_key: &str) {
+        self.inner
+            .running_readiness_batches
+            .lock()
+            .await
+            .remove(batch_key);
     }
 
     async fn run_backtest_with_trade_cache(
@@ -1458,26 +1518,17 @@ impl ResearchBacktestingService {
                 .collect::<Vec<_>>();
             fetched_kline_count = fetched_kline_count.saturating_add(rows.len());
 
-            if timeframe_code == analysis.timeframe_code {
-                let mut warmup_rows = Vec::new();
-                for row in rows {
-                    if row.open_time < time_window.requested_start_time {
-                        warmup_rows.push(row);
-                    } else if row.open_time >= time_window.requested_start_time
-                        && row.open_time < time_window.requested_end_time
-                    {
-                        replay_rows.push(row);
-                    }
-                }
-                warmup_rows_by_timeframe.insert(timeframe_code, warmup_rows);
-            } else {
-                let warmup_rows = rows
-                    .into_iter()
-                    .filter(|row| row.open_time < time_window.requested_start_time)
-                    .collect::<Vec<_>>();
-                warmup_rows_by_timeframe.insert(timeframe_code, warmup_rows);
-            }
+            let (warmup_rows, timeframe_replay_rows) = split_kline_rows_for_backtest_window(
+                rows,
+                time_window.requested_start_time,
+                time_window.requested_end_time,
+                timeframe_code == analysis.timeframe_code,
+            );
+            warmup_rows_by_timeframe.insert(timeframe_code, warmup_rows);
+            replay_rows.extend(timeframe_replay_rows);
         }
+
+        sort_replay_rows_chronologically(&mut replay_rows);
 
         if replay_rows.is_empty() {
             bail!(
@@ -1812,6 +1863,10 @@ fn readiness_run_key(
     )
 }
 
+fn readiness_batch_key(symbol: &str, timeframe_code: &str, strategy_name: &str) -> String {
+    format!("{symbol}:{timeframe_code}:{strategy_name}")
+}
+
 fn resolve_time_window(
     analysis: &ResolvedAnalysisSettingsRecord,
     request: &BacktestRequest,
@@ -1905,6 +1960,47 @@ fn requirement_period_ms(
         analysis.id,
         timeframe_code
     )
+}
+
+fn split_kline_rows_for_backtest_window(
+    rows: Vec<PersistedKlineRecord>,
+    requested_start_time: i64,
+    requested_end_time: i64,
+    is_signal_timeframe: bool,
+) -> (Vec<PersistedKlineRecord>, Vec<PersistedKlineRecord>) {
+    let mut warmup_rows = Vec::new();
+    let mut replay_rows = Vec::new();
+
+    for row in rows {
+        let is_before_replay = if is_signal_timeframe {
+            row.open_time < requested_start_time
+        } else {
+            row.close_time < requested_start_time
+        };
+        let is_inside_replay = if is_signal_timeframe {
+            row.open_time >= requested_start_time && row.open_time < requested_end_time
+        } else {
+            row.close_time >= requested_start_time && row.close_time < requested_end_time
+        };
+
+        if is_before_replay {
+            warmup_rows.push(row);
+        } else if is_inside_replay {
+            replay_rows.push(row);
+        }
+    }
+
+    (warmup_rows, replay_rows)
+}
+
+fn sort_replay_rows_chronologically(rows: &mut [PersistedKlineRecord]) {
+    rows.sort_by(|left, right| {
+        left.close_time
+            .cmp(&right.close_time)
+            .then(right.period_ms.cmp(&left.period_ms))
+            .then(left.open_time.cmp(&right.open_time))
+            .then(left.timeframe_code.cmp(&right.timeframe_code))
+    });
 }
 
 fn configured_duration_ms(
@@ -2860,6 +2956,33 @@ mod tests {
         }
     }
 
+    fn kline(
+        timeframe_code: &str,
+        period_ms: i64,
+        open_time: i64,
+    ) -> PersistedKlineRecord {
+        PersistedKlineRecord {
+            pair_code: "BTCUSDT".to_string(),
+            symbol: "BTCUSDT".to_string(),
+            timeframe_code: timeframe_code.to_string(),
+            period_ms,
+            open_time,
+            close_time: open_time + period_ms - 1,
+            event_time: open_time + period_ms - 1,
+            occurred_at: "2026-01-01T00:00:00Z".to_string(),
+            ingestion_mode: "historical".to_string(),
+            closed: true,
+            open: "100".to_string(),
+            high: "101".to_string(),
+            low: "99".to_string(),
+            close: "100".to_string(),
+            volume: "1".to_string(),
+            quote_volume: "1".to_string(),
+            trade_count: 1,
+            updated_at: "2026-01-01T00:00:00Z".to_string(),
+        }
+    }
+
     fn signal(
         sequence: usize,
         direction: &str,
@@ -2981,6 +3104,22 @@ mod tests {
     }
 
     #[test]
+    fn readiness_batch_key_is_stable_for_same_row() {
+        let left = readiness_batch_key("ETHUSDT", "5m", "emaCross");
+        let right = readiness_batch_key("ETHUSDT", "5m", "emaCross");
+
+        assert_eq!(left, right);
+    }
+
+    #[test]
+    fn readiness_run_key_distinguishes_different_windows() {
+        let left = readiness_run_key("analysis-1", "ETHUSDT", "5m", "default", 100, 200);
+        let right = readiness_run_key("analysis-1", "ETHUSDT", "5m", "default", 200, 300);
+
+        assert_ne!(left, right);
+    }
+
+    #[test]
     fn trade_coverage_blocker_rejects_internal_aggregate_trade_hole() {
         let coverage = trading_bot_market_data::db::WindowCoverage {
             row_count: 7,
@@ -3033,6 +3172,40 @@ mod tests {
             .expect("count should compute");
 
         assert_eq!(count, 10);
+    }
+
+    #[test]
+    fn split_kline_rows_uses_close_time_for_non_signal_timeframes() {
+        let rows = vec![
+            kline("15m", 900_000, 0),
+            kline("15m", 900_000, 900_000),
+        ];
+
+        let (warmup_rows, replay_rows) =
+            split_kline_rows_for_backtest_window(rows, 600_000, 1_800_000, false);
+
+        assert_eq!(warmup_rows.len(), 0);
+        assert_eq!(replay_rows.len(), 2);
+        assert_eq!(replay_rows[0].open_time, 0);
+        assert_eq!(replay_rows[1].open_time, 900_000);
+    }
+
+    #[test]
+    fn sort_replay_rows_orders_longer_timeframe_before_operating_on_shared_close() {
+        let mut rows = vec![
+            kline("1m", 60_000, 780_000),
+            kline("1m", 60_000, 840_000),
+            kline("15m", 900_000, 0),
+        ];
+
+        sort_replay_rows_chronologically(&mut rows);
+
+        assert_eq!(
+            rows.iter()
+                .map(|row| (row.timeframe_code.as_str(), row.open_time))
+                .collect::<Vec<_>>(),
+            vec![("1m", 780_000), ("15m", 0), ("1m", 840_000)]
+        );
     }
 
     #[test]
