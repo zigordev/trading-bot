@@ -58,7 +58,6 @@ The minimum `execution-settings` record for paper trading is:
 - `autoPromote`
 - `selectionMetric`
 - `requirePositivePnl`
-- `minTradeCount`
 - `allowedSymbols`
 - `allowedTimeframes`
 - `replaceOpenPositionPolicy`
@@ -70,7 +69,6 @@ Recommended first paper-trading values:
 - `autoPromote = true`
 - `selectionMetric = totalPnlPercent`
 - `requirePositivePnl = false`
-- `minTradeCount = 1`
 - `allowedSymbols = []`
 - `allowedTimeframes = []`
 - `replaceOpenPositionPolicy = flatten`
@@ -85,7 +83,6 @@ Example payload:
   "autoPromote": true,
   "selectionMetric": "totalPnlPercent",
   "requirePositivePnl": false,
-  "minTradeCount": 1,
   "allowedSymbols": [],
   "allowedTimeframes": [],
   "replaceOpenPositionPolicy": "flatten"
@@ -109,7 +106,6 @@ Current defaults around that rule:
 
 - `selectionMetric = totalPnlPercent`
 - `autoPromote = true`
-- `minTradeCount = 1`
 - `requirePositivePnl = false`
 
 That means the system currently prefers the highest return even if all candidates are negative.

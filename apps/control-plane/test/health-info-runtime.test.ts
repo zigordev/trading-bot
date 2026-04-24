@@ -77,46 +77,6 @@ test("GET /health/readiness returns degraded when the database is down", async (
   });
 });
 
-test("GET /v1/ops/overview aggregates service availability", async (t) => {
-  const app = Fastify({ logger: false });
-  t.after(() => app.close());
-
-  let requestCount = 0;
-  registerOpsRoutes(app, testConfig, {} as never, {
-    fetchJson: async (url) => {
-      requestCount += 1;
-      if (url.includes("market-data")) {
-        return { status: "ok" };
-      }
-
-      throw new Error("connection refused");
-    },
-    listResolvedAnalysisSettingsFn: async () => [],
-    listBacktestJobsFn: async () => [],
-  });
-
-  const response = await app.inject({
-    method: "GET",
-    url: "/v1/ops/overview",
-  });
-
-  assert.equal(response.statusCode, 200);
-  const payload = response.json();
-  assert.equal(requestCount, 2);
-  assert.equal(payload.services.length, 3);
-  assert.deepEqual(
-    payload.services.map((service: { name: string; status: string }) => ({
-      name: service.name,
-      status: service.status,
-    })),
-    [
-      { name: "control-plane", status: "up" },
-      { name: "market-data", status: "up" },
-      { name: "research-backtesting", status: "down" },
-    ],
-  );
-});
-
 test("GET /v1/runtime-config/analysis-settings returns the injected projection", async (t) => {
   const app = Fastify({ logger: false });
   t.after(() => app.close());
@@ -196,8 +156,6 @@ test("GET /v1/ops/execution endpoints return injected execution projections", as
   t.after(() => app.close());
 
   registerOpsRoutes(app, testConfig, {} as never, {
-    fetchJson: async () => ({ status: "ok" }),
-    listResolvedAnalysisSettingsFn: async () => [],
     listBacktestJobsFn: async () => [],
     listBacktestBatchesFn: async () => [],
     listBacktestRunProjectionsFn: async () => [],
@@ -276,6 +234,7 @@ test("GET /v1/ops/execution endpoints return injected execution projections", as
         },
       ],
       totalCount: 1,
+      realizedPnlUsd: 2,
       page: 1,
       pageSize: 20,
     }),
@@ -296,5 +255,6 @@ test("GET /v1/ops/execution endpoints return injected execution projections", as
 
   assert.equal(tradesResponse.statusCode, 200);
   assert.equal(tradesResponse.json().totalCount, 1);
+  assert.equal(tradesResponse.json().realizedPnlUsd, 2);
   assert.equal(tradesResponse.json().items[0].tradeId, "trade-1");
 });
