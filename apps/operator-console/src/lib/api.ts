@@ -3,18 +3,6 @@ export const API_BASE =
 
 export const OPS_WS_URL = `${API_BASE.replace(/^http/, "ws")}/ws/ops`;
 
-export type OverviewResponse = {
-  generatedAt: string;
-  activeAnalysisCount: number;
-  queuedBacktests: number;
-  runningBacktests: number;
-  services: {
-    name: string;
-    status: "up" | "down" | "unknown";
-    details: string | null;
-  }[];
-};
-
 export type BacktestBatch = {
   batchId: string;
   symbolCode: string;
@@ -106,7 +94,6 @@ export type ExecutionSettingsRecord = {
   mode: "paper" | "live";
   autoPromote: boolean;
   maxPromotions: number;
-  minTradeCount: number;
   replaceOpenPositionPolicy: "keep" | "flatten";
   createdAt: string;
   updatedAt: string;
@@ -199,6 +186,7 @@ export type ExecutionSummaryResponse = {
 export type ExecutionTradesResponse = {
   items: ExecutionTrade[];
   totalCount: number;
+  realizedPnlUsd: number;
   page: number;
   pageSize: number;
 };
@@ -265,9 +253,6 @@ const fetchJson = async <T>(path: string, init?: RequestInit): Promise<T> => {
 
   return response.json();
 };
-
-export const getOverview = (): Promise<OverviewResponse> =>
-  fetchJson("/v1/ops/overview");
 
 export const getBacktestsSummary = (): Promise<BacktestsSummaryResponse> =>
   fetchJson("/v1/ops/backtests/summary");
