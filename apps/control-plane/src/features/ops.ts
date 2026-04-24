@@ -191,6 +191,7 @@ export type ExecutionTradeQuery = {
 export type PaginatedExecutionTrades = {
   items: ExecutionTradeRecord[];
   totalCount: number;
+  realizedPnlUsd: number;
   page: number;
   pageSize: number;
 };
@@ -200,8 +201,19 @@ type ExecutionSettingsSelectionRecord = {
   mode: "paper" | "live";
   autoPromote: boolean;
   maxPromotions: number;
-  minTradeCount: number;
   replaceOpenPositionPolicy: "keep" | "flatten";
+};
+
+export type PromotionReconciliationResult = {
+  promotion: ExecutionPromotionProjectionRecord | null;
+  changed: boolean;
+};
+
+export type StrategyPromotionThresholds = {
+  minTradeCount: number | null;
+  minTradesPer1000Candles: number | null;
+  maxDrawdownPercent: number | null;
+  maxReversalRatio: number | null;
 };
 
 const selectionMetricName = "score";
@@ -215,6 +227,83 @@ const calculatePromotionSelectionValue = (
   Number.isFinite(run.score)
     ? run.score
     : run.equityCurvePnlPercent - 0.75 * run.maxDrawdownPercent - 12 * run.reversalRatio;
+
+export const hasPositivePromotionSelectionValue = (
+  run: Pick<
+    BacktestRunProjectionInput,
+    "score" | "equityCurvePnlPercent" | "maxDrawdownPercent" | "reversalRatio"
+  >,
+): boolean => calculatePromotionSelectionValue(run) > 0;
+
+const toNonNegativeIntegerOrNull = (value: unknown): number | null => {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed >= 0 ? parsed : null;
+};
+
+const toNonNegativeNumberOrNull = (value: unknown): number | null => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+};
+
+export const strategyPromotionThresholdsFromParameters = (
+  parameters: Record<string, unknown> | null | undefined,
+): StrategyPromotionThresholds => {
+  const thresholdsValue = parameters?.promotionThresholds;
+  const thresholds =
+    typeof thresholdsValue === "object" &&
+    thresholdsValue !== null &&
+    !Array.isArray(thresholdsValue)
+      ? (thresholdsValue as Record<string, unknown>)
+      : {};
+
+  return {
+    minTradeCount: toNonNegativeIntegerOrNull(thresholds.minTradeCount),
+    minTradesPer1000Candles: toNonNegativeNumberOrNull(thresholds.minTradesPer1000Candles),
+    maxDrawdownPercent: toNonNegativeNumberOrNull(thresholds.maxDrawdownPercent),
+    maxReversalRatio: toNonNegativeNumberOrNull(thresholds.maxReversalRatio),
+  };
+};
+
+const tradesPer1000Candles = (
+  run: Pick<BacktestRunProjectionInput, "tradeCount" | "replayKlineCount">,
+): number =>
+  run.replayKlineCount > 0 ? (run.tradeCount * 1_000) / run.replayKlineCount : 0;
+
+export const meetsStrategyPromotionThresholds = (
+  run: Pick<
+    BacktestRunProjectionInput,
+    "tradeCount" | "replayKlineCount" | "maxDrawdownPercent" | "reversalRatio"
+  >,
+  parameters: Record<string, unknown> | null | undefined,
+): boolean => {
+  const thresholds = strategyPromotionThresholdsFromParameters(parameters);
+  if (
+    thresholds.minTradeCount === null ||
+    thresholds.minTradesPer1000Candles === null ||
+    thresholds.maxDrawdownPercent === null ||
+    thresholds.maxReversalRatio === null
+  ) {
+    return false;
+  }
+
+  if (run.tradeCount < thresholds.minTradeCount) {
+    return false;
+  }
+
+  if (tradesPer1000Candles(run) < thresholds.minTradesPer1000Candles) {
+    return false;
+  }
+
+  if (run.maxDrawdownPercent > thresholds.maxDrawdownPercent) {
+    return false;
+  }
+
+  if (run.reversalRatio > thresholds.maxReversalRatio) {
+    return false;
+  }
+
+  return true;
+};
 
 const isZeroReadinessDimension = (
   value: Record<string, unknown> | null,
@@ -471,7 +560,6 @@ const mapExecutionSettingsSelectionRow = (
   mode: row.mode === "live" ? "live" : "paper",
   autoPromote: Boolean(row.auto_promote),
   maxPromotions: Number(row.max_promotions),
-  minTradeCount: Number(row.min_trade_count),
   replaceOpenPositionPolicy:
     row.replace_open_position_policy === "keep" ? "keep" : "flatten",
 });
@@ -501,6 +589,43 @@ const hasSamePromotionContext = (
   promotion.strategyName === run.strategyName &&
   promotion.riskProfileName === run.riskProfileName &&
   promotion.mode === mode;
+
+const supersedeActivePromotionsForContext = async (
+  queryable: Pick<Pool, "query">,
+  context: Pick<
+    BacktestRunProjectionInput,
+    "analysisSettingId" | "symbol" | "timeframeCode" | "strategyName" | "riskProfileName"
+  >,
+  executionSettingsName: string,
+  mode: "paper" | "live",
+): Promise<boolean> => {
+  const result = await queryable.query(
+    `
+      UPDATE ops_execution_promotions
+         SET status = 'superseded',
+             updated_at = NOW()
+       WHERE status = 'active'
+         AND execution_settings_name = $1
+         AND analysis_setting_id = $2
+         AND symbol_code = $3
+         AND timeframe_code = $4
+         AND strategy_name = $5
+         AND risk_profile_name = $6
+         AND mode = $7
+    `,
+    [
+      executionSettingsName,
+      context.analysisSettingId,
+      context.symbol,
+      context.timeframeCode,
+      context.strategyName,
+      context.riskProfileName,
+      mode,
+    ],
+  );
+
+  return Number(result.rowCount ?? 0) > 0;
+};
 
 export const ensureOpsSchema = async (pool: Pool): Promise<void> => {
   await pool.query(`
@@ -1303,6 +1428,98 @@ export const listBacktestRunProjections = async (
   return result.rows.map(mapBacktestRunProjectionRow);
 };
 
+export const listLatestBacktestRunProjections = async (
+  pool: Pool,
+  limit = 500,
+): Promise<BacktestRunProjectionRecord[]> => {
+  const result = await pool.query(
+    `
+      SELECT
+        backtest_id,
+        finished_at,
+        backtest_duration_ms,
+        data_retrieval_duration_ms,
+        analysis_setting_id,
+        risk_profile_name,
+        symbol,
+        timeframe_code,
+        strategy_name,
+        requested_start_time,
+        requested_end_time,
+        replay_kline_count,
+        replay_trade_count,
+        signal_count,
+        trade_count,
+        stop_loss_trade_count,
+        take_profit_trade_count,
+        reversal_trade_count,
+        window_end_trade_count,
+        non_reversal_trade_count,
+        total_pnl_percent,
+        equity_curve_pnl_percent,
+        max_drawdown_percent,
+        reversal_ratio,
+        score,
+        source_event_id,
+        source_occurred_at,
+        created_at,
+        updated_at
+      FROM (
+        SELECT DISTINCT ON (
+          symbol,
+          timeframe_code,
+          analysis_setting_id,
+          risk_profile_name,
+          strategy_name
+        )
+          backtest_id,
+          finished_at,
+          backtest_duration_ms,
+          data_retrieval_duration_ms,
+          analysis_setting_id,
+          risk_profile_name,
+          symbol,
+          timeframe_code,
+          strategy_name,
+          requested_start_time,
+          requested_end_time,
+          replay_kline_count,
+          replay_trade_count,
+          signal_count,
+          trade_count,
+          stop_loss_trade_count,
+          take_profit_trade_count,
+          reversal_trade_count,
+          window_end_trade_count,
+          non_reversal_trade_count,
+          total_pnl_percent,
+          equity_curve_pnl_percent,
+          max_drawdown_percent,
+          reversal_ratio,
+          score,
+          source_event_id,
+          source_occurred_at,
+          created_at,
+          updated_at
+        FROM ops_backtest_runs
+        ORDER BY
+          symbol ASC,
+          timeframe_code ASC,
+          analysis_setting_id ASC,
+          risk_profile_name ASC,
+          strategy_name ASC,
+          finished_at DESC,
+          backtest_id DESC
+      ) latest_runs
+      ORDER BY finished_at DESC, backtest_id DESC
+      LIMIT $1
+    `,
+    [Math.max(1, Math.min(limit, 2_000))],
+  );
+
+  return result.rows.map(mapBacktestRunProjectionRow);
+};
+
 export const replaceDataReadinessProjections = async (
   pool: Pool,
   items: DataReadinessProjectionInput[],
@@ -1796,8 +2013,14 @@ export const listExecutionTrades = async (
   const page = Math.max(1, query.page);
   const offset = (page - 1) * pageSize;
 
-  const countResult = await pool.query(
-    `SELECT COUNT(*)::bigint AS total_count FROM ops_execution_trades ${whereSql}`,
+  const aggregateResult = await pool.query(
+    `
+      SELECT
+        COUNT(*)::bigint AS total_count,
+        COALESCE(SUM(realized_pnl_usd), 0)::double precision AS realized_pnl_usd
+      FROM ops_execution_trades
+      ${whereSql}
+    `,
     params,
   );
 
@@ -1845,7 +2068,8 @@ export const listExecutionTrades = async (
 
   return {
     items: rowsResult.rows.map(mapExecutionTradeRow),
-    totalCount: Number(countResult.rows[0]?.total_count ?? 0),
+    totalCount: Number(aggregateResult.rows[0]?.total_count ?? 0),
+    realizedPnlUsd: Number(aggregateResult.rows[0]?.realized_pnl_usd ?? 0),
     page,
     pageSize,
   };
@@ -1861,7 +2085,6 @@ export const getAutoPromoteExecutionSettings = async (
         mode,
         auto_promote,
         max_promotions,
-        min_trade_count,
         replace_open_position_policy,
         updated_at
       FROM execution_settings
@@ -1880,29 +2103,61 @@ export const getAutoPromoteExecutionSettings = async (
 export const promoteBacktestRunIfEligible = async (
   pool: Pool,
   run: BacktestRunProjectionInput,
-): Promise<ExecutionPromotionProjectionRecord | null> => {
+): Promise<PromotionReconciliationResult> => {
   const settings = await getAutoPromoteExecutionSettings(pool);
   if (!settings) {
-    return null;
+    return {
+      promotion: null,
+      changed: false,
+    };
   }
 
-  if (run.tradeCount < settings.minTradeCount) {
-    return null;
-  }
-  if (run.equityCurvePnlPercent <= 0) {
-    return null;
-  }
   const selectionValue = calculatePromotionSelectionValue(run);
+  if (!hasPositivePromotionSelectionValue(run)) {
+    return {
+      promotion: null,
+      changed: await supersedeActivePromotionsForContext(
+        pool,
+        run,
+        settings.name,
+        settings.mode,
+      ),
+    };
+  }
   const eligibleAnalyses = await listResolvedAnalysisSettings(pool);
-  const isEnabledByRuntimeConfig = eligibleAnalyses.some(
+  const eligibleAnalysis = eligibleAnalyses.find(
     (analysis) =>
       analysis.id === run.analysisSettingId &&
       analysis.symbolCode === run.symbol &&
       analysis.timeframeCode === run.timeframeCode &&
       analysis.riskProfileName === run.riskProfileName,
   );
-  if (!isEnabledByRuntimeConfig) {
-    return null;
+  if (!eligibleAnalysis) {
+    return {
+      promotion: null,
+      changed: await supersedeActivePromotionsForContext(
+        pool,
+        run,
+        settings.name,
+        settings.mode,
+      ),
+    };
+  }
+  if (
+    !meetsStrategyPromotionThresholds(
+      run,
+      eligibleAnalysis.strategy.parameters,
+    )
+  ) {
+    return {
+      promotion: null,
+      changed: await supersedeActivePromotionsForContext(
+        pool,
+        run,
+        settings.name,
+        settings.mode,
+      ),
+    };
   }
 
   const activePromotions = await listActiveExecutionPromotions(
@@ -1910,7 +2165,10 @@ export const promoteBacktestRunIfEligible = async (
     settings.maxPromotions + 10,
   );
   if (activePromotions.some((promotion) => promotion.sourceBacktestId === run.backtestId)) {
-    return null;
+    return {
+      promotion: null,
+      changed: false,
+    };
   }
   const sameContextPromotions = activePromotions.filter((promotion) =>
     hasSamePromotionContext(promotion, run, settings.name, settings.mode),
@@ -1926,7 +2184,10 @@ export const promoteBacktestRunIfEligible = async (
     lowestCompetingPromotion &&
     lowestCompetingPromotion.selectionValue >= selectionValue
   ) {
-    return null;
+    return {
+      promotion: null,
+      changed: false,
+    };
   }
 
   const client = await pool.connect();
@@ -2052,7 +2313,10 @@ export const promoteBacktestRunIfEligible = async (
     );
 
     await client.query("COMMIT");
-    return mapExecutionPromotionProjectionRow(result.rows[0]);
+    return {
+      promotion: mapExecutionPromotionProjectionRow(result.rows[0]),
+      changed: true,
+    };
   } catch (error) {
     await client.query("ROLLBACK");
     throw error;

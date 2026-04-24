@@ -295,7 +295,7 @@ export const createBacktestRunProjectionConsumer = (
 
             const projectionInput = toProjectionInput(envelope);
             await upsertBacktestRunProjection(pool, projectionInput);
-            const promotion = await promoteBacktestRunIfEligible(pool, projectionInput);
+            const promotionResult = await promoteBacktestRunIfEligible(pool, projectionInput);
             if (envelope.data.controlPlaneJobId) {
               await completeBacktestJobFromProjectionEvent(pool, {
                 jobId: envelope.data.controlPlaneJobId,
@@ -309,12 +309,12 @@ export const createBacktestRunProjectionConsumer = (
                 timeframeCodes: [envelope.data.timeframeCode],
               },
             });
-            if (promotion) {
+            if (promotionResult.changed) {
               publishOpsEvent({
                 type: "ops.execution.updated",
                 payload: {
-                  symbols: [promotion.symbolCode],
-                  timeframeCodes: [promotion.timeframeCode],
+                  symbols: [envelope.data.symbol],
+                  timeframeCodes: [envelope.data.timeframeCode],
                 },
               });
             }

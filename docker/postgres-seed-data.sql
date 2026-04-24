@@ -33,7 +33,14 @@ INSERT INTO public.symbols (
 ) VALUES
   ('6f686479-a001-4d72-89f3-f8a6a98f894f', 'BTCUSDT', true, 'BTC', 'USDT', '2026-03-16 10:42:15.044+00', '2026-03-16 10:42:15.044+00'),
   ('0d7c2f49-63a0-4f37-9a9d-4cb2c8b4d901', 'ETHUSDT', true, 'ETH', 'USDT', '2026-03-20 16:32:00+00', '2026-03-20 16:32:00+00'),
-  ('b6d58aab-3c38-4f8b-9c43-09d2a0c2e902', 'BNBUSDT', true, 'BNB', 'USDT', '2026-03-20 16:32:00+00', '2026-03-20 16:32:00+00');
+  ('b6d58aab-3c38-4f8b-9c43-09d2a0c2e902', 'BNBUSDT', true, 'BNB', 'USDT', '2026-03-20 16:32:00+00', '2026-03-20 16:32:00+00'),
+  ('4d5a0805-7560-48c7-b50a-4e4760a1e092', 'USDCUSDT', true, 'USDC', 'USDT', '2026-04-03 00:00:00+00', '2026-04-03 00:00:00+00'),
+  ('e8d5cafc-1eb4-4f1b-9bb6-4063bf83f226', 'SOLUSDT', true, 'SOL', 'USDT', '2026-04-03 00:00:00+00', '2026-04-03 00:00:00+00'),
+  ('4c3e1d6f-2b91-485e-8dc7-d63a466554c9', 'BTCUSDC', true, 'BTC', 'USDC', '2026-04-03 00:00:00+00', '2026-04-03 00:00:00+00'),
+  ('e623aaf1-a8df-461c-9681-a1f48596bd56', 'NIGHTUSDT', true, 'NIGHT', 'USDT', '2026-04-03 00:00:00+00', '2026-04-03 00:00:00+00'),
+  ('3d5eb776-3b27-4d7b-a161-5e6d2b4dac6e', 'ETHUSDC', true, 'ETH', 'USDC', '2026-04-03 00:00:00+00', '2026-04-03 00:00:00+00'),
+  ('a3ab0937-fa50-4774-a565-8ee0aafdc811', 'ETHUSD1', true, 'ETH', 'USD1', '2026-04-03 00:00:00+00', '2026-04-03 00:00:00+00'),
+  ('528618e3-670c-443a-b9f7-738e8e6ea124', 'BTCUSD1', true, 'BTC', 'USD1', '2026-04-03 00:00:00+00', '2026-04-03 00:00:00+00');
 
 --
 -- Data for Name: risk_profiles; Type: TABLE DATA; Schema: public; Owner: -
@@ -51,9 +58,9 @@ INSERT INTO public.risk_profiles VALUES ('e8f5a1b9-2b6e-42e8-8df8-3fd4c0c77f05',
 -- Data for Name: strategies; Type: TABLE DATA; Schema: public; Owner: -
 --
 
-INSERT INTO public.strategies VALUES ('1e341a7c-e979-4b14-b27e-bc40986e3a13', 'emaCross', 'EMA crossover strategy', true, '{"kind": "emaCross"}', '2026-03-16 10:42:15.13+00', '2026-03-16 10:42:15.13+00');
-INSERT INTO public.strategies VALUES ('4f60d488-8cb7-4bdb-93ea-11bf8f9d6d0a', 'strategy1', 'Legacy trend pullback strategy', true, '{"kind": "strategy1"}', '2026-03-16 10:42:15.13+00', '2026-03-16 10:42:15.13+00');
-INSERT INTO public.strategies VALUES ('e6cb6e84-04a0-4c41-8dd5-9008bbd31ce3', 'strategy2', 'Legacy momentum confirmation strategy', true, '{"kind": "strategy2"}', '2026-03-16 10:42:15.13+00', '2026-03-16 10:42:15.13+00');
+INSERT INTO public.strategies VALUES ('1e341a7c-e979-4b14-b27e-bc40986e3a13', 'emaCross', 'EMA crossover strategy', true, '{"kind": "emaCross", "promotionThresholds": {"minTradeCount": 135, "minTradesPer1000Candles": 13.5, "maxDrawdownPercent": 15, "maxReversalRatio": 0.35}}', '2026-03-16 10:42:15.13+00', '2026-03-16 10:42:15.13+00');
+INSERT INTO public.strategies VALUES ('4f60d488-8cb7-4bdb-93ea-11bf8f9d6d0a', 'strategy1', 'Legacy trend pullback strategy', true, '{"kind": "strategy1", "promotionThresholds": {"minTradeCount": 72, "minTradesPer1000Candles": 4.5, "maxDrawdownPercent": 12, "maxReversalRatio": 0.2}}', '2026-03-16 10:42:15.13+00', '2026-03-16 10:42:15.13+00');
+INSERT INTO public.strategies VALUES ('e6cb6e84-04a0-4c41-8dd5-9008bbd31ce3', 'strategy2', 'Legacy momentum confirmation strategy', true, '{"kind": "strategy2", "promotionThresholds": {"minTradeCount": 72, "minTradesPer1000Candles": 4.5, "maxDrawdownPercent": 12, "maxReversalRatio": 0.2}}', '2026-03-16 10:42:15.13+00', '2026-03-16 10:42:15.13+00');
 
 
 --
@@ -95,7 +102,6 @@ INSERT INTO public.execution_settings
     auto_promote,
     selection_metric,
     require_positive_pnl,
-    min_trade_count,
     max_promotions,
     replace_open_position_policy,
     created_at,
@@ -110,8 +116,7 @@ VALUES
     true,
     'totalPnlPercent',
     true,
-    1,
-    10,
+    20,
     'flatten',
     '2026-03-29 09:00:00+00',
     '2026-03-29 09:00:00+00'

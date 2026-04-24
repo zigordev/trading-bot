@@ -82,7 +82,6 @@ export type ExecutionSettingsInput = {
   mode: "paper" | "live";
   autoPromote: boolean;
   maxPromotions: number;
-  minTradeCount: number;
   replaceOpenPositionPolicy: "keep" | "flatten";
 };
 
@@ -159,6 +158,7 @@ const deriveAssetsFromSymbolCode = (
   const normalized = code.trim().toUpperCase();
   const knownQuoteAssets = [
     "USDT",
+    "USD1",
     "FDUSD",
     "USDC",
     "BUSD",
@@ -284,7 +284,6 @@ const mapExecutionSettingsRow = (row: QueryResultRow): ExecutionSettingsRecord =
   mode: row.mode === "live" ? "live" : "paper",
   autoPromote: Boolean(row.auto_promote),
   maxPromotions: Number(row.max_promotions),
-  minTradeCount: Number(row.min_trade_count),
   replaceOpenPositionPolicy:
     row.replace_open_position_policy === "flatten" ? "flatten" : "keep",
   createdAt: toIsoString(row.created_at),
@@ -765,7 +764,6 @@ const executionSettingsDefinition: ResourceDefinition<
       max_promotions INTEGER NOT NULL DEFAULT 1,
       selection_metric TEXT NOT NULL DEFAULT 'score',
       require_positive_pnl BOOLEAN NOT NULL DEFAULT TRUE,
-      min_trade_count INTEGER NOT NULL DEFAULT 1,
       allowed_symbols_json JSONB NOT NULL DEFAULT '[]'::jsonb,
       allowed_timeframes_json JSONB NOT NULL DEFAULT '[]'::jsonb,
       replace_open_position_policy TEXT NOT NULL DEFAULT 'keep',
@@ -775,8 +773,6 @@ const executionSettingsDefinition: ResourceDefinition<
         CHECK (mode IN ('paper', 'live')),
       CONSTRAINT execution_settings_max_promotions_positive
         CHECK (max_promotions > 0),
-      CONSTRAINT execution_settings_min_trade_count_nonnegative
-        CHECK (min_trade_count >= 0),
       CONSTRAINT execution_settings_replace_open_position_policy_valid
         CHECK (replace_open_position_policy IN ('keep', 'flatten'))
     );
@@ -790,7 +786,6 @@ const executionSettingsDefinition: ResourceDefinition<
     "auto_promote",
     "max_promotions",
     "selection_metric",
-    "min_trade_count",
     "allowed_symbols_json",
     "allowed_timeframes_json",
     "replace_open_position_policy",
@@ -803,7 +798,6 @@ const executionSettingsDefinition: ResourceDefinition<
     "mode",
     "auto_promote",
     "max_promotions",
-    "min_trade_count",
     "replace_open_position_policy",
   ],
   uniqueFieldName: "name",
@@ -814,7 +808,6 @@ const executionSettingsDefinition: ResourceDefinition<
     input.mode,
     input.autoPromote,
     input.maxPromotions,
-    input.minTradeCount,
     input.replaceOpenPositionPolicy,
   ],
   toRecord: mapExecutionSettingsRow,
@@ -939,6 +932,9 @@ export const ensureControlPlaneSchema = async (pool: Pool): Promise<void> => {
   await pool.query(analysisSettingsDefinition.createTableSql);
   await pool.query(
     "ALTER TABLE execution_settings ADD COLUMN IF NOT EXISTS max_promotions INTEGER NOT NULL DEFAULT 1",
+  );
+  await pool.query(
+    "ALTER TABLE execution_settings DROP COLUMN IF EXISTS min_trade_count",
   );
 
   await pool.query("DROP TABLE IF EXISTS config_change_outbox");
@@ -1321,7 +1317,6 @@ export const executionSettingsBodySchema = {
     mode: { type: "string", enum: ["paper", "live"] },
     autoPromote: { type: "boolean" },
     maxPromotions: { type: "integer", minimum: 1 },
-    minTradeCount: { type: "integer", minimum: 0 },
     replaceOpenPositionPolicy: {
       type: "string",
       enum: ["keep", "flatten"],
@@ -1333,7 +1328,6 @@ export const executionSettingsBodySchema = {
     "mode",
     "autoPromote",
     "maxPromotions",
-    "minTradeCount",
     "replaceOpenPositionPolicy",
   ],
 } as const;
@@ -1347,7 +1341,6 @@ export const executionSettingsRecordSchema = {
     mode: { type: "string", enum: ["paper", "live"] },
     autoPromote: { type: "boolean" },
     maxPromotions: { type: "integer" },
-    minTradeCount: { type: "integer" },
     replaceOpenPositionPolicy: {
       type: "string",
       enum: ["keep", "flatten"],
@@ -1362,7 +1355,6 @@ export const executionSettingsRecordSchema = {
     "mode",
     "autoPromote",
     "maxPromotions",
-    "minTradeCount",
     "replaceOpenPositionPolicy",
     "createdAt",
     "updatedAt",
