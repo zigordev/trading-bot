@@ -1,10 +1,19 @@
 import { MaterialIcons } from "@expo/vector-icons";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { Modal, Platform, Pressable, ScrollView, Text, TextInput, View, useWindowDimensions } from "react-native";
+import { Modal, Platform, Pressable, ScrollView, Text, TextInput, View, useWindowDimensions, type LayoutChangeEvent } from "react-native";
 
 import { AppShell } from "@/src/components/app-shell";
 import { Card } from "@/src/components/card";
+import {
+  DataTableEmptyState,
+  DataTableFooter,
+  DataTableHeaderCell,
+  DataTableHeaderRow,
+  DataTableRow,
+  DataTableSurface,
+  ResponsiveDataTable,
+} from "@/src/components/data-table";
 import { MultiSelectFilter } from "@/src/components/multi-select-filter";
 import { SymbolAvatar } from "@/src/components/symbol-avatar";
 import {
@@ -162,6 +171,7 @@ const deriveAssetsFromSymbolCode = (
   const normalized = code.trim().toUpperCase();
   const knownQuoteAssets = [
     "USDT",
+    "USD1",
     "FDUSD",
     "USDC",
     "BUSD",
@@ -244,6 +254,22 @@ export function ExecutionScreenContent({
           void queryClient.invalidateQueries({
             queryKey: ["config-resource", "execution-settings"],
           });
+          return;
+        }
+
+        if (
+          event.type === "config.resource.updated" &&
+          (
+            event.payload.resource === "symbols" ||
+            event.payload.resource === "timeframes" ||
+            event.payload.resource === "strategies" ||
+            event.payload.resource === "analysis-settings" ||
+            event.payload.resource === "risk-profiles"
+          )
+        ) {
+          void queryClient.invalidateQueries({
+            queryKey: ["config-resource", event.payload.resource],
+          });
         }
       }),
     [queryClient],
@@ -257,6 +283,14 @@ export function ExecutionScreenContent({
   const symbolsQuery = useQuery({
     queryKey: ["config-resource", "symbols"],
     queryFn: () => getConfigResourceRecords("symbols"),
+  });
+  const timeframesQuery = useQuery({
+    queryKey: ["config-resource", "timeframes"],
+    queryFn: () => getConfigResourceRecords("timeframes"),
+  });
+  const strategiesQuery = useQuery({
+    queryKey: ["config-resource", "strategies"],
+    queryFn: () => getConfigResourceRecords("strategies"),
   });
   const analysisSettingsQuery = useQuery({
     queryKey: ["config-resource", "analysis-settings"],
@@ -304,21 +338,10 @@ export function ExecutionScreenContent({
         sortDirection,
       }),
   });
-  const closedTradesCountQuery = useQuery({
-    queryKey: ["ops-execution-trades-count", "closed", currentMode],
-    queryFn: () =>
-      getExecutionTrades({
-        page: 1,
-        pageSize: 1,
-        status: "closed",
-        mode: currentMode,
-        sortBy: "openedAt",
-        sortDirection: "desc",
-      }),
-  });
 
   const trades = executionTradesQuery.data?.items ?? [];
   const totalCount = executionTradesQuery.data?.totalCount ?? 0;
+  const filteredRealizedPnlUsd = executionTradesQuery.data?.realizedPnlUsd ?? 0;
   const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
   const modeActivePromotions = useMemo(
     () =>
@@ -326,22 +349,6 @@ export function ExecutionScreenContent({
         (promotion) => promotion.mode === currentMode,
       ),
     [executionSummaryQuery.data?.activePromotions, currentMode],
-  );
-  const modeRecentTrades = useMemo(
-    () =>
-      (executionSummaryQuery.data?.recentTrades ?? []).filter((trade) => trade.mode === currentMode),
-    [executionSummaryQuery.data?.recentTrades, currentMode],
-  );
-  const summaryStats = useMemo(
-    () => ({
-      openTradeCount: modeRecentTrades.filter((trade) => trade.status === "open").length,
-      closedTradeCount: closedTradesCountQuery.data?.totalCount ?? 0,
-      realizedPnlUsd: modeRecentTrades.reduce(
-        (sum, trade) => sum + (trade.realizedPnlUsd ?? 0),
-        0,
-      ),
-    }),
-    [closedTradesCountQuery.data?.totalCount, modeRecentTrades],
   );
   const selectedPromotion = useMemo(() => {
     if (!selectedPromotionId) {
@@ -411,19 +418,37 @@ export function ExecutionScreenContent({
     return {
       symbols: Array.from(
         new Set([
-          ...modeRecentTrades.map((item) => item.symbolCode),
+          ...(symbolsQuery.data ?? []).map((record) => String(record.code ?? "")),
+          symbolCode,
         ]),
-      ).sort(),
+      )
+        .filter(Boolean)
+        .sort(),
       timeframes: Array.from(
         new Set([
-          ...modeRecentTrades.map((item) => item.timeframeCode),
+          ...(timeframesQuery.data ?? []).map((record) => String(record.code ?? "")),
+          timeframeCode,
         ]),
-      ).sort(),
+      )
+        .filter(Boolean)
+        .sort(),
       strategies: Array.from(
-        new Set(modeRecentTrades.map((item) => item.strategyName)),
-      ).sort(),
+        new Set([
+          ...(strategiesQuery.data ?? []).map((record) => String(record.name ?? "")),
+          strategyName,
+        ]),
+      )
+        .filter(Boolean)
+        .sort(),
     };
-  }, [modeRecentTrades]);
+  }, [
+    symbolCode,
+    symbolsQuery.data,
+    strategyName,
+    strategiesQuery.data,
+    timeframeCode,
+    timeframesQuery.data,
+  ]);
 
   const resetFilters = () => {
     setPage(1);
@@ -486,342 +511,297 @@ export function ExecutionScreenContent({
         <View style={{ gap: 16, paddingTop: 16 }}>
         {section === "promotion" ? (
           <Card>
-            <View style={{ gap: 4 }}>
-              <Text style={{ fontSize: 20, fontWeight: "700", color: "#101828" }}>
-                Promoted strategies
-              </Text>
-              <Text style={{ color: "#475467" }}>
-                Current active {currentMode} promotion set ranked by compounded backtest score.
-              </Text>
-            </View>
-            {modeActivePromotions.length === 0 ? (
-              <View
-                style={{
-                  marginTop: 12,
-                  borderWidth: 1,
-                  borderColor: "#eaecf0",
-                  borderRadius: 12,
-                  backgroundColor: "#fcfcfd",
-                  paddingHorizontal: 14,
-                  paddingVertical: 16,
-                }}
-              >
-                <Text style={{ color: "#475467" }}>
-                  No promoted strategies are available for {currentMode} mode.
-                </Text>
-              </View>
-            ) : (
-              <View style={{ marginTop: 12, gap: 0 }}>
-                <View
-                  style={{
-                    flexDirection: "row",
-                    borderWidth: 1,
-                    borderBottomWidth: 0,
-                    borderColor: "#eaecf0",
-                    borderTopLeftRadius: 12,
-                    borderTopRightRadius: 12,
-                    backgroundColor: "#f8fafc",
-                    paddingHorizontal: 12,
-                    paddingVertical: 10,
-                  }}
-                >
-                  <Text style={{ flex: 1.3, color: "#475467", fontWeight: "700", fontSize: 12 }}>
-                    Strategy
-                  </Text>
-                  <Text style={{ flex: 1.2, color: "#475467", fontWeight: "700", fontSize: 12 }}>
-                    Market
-                  </Text>
-                  <Text style={{ flex: 1.5, color: "#475467", fontWeight: "700", fontSize: 12 }}>
-                    Analysis
-                  </Text>
-                  <Text style={{ flex: 1.1, color: "#475467", fontWeight: "700", fontSize: 12 }}>
-                    Risk
-                  </Text>
-                  <Text style={{ flex: 1.6, color: "#475467", fontWeight: "700", fontSize: 12 }}>
-                    Backtest
-                  </Text>
-                  <Text
-                    style={{
-                      flex: 0.8,
-                      color: "#475467",
-                      fontWeight: "700",
-                      fontSize: 12,
-                      textAlign: "right",
-                    }}
-                  >
-                    Score
-                  </Text>
-                </View>
-                {modeActivePromotions.map((promotion, index, items) => (
-                  <View
+            <ResponsiveDataTable minWidth={980} scrollStyle={{ width: "100%" }}>
+              <DataTableSurface>
+                <DataTableHeaderRow paddingHorizontal={12} paddingVertical={10}>
+                  <DataTableHeaderCell label="Strategy" flex={1.3} />
+                  <DataTableHeaderCell label="Market" flex={1.2} />
+                  <DataTableHeaderCell label="Analysis" flex={1.5} />
+                  <DataTableHeaderCell label="Risk" flex={1.1} />
+                  <DataTableHeaderCell label="Backtest" flex={1.6} />
+                  <DataTableHeaderCell label="Score" flex={0.8} align="right" />
+                </DataTableHeaderRow>
+                {modeActivePromotions.map((promotion, index) => (
+                  <DataTableRow
                     key={promotion.promotionId}
-                    style={{
-                      flexDirection: "row",
-                      borderWidth: 1,
-                      borderTopWidth: 0,
-                      borderColor: "#eaecf0",
-                      borderBottomLeftRadius: index === items.length - 1 ? 12 : 0,
-                      borderBottomRightRadius: index === items.length - 1 ? 12 : 0,
-                      backgroundColor: "#ffffff",
-                      paddingHorizontal: 12,
-                      paddingVertical: 10,
-                    }}
+                    index={index}
+                    paddingHorizontal={12}
+                    paddingVertical={10}
+                    alignItems="center"
                   >
-                  <View style={{ flex: 1.3, paddingRight: 8 }}>
-                    <Text style={{ color: "#101828", fontWeight: "700" }}>
-                      {promotion.strategyName}
-                    </Text>
-                    <Text style={{ color: "#475467", fontSize: 12 }}>{promotion.mode}</Text>
-                  </View>
-                  <View style={{ flex: 1.2, paddingRight: 8 }}>
-                    <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                      <SymbolAvatar
-                        baseAsset={
-                          symbolBaseAssets.get(promotion.symbolCode) ??
-                          deriveAssetsFromSymbolCode(promotion.symbolCode)?.baseAsset
-                        }
-                        destinationAsset={
-                          symbolDestinationAssets.get(promotion.symbolCode) ??
-                          deriveAssetsFromSymbolCode(promotion.symbolCode)?.destinationAsset
-                        }
-                        size={24}
-                      />
-                      <Text style={{ color: "#101828", fontWeight: "600" }}>
-                        {promotion.symbolCode}
+                    <View style={{ flex: 1.3, paddingRight: 8 }}>
+                      <Text style={{ color: "#101828", fontWeight: "700" }}>
+                        {promotion.strategyName}
+                      </Text>
+                      <Text style={{ color: "#475467", fontSize: 12 }}>{promotion.mode}</Text>
+                    </View>
+                    <View style={{ flex: 1.2, paddingRight: 8 }}>
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                        <SymbolAvatar
+                          baseAsset={
+                            symbolBaseAssets.get(promotion.symbolCode) ??
+                            deriveAssetsFromSymbolCode(promotion.symbolCode)?.baseAsset
+                          }
+                          destinationAsset={
+                            symbolDestinationAssets.get(promotion.symbolCode) ??
+                            deriveAssetsFromSymbolCode(promotion.symbolCode)?.destinationAsset
+                          }
+                          size={24}
+                        />
+                        <Text style={{ color: "#101828", fontWeight: "600" }}>
+                          {promotion.symbolCode}
+                        </Text>
+                      </View>
+                      <Text style={{ color: "#475467", fontSize: 12 }}>
+                        {promotion.timeframeCode}
                       </Text>
                     </View>
-                    <Text style={{ color: "#475467", fontSize: 12 }}>
-                      {promotion.timeframeCode}
-                    </Text>
-                  </View>
-                  <View style={{ flex: 1.5, paddingRight: 8 }}>
-                    <Text
-                      onPress={() => setSelectedAnalysisSettingId(promotion.analysisSettingId)}
-                      numberOfLines={1}
-                      ellipsizeMode="middle"
-                      style={{ color: "#1d4ed8", fontSize: 12, fontWeight: "700" }}
-                    >
-                      {promotion.analysisSettingId}
-                    </Text>
-                    <Text
-                      numberOfLines={1}
-                      ellipsizeMode="tail"
-                      style={{ color: "#475467", fontSize: 12 }}
-                    >
-                      {String(
-                        analysisSettingsById.get(promotion.analysisSettingId)?.name ?? "Open details",
-                      )}
-                    </Text>
-                  </View>
-                  <View style={{ flex: 1.1, paddingRight: 8 }}>
-                    <Text
-                      onPress={() => setSelectedRiskProfileName(promotion.riskProfileName)}
-                      numberOfLines={1}
-                      ellipsizeMode="tail"
-                      style={{ color: "#1d4ed8", fontSize: 12, fontWeight: "700" }}
-                    >
-                      {promotion.riskProfileName}
-                    </Text>
-                    <Text
-                      numberOfLines={1}
-                      ellipsizeMode="middle"
-                      style={{ color: "#475467", fontSize: 12 }}
-                    >
-                      {String(riskProfilesByName.get(promotion.riskProfileName)?.id ?? "Open details")}
-                    </Text>
-                  </View>
-                  <View style={{ flex: 1.6, paddingRight: 8 }}>
-                    <Text
-                      style={{ color: "#344054", fontSize: 12 }}
-                    >
-                      {promotion.sourceBacktestId ? (
-                        <Text
-                          onPress={() => setSelectedBacktestId(promotion.sourceBacktestId)}
-                          style={{ color: "#1d4ed8", fontWeight: "700" }}
-                        >
-                          {promotion.sourceBacktestId}
-                        </Text>
-                      ) : (
-                        "n/a"
-                      )}
-                    </Text>
-                    <Text style={{ color: "#475467", fontSize: 12 }}>
-                      Open details
-                    </Text>
-                  </View>
-                  <Text
-                    onPress={() =>
-                      promotion.sourceBacktestId && setSelectedBacktestId(promotion.sourceBacktestId)
-                    }
-                    style={{
-                      flex: 0.8,
-                      color: promotion.sourceBacktestId ? "#1d4ed8" : "#101828",
-                      fontWeight: "700",
-                      textAlign: "right",
-                      textDecorationLine: promotion.sourceBacktestId ? "underline" : "none",
-                    }}
-                  >
-                    {promotion.selectionValue.toFixed(2)}
-                  </Text>
-                  </View>
+                    <View style={{ flex: 1.5, paddingRight: 8 }}>
+                      <Text
+                        onPress={() => setSelectedAnalysisSettingId(promotion.analysisSettingId)}
+                        numberOfLines={1}
+                        ellipsizeMode="middle"
+                        style={{ color: "#1d4ed8", fontSize: 12, fontWeight: "700" }}
+                      >
+                        {promotion.analysisSettingId}
+                      </Text>
+                      <Text
+                        numberOfLines={1}
+                        ellipsizeMode="tail"
+                        style={{ color: "#475467", fontSize: 12 }}
+                      >
+                        {String(
+                          analysisSettingsById.get(promotion.analysisSettingId)?.name ?? "Open details",
+                        )}
+                      </Text>
+                    </View>
+                    <View style={{ flex: 1.1, paddingRight: 8 }}>
+                      <Text
+                        onPress={() => setSelectedRiskProfileName(promotion.riskProfileName)}
+                        numberOfLines={1}
+                        ellipsizeMode="tail"
+                        style={{ color: "#1d4ed8", fontSize: 12, fontWeight: "700" }}
+                      >
+                        {promotion.riskProfileName}
+                      </Text>
+                      <Text
+                        numberOfLines={1}
+                        ellipsizeMode="middle"
+                        style={{ color: "#475467", fontSize: 12 }}
+                      >
+                        {String(riskProfilesByName.get(promotion.riskProfileName)?.id ?? "Open details")}
+                      </Text>
+                    </View>
+                    <View style={{ flex: 1.6, paddingRight: 8 }}>
+                      <Text style={{ color: "#344054", fontSize: 12 }}>
+                        {promotion.sourceBacktestId ? (
+                          <Text
+                            onPress={() => setSelectedBacktestId(promotion.sourceBacktestId)}
+                            style={{ color: "#1d4ed8", fontWeight: "700" }}
+                          >
+                            {promotion.sourceBacktestId}
+                          </Text>
+                        ) : (
+                          "n/a"
+                        )}
+                      </Text>
+                      <Text style={{ color: "#475467", fontSize: 12 }}>
+                        Open details
+                      </Text>
+                    </View>
+                    <View style={{ flex: 0.8, alignItems: "flex-end" }}>
+                      <Text
+                        onPress={() =>
+                          promotion.sourceBacktestId &&
+                          setSelectedBacktestId(promotion.sourceBacktestId)
+                        }
+                        style={{
+                          color: promotion.sourceBacktestId ? "#1d4ed8" : "#101828",
+                          fontWeight: "700",
+                          textAlign: "right",
+                          textDecorationLine: promotion.sourceBacktestId
+                            ? "underline"
+                            : "none",
+                        }}
+                      >
+                        {promotion.selectionValue.toFixed(2)}
+                      </Text>
+                    </View>
+                  </DataTableRow>
                 ))}
-              </View>
-            )}
+                {modeActivePromotions.length === 0 ? (
+                  <DataTableEmptyState
+                    message={`No promoted strategies are available for ${currentMode} mode.`}
+                  />
+                ) : null}
+              </DataTableSurface>
+            </ResponsiveDataTable>
           </Card>
         ) : (
           <Card>
-            <View
-              style={{
-                flexDirection: "row",
-                justifyContent: "space-between",
-                alignItems: "center",
-                gap: 12,
-                flexWrap: "wrap",
-                marginBottom: 14,
-              }}
-            >
-              <View style={{ flexDirection: "row", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-                <InlineStat
-                  label="Realized PnL"
-                  value={formatMoney(summaryStats.realizedPnlUsd)}
-                  valueColor={
-                    summaryStats.realizedPnlUsd > 0
-                      ? "#157f3b"
-                      : summaryStats.realizedPnlUsd < 0
-                        ? "#b42318"
-                        : "#101828"
-                  }
-                />
-              </View>
-            </View>
-
-          <View style={{ gap: 10, marginTop: 10, position: "relative", zIndex: 30 }}>
-            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10, zIndex: 30 }}>
-              {!fixedMode ? (
+            <View style={{ marginTop: 10, position: "relative", zIndex: 30 }}>
+              <View
+                style={{
+                  flexDirection: "row",
+                  justifyContent: "space-between",
+                  alignItems: "flex-start",
+                  gap: 12,
+                  flexWrap: "wrap",
+                  zIndex: 30,
+                }}
+              >
                 <View
                   style={{
-                    minWidth: 220,
                     flexDirection: "row",
-                    minHeight: 44,
-                    borderRadius: 10,
-                    borderWidth: 1,
-                    borderColor: "#d0d5dd",
-                    backgroundColor: "#ffffff",
-                    padding: 4,
+                    flexWrap: "wrap",
+                    gap: 10,
+                    zIndex: 30,
+                    flex: 1,
+                    minWidth: 320,
                   }}
                 >
-                  <ExecutionModeTab
-                    label="Paper"
-                    active={currentMode === "paper"}
-                    onPress={() => {
-                      setTabMode("paper");
+                  {!fixedMode ? (
+                    <View
+                      style={{
+                        minWidth: 220,
+                        flexDirection: "row",
+                        minHeight: 44,
+                        borderRadius: 10,
+                        borderWidth: 1,
+                        borderColor: "#d0d5dd",
+                        backgroundColor: "#ffffff",
+                        padding: 4,
+                      }}
+                    >
+                      <ExecutionModeTab
+                        label="Paper"
+                        active={currentMode === "paper"}
+                        onPress={() => {
+                          setTabMode("paper");
+                          setPage(1);
+                        }}
+                      />
+                      <ExecutionModeTab
+                        label="Live"
+                        active={currentMode === "live"}
+                        onPress={() => {
+                          setTabMode("live");
+                          setPage(1);
+                        }}
+                      />
+                    </View>
+                  ) : null}
+                  <SingleSelectFilter
+                    label="Symbol"
+                    value={symbolCode}
+                    options={filterOptions.symbols}
+                    allLabel="All symbols"
+                    renderOptionAdornment={(option) => (
+                      <SymbolAvatar
+                        baseAsset={symbolBaseAssets.get(option)}
+                        destinationAsset={symbolDestinationAssets.get(option)}
+                        size={22}
+                      />
+                    )}
+                    onChange={(value) => {
+                      setSymbolCode(value);
                       setPage(1);
                     }}
                   />
-                  <ExecutionModeTab
-                    label="Live"
-                    active={currentMode === "live"}
-                    onPress={() => {
-                      setTabMode("live");
+                  <SingleSelectFilter
+                    label="Timeframe"
+                    value={timeframeCode}
+                    options={filterOptions.timeframes}
+                    allLabel="All timeframes"
+                    onChange={(value) => {
+                      setTimeframeCode(value);
+                      setPage(1);
+                    }}
+                  />
+                  <SingleSelectFilter
+                    label="Strategy"
+                    value={strategyName}
+                    options={filterOptions.strategies}
+                    allLabel="All strategies"
+                    onChange={(value) => {
+                      setStrategyName(value);
+                      setPage(1);
+                    }}
+                  />
+                  <DateTimeRangeFilter
+                    label="Opened range"
+                    fromValue={openedFrom}
+                    toValue={openedTo}
+                    onChange={(nextFrom, nextTo) => {
+                      setOpenedFrom(nextFrom);
+                      setOpenedTo(nextTo);
+                      setPage(1);
+                    }}
+                  />
+                  <SingleSelectFilter
+                    label="Status"
+                    value={status}
+                    options={["open", "closed", "cancelled", "rejected"]}
+                    allLabel="All statuses"
+                    hideOptionText
+                    hideSelectedAdornment
+                    renderOptionAdornment={(option) => (
+                      option === "open" ||
+                      option === "closed" ||
+                      option === "cancelled" ||
+                      option === "rejected" ? (
+                        <StatusBadge status={option} />
+                      ) : null
+                    )}
+                    onChange={(value) => {
+                      setStatus(value as typeof status);
+                      setPage(1);
+                    }}
+                  />
+                  <SingleSelectFilter
+                    label="Side"
+                    value={side}
+                    options={["long", "short"]}
+                    allLabel="All sides"
+                    hideOptionText
+                    hideSelectedAdornment
+                    renderOptionAdornment={(option) => (
+                      option === "long" || option === "short" ? (
+                        <SideBadge side={option} />
+                      ) : null
+                    )}
+                    onChange={(value) => {
+                      setSide(value as typeof side);
                       setPage(1);
                     }}
                   />
                 </View>
-              ) : null}
-              <SingleSelectFilter
-                label="Symbol"
-                value={symbolCode}
-                options={filterOptions.symbols}
-                allLabel="All symbols"
-                renderOptionAdornment={(option) => (
-                  <SymbolAvatar
-                    baseAsset={symbolBaseAssets.get(option)}
-                    destinationAsset={symbolDestinationAssets.get(option)}
-                    size={22}
+                <View
+                  style={{
+                    minWidth: 160,
+                    alignItems: "flex-end",
+                  }}
+                >
+                  <InlineStat
+                    label="Realized PnL"
+                    value={formatMoney(filteredRealizedPnlUsd)}
+                    valueColor={
+                      filteredRealizedPnlUsd > 0
+                        ? "#157f3b"
+                        : filteredRealizedPnlUsd < 0
+                          ? "#b42318"
+                          : "#101828"
+                    }
                   />
-                )}
-                onChange={(value) => {
-                  setSymbolCode(value);
-                  setPage(1);
-                }}
-              />
-              <SingleSelectFilter
-                label="Timeframe"
-                value={timeframeCode}
-                options={filterOptions.timeframes}
-                allLabel="All timeframes"
-                onChange={(value) => {
-                  setTimeframeCode(value);
-                  setPage(1);
-                }}
-              />
-              <SingleSelectFilter
-                label="Strategy"
-                value={strategyName}
-                options={filterOptions.strategies}
-                allLabel="All strategies"
-                onChange={(value) => {
-                  setStrategyName(value);
-                  setPage(1);
-                }}
-              />
-              <DateTimeRangeFilter
-                label="Opened range"
-                fromValue={openedFrom}
-                toValue={openedTo}
-                onChange={(nextFrom, nextTo) => {
-                  setOpenedFrom(nextFrom);
-                  setOpenedTo(nextTo);
-                  setPage(1);
-                }}
-              />
-              <SingleSelectFilter
-                label="Status"
-                value={status}
-                options={["open", "closed", "cancelled", "rejected"]}
-                allLabel="All statuses"
-                hideOptionText
-                hideSelectedSummaryText
-                renderOptionAdornment={(option) => (
-                  option === "open" ||
-                  option === "closed" ||
-                  option === "cancelled" ||
-                  option === "rejected" ? (
-                    <StatusBadge status={option} />
-                  ) : null
-                )}
-                onChange={(value) => {
-                  setStatus(value as typeof status);
-                  setPage(1);
-                }}
-              />
-              <SingleSelectFilter
-                label="Side"
-                value={side}
-                options={["long", "short"]}
-                allLabel="All sides"
-                hideOptionText
-                hideSelectedSummaryText
-                renderOptionAdornment={(option) => (
-                  option === "long" || option === "short" ? (
-                    <SideBadge side={option} />
-                  ) : null
-                )}
-                onChange={(value) => {
-                  setSide(value as typeof side);
-                  setPage(1);
-                }}
-              />
+                </View>
+              </View>
             </View>
-          </View>
 
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={{ zIndex: 1, marginTop: 16 }}
-            contentContainerStyle={{ minWidth: "100%" }}
+          <ResponsiveDataTable
+            width={tableWidth}
+            scrollStyle={{ zIndex: 1, marginTop: 16 }}
           >
-            <View style={{ width: tableWidth, minWidth: tableWidth, gap: 0 }}>
+            <DataTableSurface>
               <ExecutionTableHeader
                 sortBy={sortBy}
                 sortDirection={sortDirection}
@@ -836,9 +816,10 @@ export function ExecutionScreenContent({
                   setSortDirection("desc");
                 }}
               />
-              {trades.map((trade) => (
+              {trades.map((trade, index) => (
                 <ExecutionTableRow
                   key={trade.tradeId}
+                  index={index}
                   trade={trade}
                   promotionId={derivePromotionIdFromTradeId(trade.tradeId)}
                   baseAsset={
@@ -854,57 +835,18 @@ export function ExecutionScreenContent({
                 />
               ))}
               {trades.length === 0 ? (
-                <View
-                  style={{
-                    paddingVertical: 28,
-                    paddingHorizontal: 18,
-                    borderWidth: 1,
-                    borderTopWidth: 0,
-                    borderColor: "#eaecf0",
-                    backgroundColor: "#fcfcfd",
-                  }}
-                >
-                  <Text style={{ color: "#475467" }}>
-                    No execution trades match the current filters. Once the execution service starts
-                    emitting trade events, they will appear here.
-                  </Text>
-                </View>
+                <DataTableEmptyState message="No execution trades match the current filters. Once the execution service starts emitting trade events, they will appear here." />
               ) : null}
-              <View
-                style={{
-                  flexDirection: "row",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  flexWrap: "wrap",
-                  gap: 12,
-                  borderWidth: 1,
-                  borderTopWidth: 0,
-                  borderColor: "#eaecf0",
-                  borderBottomLeftRadius: 18,
-                  borderBottomRightRadius: 18,
-                  backgroundColor: "#f8fafc",
-                  paddingHorizontal: 14,
-                  paddingVertical: 12,
-                }}
-              >
-                <Text style={{ color: "#475467" }}>
-                  Page {page} of {totalPages} · {totalCount.toLocaleString()} trades
-                </Text>
-                <View style={{ flexDirection: "row", gap: 10 }}>
-                  <PaginationButton
-                    label="Previous"
-                    disabled={page <= 1}
-                    onPress={() => setPage((current) => Math.max(1, current - 1))}
-                  />
-                  <PaginationButton
-                    label="Next"
-                    disabled={page >= totalPages}
-                    onPress={() => setPage((current) => Math.min(totalPages, current + 1))}
-                  />
-                </View>
-              </View>
-            </View>
-          </ScrollView>
+              <DataTableFooter
+                currentPage={page}
+                totalPages={totalPages}
+                totalCount={totalCount}
+                itemLabel="trades"
+                onPrevious={() => setPage((current) => Math.max(1, current - 1))}
+                onNext={() => setPage((current) => Math.min(totalPages, current + 1))}
+              />
+            </DataTableSurface>
+          </ResponsiveDataTable>
           </Card>
         )}
         </View>
@@ -1233,6 +1175,7 @@ function SingleSelectFilter({
   renderOptionAdornment,
   hideOptionText,
   hideSelectedSummaryText,
+  hideSelectedAdornment,
   onChange,
 }: {
   label: string;
@@ -1242,6 +1185,7 @@ function SingleSelectFilter({
   renderOptionAdornment?: (option: string) => ReactNode;
   hideOptionText?: boolean;
   hideSelectedSummaryText?: boolean;
+  hideSelectedAdornment?: boolean;
   onChange: (value: string) => void;
 }) {
   return (
@@ -1253,35 +1197,9 @@ function SingleSelectFilter({
       renderOptionAdornment={renderOptionAdornment}
       hideOptionText={hideOptionText}
       hideSelectedSummaryText={hideSelectedSummaryText}
+      hideSelectedAdornment={hideSelectedAdornment}
       onChange={(values) => onChange(values.at(-1) ?? "")}
     />
-  );
-}
-
-function PaginationButton({
-  label,
-  disabled,
-  onPress,
-}: {
-  label: string;
-  disabled: boolean;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      onPress={onPress}
-      disabled={disabled}
-      style={{
-        borderRadius: 10,
-        borderWidth: 1,
-        borderColor: disabled ? "#eaecf0" : "#d0d5dd",
-        backgroundColor: disabled ? "#f2f4f7" : "#ffffff",
-        paddingHorizontal: 14,
-        paddingVertical: 10,
-      }}
-    >
-      <Text style={{ color: disabled ? "#98a2b3" : "#344054", fontWeight: "700" }}>{label}</Text>
-    </Pressable>
   );
 }
 
@@ -1307,62 +1225,40 @@ function ExecutionTableHeader({
   ];
 
   return (
-    <View
-      style={{
-        flexDirection: "row",
-        width: "100%",
-        backgroundColor: "#f8fafc",
-        borderTopLeftRadius: 18,
-        borderTopRightRadius: 18,
-        borderWidth: 1,
-        borderColor: "#eaecf0",
-        paddingHorizontal: 14,
-        paddingVertical: 12,
-      }}
-    >
-      {columns.map((column) => (
-        <Pressable
-          key={column.label}
-          disabled={!column.sortKey}
-          onPress={() => column.sortKey && onSort(column.sortKey)}
-          style={{
-            flex: column.flex,
-            paddingRight: 8,
-            flexDirection: "row",
-            alignItems: "center",
-            gap: 6,
-          }}
-        >
-          <Text
-            style={{
-              color: "#475467",
-              fontWeight: "700",
-              fontSize: 12,
-              textTransform: "uppercase",
-            }}
-          >
-            {column.label}
-          </Text>
-          {column.sortKey ? (
-            <MaterialIcons
-              name={
-                sortBy === column.sortKey
-                  ? sortDirection === "asc"
-                    ? "arrow-upward"
-                    : "arrow-downward"
-                  : "unfold-more"
-              }
-              size={14}
-              color={sortBy === column.sortKey ? "#1d4ed8" : "#98a2b3"}
-            />
-          ) : null}
-        </Pressable>
-      ))}
-    </View>
+    <DataTableHeaderRow>
+      {columns.map((column) => {
+        const sortKey = column.sortKey;
+
+        return (
+          <DataTableHeaderCell
+            key={column.label}
+            label={column.label}
+            flex={column.flex}
+            onPress={sortKey ? () => onSort(sortKey) : undefined}
+            accessory={
+              sortKey ? (
+                <MaterialIcons
+                  name={
+                    sortBy === sortKey
+                      ? sortDirection === "asc"
+                        ? "arrow-upward"
+                        : "arrow-downward"
+                      : "unfold-more"
+                  }
+                  size={14}
+                  color={sortBy === sortKey ? "#1d4ed8" : "#98a2b3"}
+                />
+              ) : null
+            }
+          />
+        );
+      })}
+    </DataTableHeaderRow>
   );
 }
 
 function ExecutionTableRow({
+  index,
   trade,
   promotionId,
   baseAsset,
@@ -1370,6 +1266,7 @@ function ExecutionTableRow({
   viewportWidth,
   onOpenPromotionDetails,
 }: {
+  index: number;
   trade: Awaited<ReturnType<typeof getExecutionTrades>>["items"][number];
   promotionId: string | null;
   baseAsset?: string | null;
@@ -1382,18 +1279,7 @@ function ExecutionTableRow({
   const compact = viewportWidth <= 1120;
 
   return (
-    <View
-      style={{
-        flexDirection: "row",
-        width: "100%",
-        borderWidth: 1,
-        borderTopWidth: 0,
-        borderColor: "#eaecf0",
-        paddingHorizontal: 14,
-        paddingVertical: dense ? 10 : 12,
-        backgroundColor: "#ffffff",
-      }}
-    >
+    <DataTableRow index={index} paddingVertical={dense ? 10 : 12} alignItems="center">
       <Cell
         flex={layout.statusFlex}
         minWidth={layout.statusMin}
@@ -1482,7 +1368,7 @@ function ExecutionTableRow({
           onPress={() => promotionId && onOpenPromotionDetails(promotionId)}
         />
       </View>
-    </View>
+    </DataTableRow>
   );
 }
 
@@ -1887,8 +1773,16 @@ function DateTimeRangeFilter({
   const [open, setOpen] = useState(false);
   const [draftFrom, setDraftFrom] = useState(fromValue);
   const [draftTo, setDraftTo] = useState(toValue);
+  const [triggerWidth, setTriggerWidth] = useState(220);
 
   const summary = fromValue || toValue ? `${fromValue || "Any"} -> ${toValue || "Any"}` : "Any time";
+  const panelWidth =
+    Platform.OS === "web" ? Math.min(Math.max(triggerWidth, 260), 380) : undefined;
+
+  const handleLayout = (event: LayoutChangeEvent) => {
+    const nextWidth = Math.max(220, event.nativeEvent.layout.width);
+    setTriggerWidth((current) => (current === nextWidth ? current : nextWidth));
+  };
 
   const openPanel = () => {
     setOpen((current) => {
@@ -1902,7 +1796,10 @@ function DateTimeRangeFilter({
   };
 
   return (
-    <View style={{ minWidth: 240, position: "relative", zIndex: open ? 40 : 1 }}>
+    <View
+      onLayout={handleLayout}
+      style={{ minWidth: 220, position: "relative", zIndex: open ? 40 : 1 }}
+    >
       <Pressable
         onPress={openPanel}
         style={{
@@ -1951,9 +1848,9 @@ function DateTimeRangeFilter({
             position: "absolute",
             top: 58,
             left: 0,
-            width: Platform.OS === "web" ? 520 : undefined,
-            minWidth: 320,
-            maxWidth: 520,
+            width: panelWidth,
+            minWidth: Platform.OS === "web" ? 260 : 220,
+            maxWidth: 380,
             borderRadius: 12,
             borderWidth: 1,
             borderColor: "#d0d5dd",
@@ -1969,8 +1866,8 @@ function DateTimeRangeFilter({
           }}
         >
           {Platform.OS === "web" ? (
-            <View style={{ flexDirection: "row", gap: 10, flexWrap: "wrap" }}>
-              <View style={{ flex: 1, minWidth: 220, gap: 6 }}>
+            <View style={{ gap: 10 }}>
+              <View style={{ gap: 6 }}>
                 <Text style={{ fontSize: 12, color: "#475467", fontWeight: "700" }}>From</Text>
                 <input
                   type="datetime-local"
@@ -1988,7 +1885,7 @@ function DateTimeRangeFilter({
                   }}
                 />
               </View>
-              <View style={{ flex: 1, minWidth: 220, gap: 6 }}>
+              <View style={{ gap: 6 }}>
                 <Text style={{ fontSize: 12, color: "#475467", fontWeight: "700" }}>To</Text>
                 <input
                   type="datetime-local"

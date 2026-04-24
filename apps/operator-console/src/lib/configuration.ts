@@ -64,7 +64,8 @@ export const configResources = {
         name: "parameters",
         label: "Parameters JSON",
         kind: "json",
-        placeholder: '{\n  "kind": "strategy1"\n}',
+        placeholder:
+          '{\n  "kind": "strategy1",\n  "promotionThresholds": {\n    "minTradeCount": 80,\n    "minTradesPer1000Candles": 5,\n    "maxDrawdownPercent": 12,\n    "maxReversalRatio": 0.2\n  }\n}',
       },
     ],
   },
@@ -116,12 +117,6 @@ export const configResources = {
       {
         name: "maxPromotions",
         label: "Max promotions",
-        kind: "number",
-        defaultValue: "1",
-      },
-      {
-        name: "minTradeCount",
-        label: "Minimum trade count",
         kind: "number",
         defaultValue: "1",
       },

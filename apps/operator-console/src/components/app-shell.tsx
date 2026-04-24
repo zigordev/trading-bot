@@ -5,13 +5,13 @@ import { Image, Pressable, ScrollView, Text, View } from "react-native";
 
 const navItems = [
   { href: "/", label: "Overview", icon: "dashboard" as const },
+  { href: "/backtesting", label: "Backtesting", icon: "history" as const },
+  { href: "/execution", label: "Execution", icon: "candlestick-chart" as const },
   {
     href: "/configuration",
     label: "Configuration",
     icon: "settings" as const,
   },
-  { href: "/backtesting", label: "Backtesting", icon: "history" as const },
-  { href: "/execution", label: "Execution", icon: "candlestick-chart" as const },
 ] as const;
 
 export function AppShell({
