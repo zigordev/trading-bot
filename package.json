@@ -1,0 +1,29 @@
+{
+  "name": "trading-bot",
+  "private": true,
+  "version": "0.1.0",
+  "description": "New trading bot platform",
+  "workspaces": [
+    "apps/control-plane",
+    "apps/operator-console"
+  ],
+  "scripts": {
+    "build:control-plane": "npm run build -w @trading-bot/control-plane",
+    "build:operator-console": "npm run build -w @trading-bot/operator-console",
+    "dev:operator-console": "npm run dev -w @trading-bot/operator-console",
+    "test:operator-console": "npm run test -w @trading-bot/operator-console",
+    "build:execution": "cargo build -p trading-bot-execution",
+    "build:market-data": "cargo build -p trading-bot-market-data",
+    "build:research-backtesting": "cargo build -p trading-bot-research-backtesting",
+    "build": "npm run build:control-plane && npm run build:operator-console && npm run build:execution && npm run build:market-data && npm run build:research-backtesting",
+    "test:control-plane": "npm run test -w @trading-bot/control-plane",
+    "test:execution": "cargo test -p trading-bot-execution",
+    "test:market-data": "cargo test -p trading-bot-market-data",
+    "test:research-backtesting": "cargo test -p trading-bot-research-backtesting",
+    "test": "npm run test:control-plane && npm run test:operator-console && npm run test:execution && npm run test:market-data && npm run test:research-backtesting",
+    "typecheck": "npm run typecheck -w @trading-bot/control-plane && npm run typecheck -w @trading-bot/operator-console",
+    "local:up": "./scripts/local-stack-up.sh",
+    "local:down": "./scripts/local-stack-down.sh",
+    "local:reset": "./scripts/local-stack-reset.sh"
+  }
+}

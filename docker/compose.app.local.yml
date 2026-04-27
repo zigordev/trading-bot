@@ -1,0 +1,353 @@
+name: trading-bot-app-local
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: trading_bot_admin
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: trading_bot
+    ports:
+      - "15432:5432"
+    volumes:
+      - app-local-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    logging:
+      driver: "json-file"
+      options:
+        labels: "com.docker.compose.project,com.docker.compose.service"
+    networks:
+      trading_bot_shared:
+        aliases:
+          - trading-bot-postgres
+
+  historical-store:
+    image: clickhouse/clickhouse-server:24.8
+    restart: unless-stopped
+    environment:
+      CLICKHOUSE_DB: ${HISTORICAL_STORE_DATABASE:-trading_bot_market_data}
+      CLICKHOUSE_USER: ${HISTORICAL_STORE_USER:-trading_bot_market_data}
+      CLICKHOUSE_PASSWORD: ${HISTORICAL_STORE_PASSWORD:-trading_bot_market_data}
+    ports:
+      - "18123:8123"
+      - "19000:9000"
+    volumes:
+      - app-local-clickhouse-data:/var/lib/clickhouse
+      # Custom logging config to mirror ClickHouse logs to stdout/stderr,
+      # so they appear directly in `docker logs historical-store`.
+      - ./clickhouse-log-to-console.xml:/etc/clickhouse-server/config.d/clickhouse-log-to-console.xml:ro
+      # Relax query/HTTP limits for large backtest queries.
+      - ./clickhouse-large-query-settings.xml:/etc/clickhouse-server/config.d/clickhouse-large-query-settings.xml:ro
+    healthcheck:
+      test: ["CMD-SHELL", "clickhouse-client --user \"$$CLICKHOUSE_USER\" --password \"$$CLICKHOUSE_PASSWORD\" --query 'SELECT 1' >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+    logging:
+      driver: "json-file"
+      options:
+        labels: "com.docker.compose.project,com.docker.compose.service"
+    networks:
+      trading_bot_shared:
+        aliases:
+          - trading-bot-historical-store
+
+  api:
+    build:
+      context: ..
+      dockerfile: apps/control-plane/Dockerfile
+      target: local
+    restart: unless-stopped
+    environment:
+      PORT: 8080
+      SERVICE_NAME: trading-bot-control-plane
+      APP_ENV: local
+      DB_HOST: trading-bot-postgres
+      DB_PORT: 5432
+      DB_USER: trading_bot_admin
+      DB_NAME: trading_bot
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:?OTEL_EXPORTER_OTLP_ENDPOINT is required}
+      OPENBAO_ADDR: http://openbao:8200
+      OPENBAO_TOKEN: ${OPENBAO_TOKEN:?OPENBAO_TOKEN is required}
+      OPENBAO_KV_MOUNT: kv
+      OPENBAO_SECRET_PATH: trading-bot
+      OPENBAO_REQUIRED_KEYS: POSTGRES_PASSWORD
+      KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:?KAFKA_BOOTSTRAP_SERVERS is required}
+      BACKTEST_COMPLETED_EVENTS_TOPIC: ${BACKTEST_COMPLETED_EVENTS_TOPIC:-trading-bot.research-backtesting.backtest-completed.v1}
+      BACKTEST_COMPLETED_EVENTS_CONSUMER_GROUP_ID: ${BACKTEST_COMPLETED_EVENTS_CONSUMER_GROUP_ID:-trading-bot-control-plane-backtest-projection-v1}
+      DATA_READINESS_EVENTS_TOPIC: ${DATA_READINESS_EVENTS_TOPIC:-trading-bot.market-data.data-readiness-snapshot.v1}
+      DATA_READINESS_EVENTS_CONSUMER_GROUP_ID: ${DATA_READINESS_EVENTS_CONSUMER_GROUP_ID:-trading-bot-control-plane-data-readiness-projection-v1}
+      RESEARCH_BACKTESTING_BASE_URL: ${RESEARCH_BACKTESTING_BASE_URL:-http://research-backtesting:8110}
+      UPSTREAM_REQUEST_TIMEOUT_MS: ${UPSTREAM_REQUEST_TIMEOUT_MS:-30000}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command:
+      [
+        "node",
+        "/app/scripts/openbao-run.mjs",
+        "--",
+        "node",
+        "dist/main.js",
+      ]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/health/liveness >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+    ports:
+      - "3020:8080"
+    logging:
+      driver: "json-file"
+      options:
+        labels: "com.docker.compose.project,com.docker.compose.service"
+    networks:
+      trading_bot_shared:
+        aliases:
+          - trading-bot-api
+
+  market-data:
+    build:
+      context: ..
+      dockerfile: crates/market-data/Dockerfile
+      target: local
+    restart: unless-stopped
+    mem_limit: 8g
+    environment:
+      PORT: 8090
+      SERVICE_NAME: trading-bot-market-data
+      APP_ENV: local
+      HISTORICAL_STORE_HOST: ${HISTORICAL_STORE_HOST:-trading-bot-historical-store}
+      HISTORICAL_STORE_PORT: ${HISTORICAL_STORE_PORT:-8123}
+      HISTORICAL_STORE_NATIVE_PORT: ${HISTORICAL_STORE_NATIVE_PORT:-9000}
+      HISTORICAL_STORE_DATABASE: ${HISTORICAL_STORE_DATABASE:-trading_bot_market_data}
+      HISTORICAL_STORE_USER: ${HISTORICAL_STORE_USER:-trading_bot_market_data}
+      HISTORICAL_STORE_PASSWORD: ${HISTORICAL_STORE_PASSWORD:-trading_bot_market_data}
+      CONTROL_PLANE_BASE_URL: http://trading-bot-api:8080
+      CONTROL_PLANE_REQUEST_TIMEOUT_MS: ${CONTROL_PLANE_REQUEST_TIMEOUT_MS:-5000}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:?KAFKA_BOOTSTRAP_SERVERS is required}
+      CONFIG_CHANGE_EVENTS_TOPIC: ${CONFIG_CHANGE_EVENTS_TOPIC:-trading-bot.control-plane.config-changes.v1}
+      DATA_READINESS_EVENTS_TOPIC: ${DATA_READINESS_EVENTS_TOPIC:-trading-bot.market-data.data-readiness-snapshot.v1}
+      MARKET_DATA_KLINE_EVENTS_TOPIC: ${MARKET_DATA_KLINE_EVENTS_TOPIC:-trading-bot.market-data.kline.v1}
+      MARKET_DATA_TRADE_EVENTS_TOPIC: ${MARKET_DATA_TRADE_EVENTS_TOPIC:-trading-bot.market-data.agg-trade.v1}
+      CONFIG_REFRESH_DEBOUNCE_MS: ${CONFIG_REFRESH_DEBOUNCE_MS:-500}
+      READINESS_MAX_CONFIG_AGE_MS: ${READINESS_MAX_CONFIG_AGE_MS:-120000}
+      BINANCE_REST_BASE_URL: ${BINANCE_REST_BASE_URL:-https://api.binance.com}
+      BINANCE_WS_BASE_URL: ${BINANCE_WS_BASE_URL:-wss://stream.binance.com:9443}
+      BINANCE_REST_MAX_RETRIES: ${BINANCE_REST_MAX_RETRIES:-5}
+      BINANCE_REST_RETRY_BACKOFF_MS: ${BINANCE_REST_RETRY_BACKOFF_MS:-500}
+      BINANCE_REST_REQUEST_WEIGHT_LIMIT_PER_MINUTE: ${BINANCE_REST_REQUEST_WEIGHT_LIMIT_PER_MINUTE:-6000}
+      BINANCE_REST_TARGET_UTILIZATION_PERCENT: ${BINANCE_REST_TARGET_UTILIZATION_PERCENT:-90}
+      BINANCE_REST_WARN_UTILIZATION_PERCENT: ${BINANCE_REST_WARN_UTILIZATION_PERCENT:-85}
+      HISTORICAL_TRADE_BACKFILL_LIMIT: ${HISTORICAL_TRADE_BACKFILL_LIMIT:-1000}
+      HISTORICAL_TRADE_BACKFILL_MAX_BATCHES: ${HISTORICAL_TRADE_BACKFILL_MAX_BATCHES:-100}
+      HISTORICAL_BACKFILL_LIMIT: ${HISTORICAL_BACKFILL_LIMIT:-500}
+      HISTORICAL_KLINE_RETENTION_DAYS: ${HISTORICAL_KLINE_RETENTION_DAYS:-365}
+      HISTORICAL_TRADE_RETENTION_DAYS: ${HISTORICAL_TRADE_RETENTION_DAYS:-90}
+      HISTORICAL_BOOK_TICKER_RETENTION_DAYS: ${HISTORICAL_BOOK_TICKER_RETENTION_DAYS:-30}
+      HISTORICAL_STORE_COMPACTION_ENABLED: ${HISTORICAL_STORE_COMPACTION_ENABLED:-true}
+      HISTORICAL_STORE_COMPACTION_INTERVAL_MS: ${HISTORICAL_STORE_COMPACTION_INTERVAL_MS:-180000}
+      HISTORICAL_STORE_COMPACTION_AFTER_REFRESH: ${HISTORICAL_STORE_COMPACTION_AFTER_REFRESH:-false}
+      HISTORICAL_BACKFILL_MAX_CONCURRENCY: ${HISTORICAL_BACKFILL_MAX_CONCURRENCY:-4}
+      HISTORICAL_TRADE_BACKFILL_PAIR_MAX_CONCURRENCY: ${HISTORICAL_TRADE_BACKFILL_PAIR_MAX_CONCURRENCY:-8}
+      # Optional: set to cap concurrency×insert rows; leave empty to disable auto-downgrade.
+      HISTORICAL_BACKFILL_MAX_IN_FLIGHT_TRADE_ROWS: ${HISTORICAL_BACKFILL_MAX_IN_FLIGHT_TRADE_ROWS:-}
+      TRADE_GAP_REPAIR_STARTUP_MAX_WINDOW_MS: ${TRADE_GAP_REPAIR_STARTUP_MAX_WINDOW_MS:-15552000000}
+      TRADE_GAP_REPAIR_MIN_GAP_MS: ${TRADE_GAP_REPAIR_MIN_GAP_MS:-15000}
+      BACKTEST_WARMUP_CANDLES: ${BACKTEST_WARMUP_CANDLES:-200}
+      BACKTEST_KLINE_HEADROOM_CANDLES: ${BACKTEST_KLINE_HEADROOM_CANDLES:-4}
+      BACKTEST_TIMERANGE_MS_BY_TIMEFRAME: ${BACKTEST_TIMERANGE_MS_BY_TIMEFRAME:-1m=600000000,3m=1800000000,5m=3000000000}
+      SCHEDULED_BACKTEST_HISTORY_HEADROOM_MS: ${SCHEDULED_BACKTEST_HISTORY_HEADROOM_MS:-172800000}
+      HISTORICAL_TRADE_BACKFILL_INSERT_BATCH_ROWS: ${HISTORICAL_TRADE_BACKFILL_INSERT_BATCH_ROWS:-200000}
+      HISTORICAL_TRADE_BACKFILL_USE_ROW_BINARY_INSERT: ${HISTORICAL_TRADE_BACKFILL_USE_ROW_BINARY_INSERT:-true}
+      HISTORICAL_TRADE_BACKFILL_CHUNK_MS: ${HISTORICAL_TRADE_BACKFILL_CHUNK_MS:-86400000}
+    depends_on:
+      historical-store:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    ports:
+      - "3030:8090"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8090/health/liveness >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+    logging:
+      driver: "json-file"
+      options:
+        labels: "com.docker.compose.project,com.docker.compose.service"
+    networks:
+      trading_bot_shared:
+        aliases:
+          - trading-bot-market-data
+
+  research-backtesting:
+    build:
+      context: ..
+      dockerfile: crates/research-backtesting/Dockerfile
+      target: local
+    restart: unless-stopped
+    environment:
+      PORT: 8110
+      SERVICE_NAME: trading-bot-research-backtesting
+      APP_ENV: local
+      CONTROL_PLANE_BASE_URL: http://trading-bot-api:8080
+      CONTROL_PLANE_REQUEST_TIMEOUT_MS: ${CONTROL_PLANE_REQUEST_TIMEOUT_MS:-5000}
+      HISTORICAL_STORE_HOST: ${HISTORICAL_STORE_HOST:-trading-bot-historical-store}
+      HISTORICAL_STORE_PORT: ${HISTORICAL_STORE_PORT:-8123}
+      HISTORICAL_STORE_NATIVE_PORT: ${HISTORICAL_STORE_NATIVE_PORT:-9000}
+      HISTORICAL_STORE_DATABASE: ${HISTORICAL_STORE_DATABASE:-trading_bot_market_data}
+      HISTORICAL_STORE_USER: ${HISTORICAL_STORE_USER:-trading_bot_market_data}
+      HISTORICAL_STORE_PASSWORD: ${HISTORICAL_STORE_PASSWORD:-trading_bot_market_data}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:?KAFKA_BOOTSTRAP_SERVERS is required}
+      BACKTEST_COMPLETED_EVENTS_TOPIC: ${BACKTEST_COMPLETED_EVENTS_TOPIC:-trading-bot.research-backtesting.backtest-completed.v1}
+      BACKTEST_PROGRESS_EVENTS_TOPIC: ${BACKTEST_PROGRESS_EVENTS_TOPIC:-trading-bot.research-backtesting.backtest-progress.v1}
+      DATA_READINESS_EVENTS_TOPIC: ${DATA_READINESS_EVENTS_TOPIC:-trading-bot.market-data.data-readiness-snapshot.v1}
+      RESEARCH_BACKTESTING_DATA_READINESS_EVENTS_CONSUMER_GROUP_ID: ${RESEARCH_BACKTESTING_DATA_READINESS_EVENTS_CONSUMER_GROUP_ID:-trading-bot-research-backtesting-data-readiness-trigger-v1}
+      SCHEDULED_BACKTESTS_ENABLED: ${SCHEDULED_BACKTESTS_ENABLED:-true}
+      SCHEDULED_BACKTESTS_INTERVAL_SECONDS: ${SCHEDULED_BACKTESTS_INTERVAL_SECONDS:-3600}
+      READINESS_MAX_DEPENDENCY_AGE_MS: ${READINESS_MAX_DEPENDENCY_AGE_MS:-120000}
+      BACKTEST_WARMUP_CANDLES: ${BACKTEST_WARMUP_CANDLES:-200}
+      BACKTEST_MAX_KLINES: ${BACKTEST_MAX_KLINES:-100000}
+      BACKTEST_MAX_TRADES: ${BACKTEST_MAX_TRADES:-1000000}
+      BACKTEST_MAX_BOOK_TICKERS: ${BACKTEST_MAX_BOOK_TICKERS:-1000000}
+      BACKTEST_TRADE_REPLAY_PAGE_MS: ${BACKTEST_TRADE_REPLAY_PAGE_MS:-3600000}
+      BACKTEST_TRADE_REPLAY_PAGE_ROWS: ${BACKTEST_TRADE_REPLAY_PAGE_ROWS:-200000}
+      BACKTEST_RESULT_RETENTION_DAYS: ${BACKTEST_RESULT_RETENTION_DAYS:-365}
+      BACKTEST_FEE_BPS: ${BACKTEST_FEE_BPS:-0}
+      BACKTEST_SLIPPAGE_BPS: ${BACKTEST_SLIPPAGE_BPS:-0}
+      BACKTEST_TRADE_COVERAGE_TOLERANCE_MS: ${BACKTEST_TRADE_COVERAGE_TOLERANCE_MS:-15000}
+      BACKTEST_TIMERANGE_MS_BY_TIMEFRAME: ${BACKTEST_TIMERANGE_MS_BY_TIMEFRAME:-1m=600000000,3m=1800000000,5m=3000000000}
+    depends_on:
+      historical-store:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    ports:
+      - "3050:8110"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8110/health/liveness >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+    logging:
+      driver: "json-file"
+      options:
+        labels: "com.docker.compose.project,com.docker.compose.service"
+    networks:
+      trading_bot_shared:
+        aliases:
+          - trading-bot-research-backtesting
+
+  execution:
+    build:
+      context: ..
+      dockerfile: crates/execution/Dockerfile
+      target: local
+    restart: unless-stopped
+    environment:
+      PORT: 8120
+      SERVICE_NAME: trading-bot-execution
+      APP_ENV: local
+      CONTROL_PLANE_BASE_URL: http://trading-bot-api:8080
+      MARKET_DATA_BASE_URL: http://trading-bot-market-data:8090
+      KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:?KAFKA_BOOTSTRAP_SERVERS is required}
+      MARKET_DATA_KLINE_EVENTS_TOPIC: ${MARKET_DATA_KLINE_EVENTS_TOPIC:-trading-bot.market-data.kline.v1}
+      MARKET_DATA_TRADE_EVENTS_TOPIC: ${MARKET_DATA_TRADE_EVENTS_TOPIC:-trading-bot.market-data.agg-trade.v1}
+      EXECUTION_MARKET_DATA_EVENTS_CONSUMER_GROUP_ID: ${EXECUTION_MARKET_DATA_EVENTS_CONSUMER_GROUP_ID:-trading-bot-execution-market-data-v1}
+      CONTROL_PLANE_REQUEST_TIMEOUT_MS: ${CONTROL_PLANE_REQUEST_TIMEOUT_MS:-10000}
+      MARKET_DATA_REQUEST_TIMEOUT_MS: ${MARKET_DATA_REQUEST_TIMEOUT_MS:-15000}
+      EXECUTION_REFRESH_INTERVAL_MS: ${EXECUTION_REFRESH_INTERVAL_MS:-15000}
+      EXECUTION_SIGNAL_POLL_INTERVAL_MS: ${EXECUTION_SIGNAL_POLL_INTERVAL_MS:-5000}
+      EXECUTION_DEFAULT_POSITION_NOTIONAL_USD: ${EXECUTION_DEFAULT_POSITION_NOTIONAL_USD:-100}
+      READINESS_MAX_DEPENDENCY_AGE_MS: ${READINESS_MAX_DEPENDENCY_AGE_MS:-120000}
+      EXECUTION_DEFAULT_MODE: ${EXECUTION_DEFAULT_MODE:-paper}
+      BINANCE_REST_BASE_URL: ${BINANCE_REST_BASE_URL:-https://api.binance.com}
+      BINANCE_WS_BASE_URL: ${BINANCE_WS_BASE_URL:-wss://stream.binance.com:9443}
+      BINANCE_RECV_WINDOW: ${BINANCE_RECV_WINDOW:-5000}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+    depends_on:
+      api:
+        condition: service_healthy
+      market-data:
+        condition: service_healthy
+    ports:
+      - "3070:8120"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8120/health/liveness >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+    logging:
+      driver: "json-file"
+      options:
+        labels: "com.docker.compose.project,com.docker.compose.service"
+    networks:
+      trading_bot_shared:
+        aliases:
+          - trading-bot-execution
+
+  operator-console:
+    build:
+      context: ..
+      dockerfile: apps/operator-console/Dockerfile
+      target: local
+      args:
+        NEXT_PUBLIC_CONTROL_PLANE_BASE_URL: ${OPERATOR_CONSOLE_CONTROL_PLANE_BASE_URL:-http://localhost:3020}
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+      execution:
+        condition: service_healthy
+    ports:
+      - "3060:3000"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/ >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+    logging:
+      driver: "json-file"
+      options:
+        labels: "com.docker.compose.project,com.docker.compose.service"
+    networks:
+      trading_bot_shared:
+        aliases:
+          - trading-bot-operator-console
+
+  alloy:
+    image: grafana/alloy:v1.12.0
+    restart: unless-stopped
+    command:
+      - run
+      - --storage.path=/var/lib/alloy/data
+      - /etc/alloy/config.alloy
+    volumes:
+      - ../docker/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - app-local-alloy-data:/var/lib/alloy/data
+    depends_on:
+      - api
+      - market-data
+      - research-backtesting
+      - operator-console
+    networks: [trading_bot_shared]
+
+networks:
+  trading_bot_shared:
+    name: platform_ops_shared
+    external: true
+
+volumes:
+  app-local-pgdata:
+  app-local-clickhouse-data:
+  app-local-alloy-data:

@@ -1,0 +1,12 @@
+.git
+.github
+node_modules
+target
+coverage
+dist
+build
+.env
+.env.*
+docker/.env.app.local
+apps/market-data/dist
+apps/control-plane/dist
