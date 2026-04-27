@@ -1,0 +1,14 @@
+[workspace]
+members = [
+    "crates/execution",
+    "crates/market-data",
+    "crates/research-backtesting",
+    "crates/strategy-engine",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "UNLICENSED"
+publish = false
