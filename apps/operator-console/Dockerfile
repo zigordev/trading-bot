@@ -1,24 +1,37 @@
-FROM node:20-alpine AS base
-WORKDIR /app
+# syntax=docker/dockerfile:1.7
+# Build context: monorepo root.
 
-FROM base AS deps
-COPY package.json package-lock.json ./
+FROM node:20-alpine AS deps
+WORKDIR /repo
+RUN apk add --no-cache libc6-compat
+COPY package.json package-lock.json* ./
 COPY apps/operator-console/package.json apps/operator-console/package.json
-RUN npm ci -w @trading-bot/operator-console
+COPY apps/control-plane/package.json apps/control-plane/package.json
+RUN npm ci --workspaces --include-workspace-root --no-audit --no-fund
 
-FROM base AS build
-ARG EXPO_PUBLIC_CONTROL_PLANE_BASE_URL=http://localhost:3020
-ENV EXPO_PUBLIC_CONTROL_PLANE_BASE_URL=${EXPO_PUBLIC_CONTROL_PLANE_BASE_URL}
-COPY --from=deps /app/node_modules /app/node_modules
-COPY package.json package-lock.json /app/
-COPY apps/operator-console /app/apps/operator-console
-WORKDIR /app/apps/operator-console
-RUN npm run build:web
+FROM node:20-alpine AS build
+WORKDIR /repo
+ARG NEXT_PUBLIC_CONTROL_PLANE_BASE_URL
+ENV NEXT_PUBLIC_CONTROL_PLANE_BASE_URL=$NEXT_PUBLIC_CONTROL_PLANE_BASE_URL
+ENV NEXT_TELEMETRY_DISABLED=1
+COPY --from=deps /repo/node_modules ./node_modules
+COPY package.json package-lock.json* ./
+COPY apps/operator-console ./apps/operator-console
+COPY apps/control-plane/package.json apps/control-plane/package.json
+RUN npm run build -w @trading-bot/operator-console
 
-FROM nginx:1.27-alpine AS prod
-COPY apps/operator-console/nginx.conf /etc/nginx/conf.d/default.conf
-COPY --from=build /app/apps/operator-console/dist /usr/share/nginx/html
-EXPOSE 80
-CMD ["nginx", "-g", "daemon off;"]
-
-FROM prod AS local
+FROM node:20-alpine AS local
+WORKDIR /app
+ENV NODE_ENV=production
+ENV PORT=3000
+ENV HOSTNAME=0.0.0.0
+ENV NEXT_TELEMETRY_DISABLED=1
+RUN apk add --no-cache wget && addgroup -g 1001 -S nodejs && adduser -S nextjs -u 1001
+COPY --from=build --chown=nextjs:nodejs /repo/apps/operator-console/.next/standalone ./
+COPY --from=build --chown=nextjs:nodejs /repo/apps/operator-console/.next/static ./apps/operator-console/.next/static
+COPY --from=build --chown=nextjs:nodejs /repo/apps/operator-console/public ./apps/operator-console/public
+USER nextjs
+EXPOSE 3000
+HEALTHCHECK --interval=10s --timeout=3s --retries=12 \
+  CMD wget -qO- http://127.0.0.1:3000/ >/dev/null 2>&1 || exit 1
+CMD ["node", "apps/operator-console/server.js"]

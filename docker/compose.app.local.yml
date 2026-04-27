@@ -301,7 +301,7 @@ services:
       dockerfile: apps/operator-console/Dockerfile
       target: local
       args:
-        EXPO_PUBLIC_CONTROL_PLANE_BASE_URL: ${OPERATOR_CONSOLE_CONTROL_PLANE_BASE_URL:-http://localhost:3020}
+        NEXT_PUBLIC_CONTROL_PLANE_BASE_URL: ${OPERATOR_CONSOLE_CONTROL_PLANE_BASE_URL:-http://localhost:3020}
     restart: unless-stopped
     depends_on:
       api:
@@ -309,9 +309,9 @@ services:
       execution:
         condition: service_healthy
     ports:
-      - "3060:80"
+      - "3060:3000"
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:80/ >/dev/null 2>&1"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/ >/dev/null 2>&1"]
       interval: 10s
       timeout: 3s
       retries: 12
