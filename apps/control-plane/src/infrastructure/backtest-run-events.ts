@@ -41,6 +41,25 @@ type FetchJson = (url: string, init?: RequestInit) => Promise<unknown>;
 
 const eventType = "trading-bot.research-backtesting.backtest-completed.v1";
 
+const parseTimeslotAnalysis = (value: unknown) =>
+  (Array.isArray(value) ? value : [])
+    .filter((item): item is Record<string, unknown> =>
+      typeof item === "object" && item !== null && !Array.isArray(item),
+    )
+    .map((item) => ({
+      dayOfWeek: Number(item.dayOfWeek ?? 0),
+      hourUtc: Number(item.hourUtc ?? 0),
+      tradeCount: Number(item.tradeCount ?? 0),
+      winningTradeCount: Number(item.winningTradeCount ?? 0),
+      losingTradeCount: Number(item.losingTradeCount ?? 0),
+      flatTradeCount: Number(item.flatTradeCount ?? 0),
+      totalPnlPercent: Number(item.totalPnlPercent ?? 0),
+      averagePnlPercent: Number(item.averagePnlPercent ?? 0),
+      expectancyPercent: Number(item.expectancyPercent ?? 0),
+      winRate: Number(item.winRate ?? 0),
+      favorable: item.favorable === true,
+    }));
+
 const parseEnvelope = (value: string): BacktestCompletedEventEnvelope | null => {
   const parsed = JSON.parse(value) as Record<string, unknown>;
   if (parsed.eventType !== eventType) {
@@ -112,6 +131,7 @@ const parseEnvelope = (value: string): BacktestCompletedEventEnvelope | null => 
       maxDrawdownPercent: Number(data.maxDrawdownPercent ?? 0),
       reversalRatio: Number(data.reversalRatio ?? 0),
       score: Number(data.score ?? 0),
+      timeslotAnalysis: parseTimeslotAnalysis(data.timeslotAnalysis),
     },
   };
 };
@@ -245,6 +265,9 @@ export const createBacktestRunProjectionConsumer = (
           maxDrawdownPercent: Number(run.maxDrawdownPercent ?? 0),
           reversalRatio: Number(run.reversalRatio ?? 0),
           score: Number(run.score ?? 0),
+          timeslotAnalysis: parseTimeslotAnalysis(
+            (run as Record<string, unknown>).timeslotAnalysis,
+          ),
           sourceEventId: `bootstrap:${run.backtestId}`,
           sourceOccurredAt: run.finishedAt,
         });

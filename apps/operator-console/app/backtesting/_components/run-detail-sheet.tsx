@@ -3,7 +3,7 @@
 import * as React from "react";
 
 import { formatDuration, formatPercent, formatTimestamp } from "@/lib/format";
-import type { RecentBacktestRun } from "@/lib/api";
+import type { RecentBacktestRun, TimeslotAnalysisBucket } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { DetailSheet } from "@/components/shared/detail-sheet";
 import { IdCell } from "@/components/shared/id-cell";
@@ -24,7 +24,7 @@ export function RunDetailSheet({ open, onOpenChange, run }: RunDetailSheetProps)
     <DetailSheet
       open={open}
       onOpenChange={onOpenChange}
-      size="sm"
+      size="md"
       title={
         <div className="flex items-center gap-2">
           <SymbolAvatar baseAsset={base} quoteAsset={quote} size={24} />
@@ -59,6 +59,8 @@ export function RunDetailSheet({ open, onOpenChange, run }: RunDetailSheetProps)
           </div>
         </div>
 
+        <TimeslotHeatmap buckets={run.timeslotAnalysis ?? []} />
+
         <div className="space-y-2">
           <h3 className="text-[11px] font-medium uppercase tracking-wide text-[var(--color-fg-subtle)]">
             Timing
@@ -82,6 +84,120 @@ export function RunDetailSheet({ open, onOpenChange, run }: RunDetailSheetProps)
         </div>
       </div>
     </DetailSheet>
+  );
+}
+
+const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+function TimeslotHeatmap({ buckets }: { buckets: TimeslotAnalysisBucket[] }) {
+  const bucketBySlot = React.useMemo(() => {
+    const map = new Map<string, TimeslotAnalysisBucket>();
+    for (const bucket of buckets) {
+      map.set(`${bucket.dayOfWeek}:${bucket.hourUtc}`, bucket);
+    }
+    return map;
+  }, [buckets]);
+  const hasTrades = buckets.some((bucket) => bucket.tradeCount > 0);
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="text-[11px] font-medium uppercase tracking-wide text-[var(--color-fg-subtle)]">
+          Entry timeslot heatmap
+        </h3>
+        <div className="flex items-center gap-2 text-[11px] text-[var(--color-fg-subtle)]">
+          <LegendSwatch className="bg-[var(--color-danger-bg)]" label="Negative" />
+          <LegendSwatch className="bg-[var(--color-warning-bg)]" label="Thin" />
+          <LegendSwatch className="bg-[var(--color-success-bg)]" label="Favorable" />
+        </div>
+      </div>
+      {!hasTrades ? (
+        <div className="rounded-[var(--radius-md)] border border-[var(--color-border)] px-3 py-2 text-[12px] text-[var(--color-fg-muted)]">
+          No timeslot analysis available for this run.
+        </div>
+      ) : (
+        <div className="overflow-x-auto rounded-[var(--radius-md)] border border-[var(--color-border)] p-3">
+          <div className="min-w-[720px]">
+            <div
+              className="grid gap-1"
+              style={{
+                gridTemplateColumns: "2.5rem repeat(24, minmax(1.5rem, 1fr))",
+              }}
+            >
+              <div />
+              {Array.from({ length: 24 }, (_, hour) => (
+                <div
+                  key={hour}
+                  className="text-center text-[10px] tabular-nums text-[var(--color-fg-subtle)]"
+                >
+                  {hour}
+                </div>
+              ))}
+              {DAY_LABELS.map((day, dayIndex) => (
+                <React.Fragment key={day}>
+                  <div className="flex h-7 items-center text-[11px] text-[var(--color-fg-subtle)]">
+                    {day}
+                  </div>
+                  {Array.from({ length: 24 }, (_, hour) => {
+                    const bucket = bucketBySlot.get(`${dayIndex}:${hour}`);
+                    return (
+                      <TimeslotCell
+                        key={`${day}:${hour}`}
+                        bucket={bucket}
+                        label={`${day} ${String(hour).padStart(2, "0")}:00 UTC`}
+                      />
+                    );
+                  })}
+                </React.Fragment>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TimeslotCell({
+  bucket,
+  label,
+}: {
+  bucket: TimeslotAnalysisBucket | undefined;
+  label: string;
+}) {
+  const tradeCount = bucket?.tradeCount ?? 0;
+  const title = bucket
+    ? `${label}\nTrades: ${tradeCount}\nWin rate: ${(bucket.winRate * 100).toFixed(1)}%\nExpectancy: ${formatPercent(bucket.expectancyPercent, { signed: true, digits: 2 })}\nAverage PnL: ${formatPercent(bucket.averagePnlPercent, { signed: true, digits: 2 })}`
+    : `${label}\nNo trades`;
+  const colorClass =
+    tradeCount === 0
+      ? "bg-[var(--color-surface-3)]"
+      : tradeCount < 5
+        ? "bg-[var(--color-warning-bg)]"
+        : bucket?.expectancyPercent && bucket.expectancyPercent > 0
+          ? "bg-[var(--color-success-bg)]"
+          : bucket?.expectancyPercent && bucket.expectancyPercent < 0
+            ? "bg-[var(--color-danger-bg)]"
+            : "bg-[var(--color-surface-2)]";
+  const borderClass = bucket?.favorable
+    ? "border-[var(--color-success)]"
+    : "border-[var(--color-border)]";
+
+  return (
+    <div
+      title={title}
+      className={`h-7 rounded-[4px] border ${borderClass} ${colorClass}`}
+      aria-label={title.replace(/\n/g, ", ")}
+    />
+  );
+}
+
+function LegendSwatch({ className, label }: { className: string; label: string }) {
+  return (
+    <span className="inline-flex items-center gap-1">
+      <span className={`h-2.5 w-2.5 rounded-[3px] border border-[var(--color-border)] ${className}`} />
+      <span>{label}</span>
+    </span>
   );
 }
 

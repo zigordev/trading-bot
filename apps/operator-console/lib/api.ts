@@ -68,6 +68,21 @@ export type RecentBacktestRun = {
   maxDrawdownPercent: number;
   reversalRatio: number;
   score: number;
+  timeslotAnalysis: TimeslotAnalysisBucket[];
+};
+
+export type TimeslotAnalysisBucket = {
+  dayOfWeek: number;
+  hourUtc: number;
+  tradeCount: number;
+  winningTradeCount: number;
+  losingTradeCount: number;
+  flatTradeCount: number;
+  totalPnlPercent: number;
+  averagePnlPercent: number;
+  expectancyPercent: number;
+  winRate: number;
+  favorable: boolean;
 };
 
 export type DataReadinessDimension = {
