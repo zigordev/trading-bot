@@ -2,12 +2,17 @@
 
 import * as React from "react";
 import type { ColumnDef, SortingState, VisibilityState } from "@tanstack/react-table";
-import { ChevronRight, MoreHorizontal } from "lucide-react";
+import { MoreHorizontal } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { formatPercent } from "@/lib/format";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   HoverCard,
   HoverCardContent,
@@ -18,21 +23,7 @@ import { ProgressCell } from "@/components/shared/progress-cell";
 import { ReadinessBar } from "@/components/shared/readiness-bar";
 import { ScoreCell } from "@/components/shared/score-cell";
 import { SymbolAvatar } from "@/components/shared/symbol-avatar";
-import type { BacktestRow, RowStatus } from "@/lib/backtesting/types";
-
-const STATUS_VARIANT: Record<RowStatus, "success" | "warning" | "default" | "danger"> = {
-  ready: "success",
-  partial: "warning",
-  missing: "default",
-  error: "danger",
-};
-
-const STATUS_LABEL: Record<RowStatus, string> = {
-  ready: "Ready",
-  partial: "Partial",
-  missing: "Missing",
-  error: "Error",
-};
+import type { BacktestRow } from "@/lib/backtesting/types";
 
 interface BacktestingTableProps {
   rows: BacktestRow[];
@@ -87,16 +78,6 @@ export function BacktestingTable({
           <span className="text-[12px] text-[var(--color-fg-muted)]">
             {row.original.strategyName}
           </span>
-        ),
-      },
-      {
-        id: "status",
-        accessorKey: "status",
-        header: "Status",
-        cell: ({ row }) => (
-          <Badge variant={STATUS_VARIANT[row.original.status]}>
-            {STATUS_LABEL[row.original.status]}
-          </Badge>
         ),
       },
       {
@@ -200,29 +181,28 @@ export function BacktestingTable({
         meta: { align: "right" },
         cell: ({ row }) => (
           <div className="flex items-center justify-end gap-0.5">
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              onClick={(event) => {
-                event.stopPropagation();
-                onRowSelect(row.original);
-              }}
-              aria-label="Open details"
-              className="text-[var(--color-fg-subtle)]"
-            >
-              <ChevronRight />
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              onClick={(event) => event.stopPropagation()}
-              aria-label="More actions"
-              className="text-[var(--color-fg-subtle)]"
-            >
-              <MoreHorizontal />
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  onClick={(event) => event.stopPropagation()}
+                  aria-label="More actions"
+                  className="text-[var(--color-fg-subtle)]"
+                >
+                  <MoreHorizontal />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                align="end"
+                onClick={(event) => event.stopPropagation()}
+              >
+                <DropdownMenuItem onSelect={() => onRowSelect(row.original)}>
+                  View details
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         ),
       },

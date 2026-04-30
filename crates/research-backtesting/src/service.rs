@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
 
 use anyhow::{Context, Result, bail};
-use chrono::{DateTime, TimeZone, Utc};
+use chrono::{DateTime, Datelike, TimeZone, Timelike, Utc};
 use futures_util::StreamExt;
 use rdkafka::{
     ClientConfig, Message,
@@ -32,8 +32,9 @@ use crate::{
     metrics::Metrics,
     models::{
         BacktestDatasetSummary, BacktestExecutionAssumptions, BacktestRequest, BacktestResponse,
-        BacktestSignalRecord, BacktestSummary, BacktestTimeWindow, LastBacktestStatus,
-        PersistedBacktestRunSummary, ResolvedBacktestInput, SimulatedTradeRecord,
+        BacktestSignalRecord, BacktestSummary, BacktestTimeWindow, BacktestTimeslotBucket,
+        LastBacktestStatus, PersistedBacktestRunSummary, ResolvedBacktestInput,
+        SimulatedTradeRecord,
     },
 };
 use tracing::{error, info, warn};
@@ -41,6 +42,9 @@ use uuid::Uuid;
 
 #[cfg(test)]
 const DAY_MS: i64 = 86_400_000;
+const TIMESLOT_DAY_COUNT: usize = 7;
+const TIMESLOT_HOUR_COUNT: usize = 24;
+const TIMESLOT_MIN_SAMPLE_SIZE: usize = 5;
 
 #[derive(Clone)]
 pub struct ResearchBacktestingService {
@@ -131,6 +135,7 @@ struct BacktestCompletedEventData {
     max_drawdown_percent: f64,
     reversal_ratio: f64,
     score: f64,
+    timeslot_analysis: Vec<BacktestTimeslotBucket>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -828,6 +833,7 @@ impl ResearchBacktestingService {
                 max_drawdown_percent: response.summary.max_drawdown_percent,
                 reversal_ratio: response.summary.reversal_ratio,
                 score: response.summary.score,
+                timeslot_analysis: response.summary.timeslot_analysis.clone(),
             },
         };
         let payload = serde_json::to_string(&envelope)?;
@@ -1791,6 +1797,7 @@ fn persisted_run_summary(run: &StoredBacktestRunWrite) -> StoredBacktestRunSumma
         max_drawdown_percent: 0.0,
         reversal_ratio: 0.0,
         score: run.total_pnl_percent,
+        timeslot_analysis: Vec::new(),
     }
 }
 
@@ -1823,6 +1830,23 @@ fn map_persisted_backtest_summary(
         max_drawdown_percent: row.max_drawdown_percent,
         reversal_ratio: row.reversal_ratio,
         score: row.score,
+        timeslot_analysis: row
+            .timeslot_analysis
+            .into_iter()
+            .map(|bucket| BacktestTimeslotBucket {
+                day_of_week: bucket.day_of_week,
+                hour_utc: bucket.hour_utc,
+                trade_count: bucket.trade_count,
+                winning_trade_count: bucket.winning_trade_count,
+                losing_trade_count: bucket.losing_trade_count,
+                flat_trade_count: bucket.flat_trade_count,
+                total_pnl_percent: bucket.total_pnl_percent,
+                average_pnl_percent: bucket.average_pnl_percent,
+                expectancy_percent: bucket.expectancy_percent,
+                win_rate: bucket.win_rate,
+                favorable: bucket.favorable,
+            })
+            .collect(),
     })
 }
 
@@ -2822,6 +2846,7 @@ fn summarize_backtest(
     };
     let (equity_curve_pnl_percent, max_drawdown_percent) = calculate_equity_curve_metrics(trades);
     let score = equity_curve_pnl_percent - (0.75 * max_drawdown_percent) - (12.0 * reversal_ratio);
+    let timeslot_analysis = calculate_timeslot_analysis(trades);
 
     BacktestSummary {
         signal_count: signals.len(),
@@ -2843,7 +2868,56 @@ fn summarize_backtest(
         equity_curve_pnl_percent,
         max_drawdown_percent,
         score,
+        timeslot_analysis,
     }
+}
+
+fn calculate_timeslot_analysis(trades: &[SimulatedTradeRecord]) -> Vec<BacktestTimeslotBucket> {
+    let mut buckets = (0..TIMESLOT_DAY_COUNT)
+        .flat_map(|day| {
+            (0..TIMESLOT_HOUR_COUNT).map(move |hour| BacktestTimeslotBucket {
+                day_of_week: day as u32,
+                hour_utc: hour as u32,
+                ..BacktestTimeslotBucket::default()
+            })
+        })
+        .collect::<Vec<_>>();
+
+    for trade in trades {
+        let Some(entry_time) = Utc.timestamp_millis_opt(trade.entry_time).single() else {
+            continue;
+        };
+        let day_index = entry_time.weekday().num_days_from_sunday() as usize;
+        let hour_index = entry_time.hour() as usize;
+        let bucket_index = (day_index * TIMESLOT_HOUR_COUNT) + hour_index;
+        let Some(bucket) = buckets.get_mut(bucket_index) else {
+            continue;
+        };
+
+        bucket.trade_count += 1;
+        if trade.pnl_usd > 0.0 {
+            bucket.winning_trade_count += 1;
+        } else if trade.pnl_usd < 0.0 {
+            bucket.losing_trade_count += 1;
+        } else {
+            bucket.flat_trade_count += 1;
+        }
+        bucket.total_pnl_percent += trade.pnl_percent;
+    }
+
+    for bucket in &mut buckets {
+        if bucket.trade_count == 0 {
+            continue;
+        }
+
+        bucket.average_pnl_percent = bucket.total_pnl_percent / bucket.trade_count as f64;
+        bucket.expectancy_percent = bucket.average_pnl_percent;
+        bucket.win_rate = bucket.winning_trade_count as f64 / bucket.trade_count as f64;
+        bucket.favorable =
+            bucket.trade_count >= TIMESLOT_MIN_SAMPLE_SIZE && bucket.expectancy_percent > 0.0;
+    }
+
+    buckets
 }
 
 fn calculate_equity_curve_metrics(trades: &[SimulatedTradeRecord]) -> (f64, f64) {
@@ -2956,11 +3030,7 @@ mod tests {
         }
     }
 
-    fn kline(
-        timeframe_code: &str,
-        period_ms: i64,
-        open_time: i64,
-    ) -> PersistedKlineRecord {
+    fn kline(timeframe_code: &str, period_ms: i64, open_time: i64) -> PersistedKlineRecord {
         PersistedKlineRecord {
             pair_code: "BTCUSDT".to_string(),
             symbol: "BTCUSDT".to_string(),
@@ -3063,6 +3133,40 @@ mod tests {
         assert!((summary.equity_curve_pnl_percent - 3.95).abs() < 0.0001);
         assert!((summary.max_drawdown_percent - 10.0).abs() < 0.0001);
         assert!((summary.score - (-7.55)).abs() < 0.0001);
+    }
+
+    #[test]
+    fn timeslot_analysis_groups_entry_hour_without_affecting_score() {
+        let monday_14_utc = 1_704_120_000_000;
+        let tuesday_03_utc = 1_704_166_800_000;
+        let mut trades = vec![
+            simulated_trade(1, 1.0, "takeProfit"),
+            simulated_trade(2, 2.0, "takeProfit"),
+            simulated_trade(3, -0.5, "stopLoss"),
+            simulated_trade(4, 0.0, "windowEnd"),
+            simulated_trade(5, 1.5, "takeProfit"),
+            simulated_trade(6, -2.0, "stopLoss"),
+        ];
+        for trade in trades.iter_mut().take(5) {
+            trade.entry_time = monday_14_utc;
+        }
+        trades[5].entry_time = tuesday_03_utc;
+
+        let buckets = calculate_timeslot_analysis(&trades);
+
+        assert_eq!(buckets.len(), 168);
+        let monday_14 = &buckets[(1 * 24) + 14];
+        assert_eq!(monday_14.trade_count, 5);
+        assert_eq!(monday_14.winning_trade_count, 3);
+        assert_eq!(monday_14.losing_trade_count, 1);
+        assert_eq!(monday_14.flat_trade_count, 1);
+        assert!((monday_14.expectancy_percent - 0.8).abs() < 0.0001);
+        assert!((monday_14.win_rate - 0.6).abs() < 0.0001);
+        assert!(monday_14.favorable);
+
+        let tuesday_03 = &buckets[(2 * 24) + 3];
+        assert_eq!(tuesday_03.trade_count, 1);
+        assert!(!tuesday_03.favorable);
     }
 
     #[test]
@@ -3176,10 +3280,7 @@ mod tests {
 
     #[test]
     fn split_kline_rows_uses_close_time_for_non_signal_timeframes() {
-        let rows = vec![
-            kline("15m", 900_000, 0),
-            kline("15m", 900_000, 900_000),
-        ];
+        let rows = vec![kline("15m", 900_000, 0), kline("15m", 900_000, 900_000)];
 
         let (warmup_rows, replay_rows) =
             split_kline_rows_for_backtest_window(rows, 600_000, 1_800_000, false);
