@@ -96,6 +96,22 @@ pub struct SimulatedTradeRecord {
     pub exit_reason: String,
 }
 
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BacktestTimeslotBucket {
+    pub day_of_week: u32,
+    pub hour_utc: u32,
+    pub trade_count: usize,
+    pub winning_trade_count: usize,
+    pub losing_trade_count: usize,
+    pub flat_trade_count: usize,
+    pub total_pnl_percent: f64,
+    pub average_pnl_percent: f64,
+    pub expectancy_percent: f64,
+    pub win_rate: f64,
+    pub favorable: bool,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BacktestSummary {
@@ -118,6 +134,8 @@ pub struct BacktestSummary {
     pub equity_curve_pnl_percent: f64,
     pub max_drawdown_percent: f64,
     pub score: f64,
+    #[serde(default)]
+    pub timeslot_analysis: Vec<BacktestTimeslotBucket>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -194,6 +212,8 @@ pub struct PersistedBacktestRunSummary {
     pub max_drawdown_percent: f64,
     pub reversal_ratio: f64,
     pub score: f64,
+    #[serde(default)]
+    pub timeslot_analysis: Vec<BacktestTimeslotBucket>,
 }
 
 #[derive(Clone, Debug)]

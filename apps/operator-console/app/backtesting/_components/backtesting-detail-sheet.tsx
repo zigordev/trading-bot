@@ -112,7 +112,6 @@ export function BacktestingDetailSheet({
           <TabsTrigger value="runs">Runs</TabsTrigger>
           <TabsTrigger value="thresholds">Thresholds</TabsTrigger>
           <TabsTrigger value="readiness">Readiness</TabsTrigger>
-          <TabsTrigger value="raw">Raw</TabsTrigger>
         </TabsList>
 
         <TabsContent value="summary" className="space-y-4">
@@ -164,16 +163,6 @@ export function BacktestingDetailSheet({
 
         <TabsContent value="readiness">
           <ReadinessPanel row={row} />
-        </TabsContent>
-
-        <TabsContent value="raw">
-          <pre className="max-h-[400px] overflow-auto rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3 font-mono text-[11px] leading-relaxed text-[var(--color-fg-muted)]">
-            {JSON.stringify(
-              { row, recentRuns: recentRuns.slice(0, 5), thresholds },
-              null,
-              2,
-            )}
-          </pre>
         </TabsContent>
       </Tabs>
     </DetailSheet>

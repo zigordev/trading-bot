@@ -29,6 +29,20 @@ export type BacktestJobRecord = {
   result: Record<string, unknown> | null;
 };
 
+export type TimeslotAnalysisBucket = {
+  dayOfWeek: number;
+  hourUtc: number;
+  tradeCount: number;
+  winningTradeCount: number;
+  losingTradeCount: number;
+  flatTradeCount: number;
+  totalPnlPercent: number;
+  averagePnlPercent: number;
+  expectancyPercent: number;
+  winRate: number;
+  favorable: boolean;
+};
+
 export type BacktestRunProjectionRecord = {
   backtestId: string;
   finishedAt: string;
@@ -55,6 +69,7 @@ export type BacktestRunProjectionRecord = {
   maxDrawdownPercent: number;
   reversalRatio: number;
   score: number;
+  timeslotAnalysis: TimeslotAnalysisBucket[];
   sourceEventId: string;
   sourceOccurredAt: string;
   createdAt: string;
@@ -351,6 +366,38 @@ const parseJsonObject = (value: unknown): Record<string, unknown> | null => {
   return null;
 };
 
+const parseJsonArray = (value: unknown): unknown[] => {
+  if (Array.isArray(value)) {
+    return value;
+  }
+
+  if (typeof value === "string" && value.trim()) {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  }
+
+  return [];
+};
+
+const mapTimeslotAnalysis = (value: unknown): TimeslotAnalysisBucket[] =>
+  parseJsonArray(value)
+    .filter((item): item is Record<string, unknown> =>
+      typeof item === "object" && item !== null && !Array.isArray(item),
+    )
+    .map((item) => ({
+      dayOfWeek: Number(item.dayOfWeek ?? 0),
+      hourUtc: Number(item.hourUtc ?? 0),
+      tradeCount: Number(item.tradeCount ?? 0),
+      winningTradeCount: Number(item.winningTradeCount ?? 0),
+      losingTradeCount: Number(item.losingTradeCount ?? 0),
+      flatTradeCount: Number(item.flatTradeCount ?? 0),
+      totalPnlPercent: Number(item.totalPnlPercent ?? 0),
+      averagePnlPercent: Number(item.averagePnlPercent ?? 0),
+      expectancyPercent: Number(item.expectancyPercent ?? 0),
+      winRate: Number(item.winRate ?? 0),
+      favorable: item.favorable === true,
+    }));
+
 const toIsoString = (value: unknown): string | null => {
   if (value === null || value === undefined) {
     return null;
@@ -416,6 +463,7 @@ const mapBacktestRunProjectionRow = (
   maxDrawdownPercent: Number(row.max_drawdown_percent ?? 0),
   reversalRatio: Number(row.reversal_ratio ?? 0),
   score: Number(row.score ?? 0),
+  timeslotAnalysis: mapTimeslotAnalysis(row.timeslot_analysis_json),
   sourceEventId: String(row.source_event_id),
   sourceOccurredAt:
     toIsoString(row.source_occurred_at) ?? new Date(0).toISOString(),
@@ -705,6 +753,7 @@ export const ensureOpsSchema = async (pool: Pool): Promise<void> => {
       max_drawdown_percent DOUBLE PRECISION NOT NULL DEFAULT 0,
       reversal_ratio DOUBLE PRECISION NOT NULL DEFAULT 0,
       score DOUBLE PRECISION NOT NULL DEFAULT 0,
+      timeslot_analysis_json JSONB NOT NULL DEFAULT '[]'::jsonb,
       source_event_id TEXT NOT NULL,
       source_occurred_at TIMESTAMPTZ NOT NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -722,7 +771,8 @@ export const ensureOpsSchema = async (pool: Pool): Promise<void> => {
       ADD COLUMN IF NOT EXISTS equity_curve_pnl_percent DOUBLE PRECISION NOT NULL DEFAULT 0,
       ADD COLUMN IF NOT EXISTS max_drawdown_percent DOUBLE PRECISION NOT NULL DEFAULT 0,
       ADD COLUMN IF NOT EXISTS reversal_ratio DOUBLE PRECISION NOT NULL DEFAULT 0,
-      ADD COLUMN IF NOT EXISTS score DOUBLE PRECISION NOT NULL DEFAULT 0
+      ADD COLUMN IF NOT EXISTS score DOUBLE PRECISION NOT NULL DEFAULT 0,
+      ADD COLUMN IF NOT EXISTS timeslot_analysis_json JSONB NOT NULL DEFAULT '[]'::jsonb
   `);
 
   await pool.query(`
@@ -1256,6 +1306,7 @@ export const upsertBacktestRunProjection = async (
         max_drawdown_percent,
         reversal_ratio,
         score,
+        timeslot_analysis_json,
         source_event_id,
         source_occurred_at
       )
@@ -1285,8 +1336,9 @@ export const upsertBacktestRunProjection = async (
         $23,
         $24,
         $25,
-        $26,
-        $27::timestamptz
+        $26::jsonb,
+        $27,
+        $28::timestamptz
       )
       ON CONFLICT (backtest_id)
       DO UPDATE SET
@@ -1314,6 +1366,7 @@ export const upsertBacktestRunProjection = async (
         max_drawdown_percent = EXCLUDED.max_drawdown_percent,
         reversal_ratio = EXCLUDED.reversal_ratio,
         score = EXCLUDED.score,
+        timeslot_analysis_json = EXCLUDED.timeslot_analysis_json,
         source_event_id = EXCLUDED.source_event_id,
         source_occurred_at = EXCLUDED.source_occurred_at,
         updated_at = NOW()
@@ -1343,6 +1396,7 @@ export const upsertBacktestRunProjection = async (
         max_drawdown_percent,
         reversal_ratio,
         score,
+        timeslot_analysis_json,
         source_event_id,
         source_occurred_at,
         created_at,
@@ -1374,6 +1428,7 @@ export const upsertBacktestRunProjection = async (
       input.maxDrawdownPercent,
       input.reversalRatio,
       input.score,
+      JSON.stringify(input.timeslotAnalysis ?? []),
       input.sourceEventId,
       input.sourceOccurredAt,
     ],
@@ -1414,6 +1469,7 @@ export const listBacktestRunProjections = async (
         max_drawdown_percent,
         reversal_ratio,
         score,
+        timeslot_analysis_json,
         source_event_id,
         source_occurred_at,
         created_at,
@@ -1460,6 +1516,7 @@ export const listLatestBacktestRunProjections = async (
         max_drawdown_percent,
         reversal_ratio,
         score,
+        timeslot_analysis_json,
         source_event_id,
         source_occurred_at,
         created_at,
@@ -1497,6 +1554,7 @@ export const listLatestBacktestRunProjections = async (
           max_drawdown_percent,
           reversal_ratio,
           score,
+          timeslot_analysis_json,
           source_event_id,
           source_occurred_at,
           created_at,
