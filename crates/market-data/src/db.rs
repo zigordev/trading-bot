@@ -95,6 +95,23 @@ struct StoredBacktestRunResponseSummaryFields {
     max_drawdown_percent: f64,
     reversal_ratio: f64,
     score: f64,
+    timeslot_analysis: Vec<StoredBacktestTimeslotBucket>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StoredBacktestTimeslotBucket {
+    pub day_of_week: u32,
+    pub hour_utc: u32,
+    pub trade_count: usize,
+    pub winning_trade_count: usize,
+    pub losing_trade_count: usize,
+    pub flat_trade_count: usize,
+    pub total_pnl_percent: f64,
+    pub average_pnl_percent: f64,
+    pub expectancy_percent: f64,
+    pub win_rate: f64,
+    pub favorable: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -264,6 +281,7 @@ pub struct StoredBacktestRunSummary {
     pub max_drawdown_percent: f64,
     pub reversal_ratio: f64,
     pub score: f64,
+    pub timeslot_analysis: Vec<StoredBacktestTimeslotBucket>,
 }
 
 #[derive(Clone, Debug)]
@@ -2025,6 +2043,7 @@ impl Database {
                     max_drawdown_percent: response_summary.max_drawdown_percent,
                     reversal_ratio: response_summary.reversal_ratio,
                     score: response_summary.score,
+                    timeslot_analysis: response_summary.timeslot_analysis,
                 },
                 response_json: row.response_json,
             });
