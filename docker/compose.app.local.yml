@@ -1,7 +1,14 @@
 name: trading-bot-app-local
 
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3" 
+    labels: "com.docker.compose.project,com.docker.compose.service" 
+
 services:
-  postgres:
+  trading_bot_db:
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
@@ -17,16 +24,13 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
-    logging:
-      driver: "json-file"
-      options:
-        labels: "com.docker.compose.project,com.docker.compose.service"
+    logging: *default-logging
     networks:
       trading_bot_shared:
         aliases:
           - trading-bot-postgres
 
-  historical-store:
+  trading_bot_historical_store:
     image: clickhouse/clickhouse-server:24.8
     restart: unless-stopped
     environment:
@@ -48,16 +52,13 @@ services:
       interval: 10s
       timeout: 5s
       retries: 30
-    logging:
-      driver: "json-file"
-      options:
-        labels: "com.docker.compose.project,com.docker.compose.service"
+    logging: *default-logging
     networks:
       trading_bot_shared:
         aliases:
           - trading-bot-historical-store
 
-  api:
+  trading_bot_api:
     build:
       context: ..
       dockerfile: apps/control-plane/Dockerfile
@@ -85,7 +86,7 @@ services:
       RESEARCH_BACKTESTING_BASE_URL: ${RESEARCH_BACKTESTING_BASE_URL:-http://research-backtesting:8110}
       UPSTREAM_REQUEST_TIMEOUT_MS: ${UPSTREAM_REQUEST_TIMEOUT_MS:-30000}
     depends_on:
-      postgres:
+      trading_bot_db:
         condition: service_healthy
     command:
       [
@@ -102,16 +103,13 @@ services:
       retries: 12
     ports:
       - "3020:8080"
-    logging:
-      driver: "json-file"
-      options:
-        labels: "com.docker.compose.project,com.docker.compose.service"
+    logging: *default-logging
     networks:
       trading_bot_shared:
         aliases:
           - trading-bot-api
 
-  market-data:
+  trading_bot_market_data:
     build:
       context: ..
       dockerfile: crates/market-data/Dockerfile
@@ -179,16 +177,13 @@ services:
       interval: 10s
       timeout: 3s
       retries: 12
-    logging:
-      driver: "json-file"
-      options:
-        labels: "com.docker.compose.project,com.docker.compose.service"
+    logging: *default-logging
     networks:
       trading_bot_shared:
         aliases:
           - trading-bot-market-data
 
-  research-backtesting:
+  trading_bot_research_backtesting:
     build:
       context: ..
       dockerfile: crates/research-backtesting/Dockerfile
@@ -238,16 +233,13 @@ services:
       interval: 10s
       timeout: 3s
       retries: 12
-    logging:
-      driver: "json-file"
-      options:
-        labels: "com.docker.compose.project,com.docker.compose.service"
+    logging: *default-logging
     networks:
       trading_bot_shared:
         aliases:
           - trading-bot-research-backtesting
 
-  execution:
+  trading_bot_execution:
     build:
       context: ..
       dockerfile: crates/execution/Dockerfile
@@ -286,16 +278,13 @@ services:
       interval: 10s
       timeout: 3s
       retries: 12
-    logging:
-      driver: "json-file"
-      options:
-        labels: "com.docker.compose.project,com.docker.compose.service"
+    logging: *default-logging
     networks:
       trading_bot_shared:
         aliases:
           - trading-bot-execution
 
-  operator-console:
+  trading_bot_operator-console:
     build:
       context: ..
       dockerfile: apps/operator-console/Dockerfile
@@ -315,32 +304,11 @@ services:
       interval: 10s
       timeout: 3s
       retries: 12
-    logging:
-      driver: "json-file"
-      options:
-        labels: "com.docker.compose.project,com.docker.compose.service"
+    logging: *default-logging
     networks:
       trading_bot_shared:
         aliases:
           - trading-bot-operator-console
-
-  alloy:
-    image: grafana/alloy:v1.12.0
-    restart: unless-stopped
-    command:
-      - run
-      - --storage.path=/var/lib/alloy/data
-      - /etc/alloy/config.alloy
-    volumes:
-      - ../docker/alloy/config.alloy:/etc/alloy/config.alloy:ro
-      - /var/lib/docker/containers:/var/lib/docker/containers:ro
-      - app-local-alloy-data:/var/lib/alloy/data
-    depends_on:
-      - api
-      - market-data
-      - research-backtesting
-      - operator-console
-    networks: [trading_bot_shared]
 
 networks:
   trading_bot_shared:
@@ -350,4 +318,3 @@ networks:
 volumes:
   app-local-pgdata:
   app-local-clickhouse-data:
-  app-local-alloy-data:
