@@ -140,11 +140,11 @@ process.stdout.write(String(value));
 export POSTGRES_PASSWORD="$postgres_password"
 
 echo "Ensuring PostgreSQL container is running for database: $DB_NAME"
-docker compose --env-file "$APP_ENV_FILE" -f "$APP_COMPOSE_FILE" up -d postgres
+docker compose --env-file "$APP_ENV_FILE" -f "$APP_COMPOSE_FILE" up -d trading_bot_db
 
 i=1
 while [ $i -le 60 ]; do
-  if docker compose --env-file "$APP_ENV_FILE" -f "$APP_COMPOSE_FILE" exec -T postgres \
+  if docker compose --env-file "$APP_ENV_FILE" -f "$APP_COMPOSE_FILE" exec -T trading_bot_db \
     sh -lc "pg_isready -U \"$DB_USER\" -d \"$DB_NAME\" >/dev/null 2>&1"; then
     break
   fi

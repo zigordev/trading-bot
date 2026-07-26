@@ -166,9 +166,9 @@ services:
       HISTORICAL_TRADE_BACKFILL_USE_ROW_BINARY_INSERT: ${HISTORICAL_TRADE_BACKFILL_USE_ROW_BINARY_INSERT:-true}
       HISTORICAL_TRADE_BACKFILL_CHUNK_MS: ${HISTORICAL_TRADE_BACKFILL_CHUNK_MS:-86400000}
     depends_on:
-      historical-store:
+      trading_bot_historical_store:
         condition: service_healthy
-      api:
+      trading_bot_api:
         condition: service_healthy
     ports:
       - "3030:8090"
@@ -222,9 +222,9 @@ services:
       BACKTEST_TRADE_COVERAGE_TOLERANCE_MS: ${BACKTEST_TRADE_COVERAGE_TOLERANCE_MS:-15000}
       BACKTEST_TIMERANGE_MS_BY_TIMEFRAME: ${BACKTEST_TIMERANGE_MS_BY_TIMEFRAME:-1m=600000000,3m=1800000000,5m=3000000000}
     depends_on:
-      historical-store:
+      trading_bot_historical_store:
         condition: service_healthy
-      api:
+      trading_bot_api:
         condition: service_healthy
     ports:
       - "3050:8110"
@@ -267,9 +267,9 @@ services:
       BINANCE_RECV_WINDOW: ${BINANCE_RECV_WINDOW:-5000}
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
     depends_on:
-      api:
+      trading_bot_api:
         condition: service_healthy
-      market-data:
+      trading_bot_market_data:
         condition: service_healthy
     ports:
       - "3070:8120"
@@ -293,9 +293,9 @@ services:
         NEXT_PUBLIC_CONTROL_PLANE_BASE_URL: ${OPERATOR_CONSOLE_CONTROL_PLANE_BASE_URL:-http://localhost:3020}
     restart: unless-stopped
     depends_on:
-      api:
+      trading_bot_api:
         condition: service_healthy
-      execution:
+      trading_bot_execution:
         condition: service_healthy
     ports:
       - "3060:3000"
