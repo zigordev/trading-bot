@@ -66,7 +66,8 @@ export function ConfigTable({
           id: path,
           accessorFn: (row) => readPath(row, path),
           header: t(field.labelKey),
-          cell: ({ row }) => formatValue(field.kind, readPath(row.original, path)),
+          cell: ({ row }) =>
+            formatValue(field.kind, readPath(row.original, path), t),
         };
       }),
       {
@@ -84,7 +85,7 @@ export function ConfigTable({
                 event.stopPropagation();
                 onEdit(row.original);
               }}
-              aria-label="Edit"
+              aria-label={t("configuration.actions.edit")}
               className="text-[var(--color-fg-subtle)]"
             >
               <Edit3 />
@@ -97,7 +98,7 @@ export function ConfigTable({
                   size="icon-sm"
                   className="text-[var(--color-fg-subtle)]"
                   onClick={(event) => event.stopPropagation()}
-                  aria-label="More actions"
+                  aria-label={t("configuration.actions.more_actions")}
                 >
                   <MoreHorizontal />
                 </Button>
@@ -112,7 +113,7 @@ export function ConfigTable({
                     });
                   }}
                 >
-                  Duplicate
+                  {t("configuration.actions.duplicate")}
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   className="text-[var(--color-danger)] focus:text-[var(--color-danger)]"
@@ -122,7 +123,7 @@ export function ConfigTable({
                   }}
                 >
                   <Trash2 className="size-3.5" />
-                  Delete
+                  {t("configuration.actions.delete")}
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -143,11 +144,11 @@ export function ConfigTable({
         empty={
           <div className="flex flex-col items-center gap-3 py-10">
             <div className="text-[13px] text-[var(--color-fg-subtle)]">
-              No {resourceLabel} configured yet.
+              {t("configuration.empty.no_records", { resource: resourceLabel })}
             </div>
             <Button size="sm" className="gap-1.5" onClick={onCreate}>
               <Plus className="size-3.5" />
-              Add {singularLabel}
+              {t("configuration.actions.add")} {singularLabel}
             </Button>
           </div>
         }
@@ -158,12 +159,14 @@ export function ConfigTable({
             search={{
               value: search,
               onChange: setSearch,
-              placeholder: `Search ${resourceLabel}…`,
+              placeholder: t("configuration.actions.search_placeholder", {
+                resource: resourceLabel,
+              }),
             }}
             end={
               <Button size="sm" className="gap-1.5" onClick={onCreate}>
                 <Plus className="size-3.5" />
-                Add {singularLabel}
+                {t("configuration.actions.add")} {singularLabel}
               </Button>
             }
           />
@@ -177,22 +180,23 @@ export function ConfigTable({
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              Delete{" "}
-              {String(
-                pendingDelete
-                  ? readPath(pendingDelete, resource.titleField)
-                  : "",
-              )}
-              ?
+              {t("configuration.confirm.delete_title", {
+                name: String(
+                  pendingDelete
+                    ? readPath(pendingDelete, resource.titleField)
+                    : "",
+                ),
+              })}
             </AlertDialogTitle>
             <AlertDialogDescription>
-              This permanently removes the {resourceLabel} record
-              from the control plane. The action cannot be undone.
+              {t("configuration.confirm.delete_description", {
+                resource: resourceLabel,
+              })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={remove.isPending}>
-              Cancel
+              {t("configuration.actions.cancel")}
             </AlertDialogCancel>
             <AlertDialogAction
               disabled={remove.isPending}
@@ -204,10 +208,12 @@ export function ConfigTable({
                 );
                 const promise = remove.mutateAsync(id);
                 toast.promise(promise, {
-                  loading: "Deleting…",
-                  success: "Deleted",
+                  loading: t("toast.config_delete.loading"),
+                  success: t("toast.config_delete.success"),
                   error: (err) =>
-                    err instanceof Error ? err.message : "Failed to delete",
+                    err instanceof Error
+                      ? err.message
+                      : t("toast.config_delete.error"),
                 });
                 try {
                   await promise;
@@ -217,7 +223,7 @@ export function ConfigTable({
                 }
               }}
             >
-              Delete
+              {t("configuration.actions.delete")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -239,6 +245,7 @@ function readPath(row: Record<string, unknown>, path: string): unknown {
 function formatValue(
   kind: ConfigField["kind"],
   value: unknown,
+  t: ReturnType<typeof usePreferences>["t"],
 ): React.ReactNode {
   if (value === null || value === undefined || value === "") {
     return <span className="text-[var(--color-fg-subtle)]">—</span>;
@@ -246,7 +253,7 @@ function formatValue(
   if (kind === "boolean") {
     return (
       <Badge variant={value ? "success" : "default"}>
-        {value ? "Yes" : "No"}
+        {value ? t("configuration.actions.yes") : t("configuration.actions.no")}
       </Badge>
     );
   }

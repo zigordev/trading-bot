@@ -96,6 +96,134 @@
       "maxDrawdownPercentHint": "Mayor caída de pico a valle permitida (menor es más estricto).",
       "maxReversalRatio": "Ratio de reversión máximo",
       "maxReversalRatioHint": "Proporción permitida de operaciones cerradas por reversión."
+    },
+    "actions": {
+      "add": "Añadir",
+      "edit": "Editar",
+      "duplicate": "Duplicar",
+      "delete": "Eliminar",
+      "more_actions": "Más acciones",
+      "cancel": "Cancelar",
+      "save": "Guardar cambios",
+      "saving": "Guardando…",
+      "create": "Crear",
+      "yes": "Sí",
+      "no": "No",
+      "select_placeholder": "Seleccionar…",
+      "autofilled_placeholder": "Autocompletado desde el par",
+      "invalid_json": "JSON no válido",
+      "search_placeholder": "Buscar {{resource}}…"
+    },
+    "confirm": {
+      "delete_title": "¿Eliminar {{name}}?",
+      "delete_description": "Esto elimina permanentemente el registro de {{resource}} del plano de control. Esta acción no se puede deshacer."
+    },
+    "empty": {
+      "no_records": "Aún no hay {{resource}} configurados."
+    },
+    "combobox": {
+      "placeholder": "Buscar pares de Binance…",
+      "search_placeholder": "Escribe para buscar en Binance…",
+      "empty": "No se encontraron pares."
+    }
+  },
+  "backtesting": {
+    "error": {
+      "title": "Error al cargar los backtests",
+      "description": "Uno o más endpoints devolvieron un error. Reintenta o revisa el plano de control."
+    },
+    "filters": {
+      "status": {
+        "ready": "Listo",
+        "partial": "Parcial",
+        "missing": "Falta",
+        "error": "Error",
+        "placeholder": "Todos los estados",
+        "search_placeholder": "Buscar estados…",
+        "trigger_label": "Estado"
+      },
+      "chip_search": "búsqueda \"{{search}}\"",
+      "chip_timeframe": "marco: {{timeframe}}",
+      "chip_strategy": "estrategia: {{strategy}}",
+      "clear_all": "Limpiar todo",
+      "search_placeholder": "Buscar par, estrategia, marco temporal…",
+      "pairs": {
+        "placeholder": "Todos los pares",
+        "search_placeholder": "Buscar pares…",
+        "trigger_label": "Par"
+      },
+      "timeframe": { "placeholder": "Marco temporal", "all": "Todos los marcos temporales" },
+      "strategy": { "placeholder": "Estrategia", "all": "Todas las estrategias" },
+      "remove_filter": "Quitar filtro"
+    },
+    "kpis": {
+      "rows_ready": { "label": "Filas listas ≥ 99%", "hint": "Par × marco temporal × estrategia" },
+      "running": { "label": "En ejecución", "hint": "{{queued}} en cola" },
+      "last_completed": { "label": "Última completada" },
+      "avg_score": { "label": "Puntuación media · últimas {{count}}", "hint": "{{value}} en la mejor ejecución" }
+    }
+  },
+  "execution": {
+    "kpis": {
+      "realized_pnl_label": "PnL realizado (filtrado)",
+      "trades_count_one": "{{count}} operación",
+      "trades_count_other": "{{count}} operaciones",
+      "open_positions_label": "Posiciones abiertas",
+      "recent_trades_label": "Operaciones recientes · {{hours}}h",
+      "win_rate_label": "Tasa de acierto · últimas {{count}}"
+    },
+    "actions": {
+      "promotions": "Promociones"
+    },
+    "errors": {
+      "load_trades_title": "Error al cargar las operaciones",
+      "load_trades_description": "El plano de control devolvió un error. Reintenta o revisa los registros del servidor."
+    }
+  },
+  "overview": {
+    "kpi": {
+      "realized_pnl": "PnL realizado",
+      "trades_24h": "{{count}} operaciones · 24h",
+      "open_positions": "Posiciones abiertas",
+      "closed_today": "{{count}} cerradas hoy",
+      "active_promotions": "Promociones activas",
+      "data_readiness": "Preparación de datos",
+      "pair_timeframe": "{{count}} par×marco temporal"
+    },
+    "health_status": {
+      "healthy": "Saludable",
+      "degraded": "Degradado",
+      "down": "Sin conexión",
+      "unknown": "Desconocido"
+    },
+    "system_health": {
+      "title": "Estado del sistema",
+      "realtime_channel": "Canal en tiempo real",
+      "realtime_hint": "/ws/ops · {{status}}",
+      "control_plane": "Plano de control",
+      "control_plane_hint": "/v1/ops/* responde",
+      "backtest_queue": "Cola de backtests",
+      "queue_depth_one": "{{count}} trabajo pendiente",
+      "queue_depth_other": "{{count}} trabajos pendientes"
+    },
+    "top_performers": {
+      "title": "Mejores resultados",
+      "description": "Ejecuciones con mejor puntuación del último lote",
+      "empty": "Aún no hay ejecuciones completadas."
+    }
+  },
+  "toast": {
+    "config_delete": {
+      "loading": "Eliminando…",
+      "success": "Eliminado",
+      "error": "No se pudo eliminar"
+    },
+    "config_save": {
+      "saving": "Guardando…",
+      "creating": "Creando…",
+      "saved": "Guardado",
+      "created": "Creado",
+      "error": "No se pudo guardar"
     }
   }
 }

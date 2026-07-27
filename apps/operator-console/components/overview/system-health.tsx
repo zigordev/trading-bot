@@ -7,14 +7,15 @@ import { cn } from "@/lib/utils";
 import { useWsStatus } from "@/components/providers/ops-realtime-bridge";
 import { useBacktestsSummary } from "@/lib/hooks/use-backtests-summary";
 import { SectionCard } from "@/components/layout/section-card";
+import { usePreferences } from "@/components/providers/preferences-provider";
 
 type Health = "healthy" | "degraded" | "down" | "unknown";
 
-const HEALTH_TEXT: Record<Health, string> = {
-  healthy: "Healthy",
-  degraded: "Degraded",
-  down: "Offline",
-  unknown: "Unknown",
+const HEALTH_TEXT_KEY: Record<Health, string> = {
+  healthy: "overview.health_status.healthy",
+  degraded: "overview.health_status.degraded",
+  down: "overview.health_status.down",
+  unknown: "overview.health_status.unknown",
 };
 
 const HEALTH_CLASS: Record<Health, string> = {
@@ -35,6 +36,7 @@ function HealthRow({
   status: Health;
   hint?: React.ReactNode;
 }) {
+  const { t } = usePreferences();
   const Icon = status === "healthy" ? CheckCircle2 : AlertCircle;
   return (
     <div className="flex items-center justify-between gap-3 px-1 py-2">
@@ -51,13 +53,14 @@ function HealthRow({
       </div>
       <span className={cn("inline-flex items-center gap-1.5 text-[12px]", HEALTH_CLASS[status])}>
         <Icon className="size-3.5" />
-        {HEALTH_TEXT[status]}
+        {t(HEALTH_TEXT_KEY[status])}
       </span>
     </div>
   );
 }
 
 export function SystemHealth() {
+  const { t } = usePreferences();
   const status = useWsStatus();
   const backtests = useBacktestsSummary();
 
@@ -76,25 +79,32 @@ export function SystemHealth() {
   const queueHealth: Health = queueDepth > 20 ? "degraded" : "healthy";
 
   return (
-    <SectionCard title="System health" padding="default">
+    <SectionCard title={t("overview.system_health.title")} padding="default">
       <div className="divide-y divide-[var(--color-border)]">
         <HealthRow
           icon={<Wifi className="size-4" />}
-          label="Realtime channel"
+          label={t("overview.system_health.realtime_channel")}
           status={wsHealth}
-          hint={`/ws/ops · ${HEALTH_TEXT[wsHealth].toLowerCase()}`}
+          hint={t("overview.system_health.realtime_hint", {
+            status: t(HEALTH_TEXT_KEY[wsHealth]).toLowerCase(),
+          })}
         />
         <HealthRow
           icon={<Cpu className="size-4" />}
-          label="Control plane"
+          label={t("overview.system_health.control_plane")}
           status={cpHealth}
-          hint="/v1/ops/* responding"
+          hint={t("overview.system_health.control_plane_hint")}
         />
         <HealthRow
           icon={<Clock className="size-4" />}
-          label="Backtest queue"
+          label={t("overview.system_health.backtest_queue")}
           status={queueHealth}
-          hint={`${queueDepth} job${queueDepth === 1 ? "" : "s"} pending`}
+          hint={t(
+            queueDepth === 1
+              ? "overview.system_health.queue_depth_one"
+              : "overview.system_health.queue_depth_other",
+            { count: queueDepth },
+          )}
         />
       </div>
     </SectionCard>

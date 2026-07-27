@@ -7,6 +7,7 @@ import type { DateRange } from "react-day-picker";
 import type { SortingState } from "@tanstack/react-table";
 
 import { useTopbarSlot } from "@/components/layout/topbar-slot-context";
+import { usePreferences } from "@/components/providers/preferences-provider";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { ErrorState } from "@/components/shared/error-state";
@@ -81,6 +82,7 @@ export function ExecutionScreen({ mode }: ExecutionScreenProps) {
 
 function ExecutionScreenInner({ mode }: ExecutionScreenProps) {
   const { setTopbarSlot } = useTopbarSlot();
+  const { t } = usePreferences();
   const [search, setSearch] = useStringFilter("q", "");
   const [selectedSymbol, setSelectedSymbol] = useStringFilter("sym", "all");
   const [selectedTimeframe, setSelectedTimeframe] = useStringFilter("tf", "all");
@@ -243,14 +245,14 @@ function ExecutionScreenInner({ mode }: ExecutionScreenProps) {
         <Button asChild variant="outline" size="sm" className="gap-1.5">
           <Link href="/execution/promotions">
             <ExternalLink className="size-3.5" />
-            Promotions
+            {t("execution.actions.promotions")}
           </Link>
         </Button>
       ),
       tabs: <ExecutionModeTabs mode={mode} />,
     });
     return () => setTopbarSlot(null);
-  }, [mode, setTopbarSlot]);
+  }, [mode, setTopbarSlot, t]);
 
   return (
     <>
@@ -306,8 +308,8 @@ function ExecutionScreenInner({ mode }: ExecutionScreenProps) {
 
         {trades.isError ? (
           <ErrorState
-            title="Failed to load trades"
-            description="The control plane returned an error. Retry, or check the server logs."
+            title={t("execution.errors.load_trades_title")}
+            description={t("execution.errors.load_trades_description")}
             onRetry={() => trades.refetch()}
           />
         ) : (

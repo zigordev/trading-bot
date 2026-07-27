@@ -9,6 +9,7 @@ import { useDataReadiness } from "@/lib/hooks/use-data-readiness";
 import { useExecutionSummary } from "@/lib/hooks/use-execution-summary";
 import { KpiTile } from "@/components/shared/kpi-tile";
 import { PairLabel } from "@/components/shared/symbol-avatar";
+import { usePreferences } from "@/components/providers/preferences-provider";
 
 function readinessRatio(items: { kline?: { coveragePercent?: number } | null }[] | undefined): number | null {
   if (!items || items.length === 0) return null;
@@ -25,6 +26,7 @@ function readinessRatio(items: { kline?: { coveragePercent?: number } | null }[]
 }
 
 export function OverviewKpiStrip() {
+  const { t } = usePreferences();
   const execution = useExecutionSummary();
   const backtests = useBacktestsSummary();
   const readiness = useDataReadiness();
@@ -38,22 +40,26 @@ export function OverviewKpiStrip() {
   return (
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
       <KpiTile
-        label="Realized PnL"
+        label={t("overview.kpi.realized_pnl")}
         value={formatUsd(realizedPnl, { signed: true })}
         tone={realizedPnl !== null && realizedPnl >= 0 ? "success" : "danger"}
         loading={execution.isLoading}
-        hint={`${execution.data?.totals.recentTradeCount ?? 0} trades · 24h`}
+        hint={t("overview.kpi.trades_24h", {
+          count: execution.data?.totals.recentTradeCount ?? 0,
+        })}
         icon={<DollarSign className="size-4" />}
       />
       <KpiTile
-        label="Open positions"
+        label={t("overview.kpi.open_positions")}
         value={openPositions.toLocaleString()}
-        hint={`${execution.data?.totals.closedTradeCount ?? 0} closed today`}
+        hint={t("overview.kpi.closed_today", {
+          count: execution.data?.totals.closedTradeCount ?? 0,
+        })}
         loading={execution.isLoading}
         icon={<Activity className="size-4" />}
       />
       <KpiTile
-        label="Active promotions"
+        label={t("overview.kpi.active_promotions")}
         value={activePromotions.toLocaleString()}
         hint={
           execution.data?.activePromotion?.symbolCode ? (
@@ -72,9 +78,11 @@ export function OverviewKpiStrip() {
         spark={recentScores.length > 1 ? recentScores : undefined}
       />
       <KpiTile
-        label="Data readiness"
+        label={t("overview.kpi.data_readiness")}
         value={readinessPct !== null ? formatPercent(readinessPct, { digits: 1 }) : "—"}
-        hint={`${readiness.data?.items.length ?? 0} pair×timeframe`}
+        hint={t("overview.kpi.pair_timeframe", {
+          count: readiness.data?.items.length ?? 0,
+        })}
         tone={
           readinessPct === null
             ? "default"
