@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
@@ -51,6 +52,7 @@ function Brand() {
       tagline="Operator Console"
       shape="square"
       href="/"
+      linkComponent={Link}
     />
   );
 }
@@ -97,6 +99,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       sidebarItems={navItems}
       activeHref={pathname}
       sidebarFooter={<SidebarFooter />}
+      linkComponent={Link}
       topbar={{
         title: slot.title,
         description: slot.description,

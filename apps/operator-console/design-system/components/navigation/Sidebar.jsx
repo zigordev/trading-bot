@@ -1,25 +1,9 @@
 import React from 'react';
-import Link from 'next/link';
 import { injectOnce } from '../_shared/injectStyle.js';
 
-/* Local deviation from the shared v0.1.2 source: swapped the plain <a href>
-   tags for next/link's <Link>. Confirmed in-browser during migration
-   verification that with plain anchors, every Sidebar click was a full
-   browser navigation (window identity itself changed across "clicks"),
-   which unmounts/remounts the entire app on every nav — the exact visible
-   flicker the root-layout AppShell move (see app-shell.tsx) was supposed to
-   fix. Moving AppShell up doesn't help unless the links themselves also do
-   client-side transitions. Since these are copy-pasted per-app files (not
-   an npm package), and this app is Next.js, this is a safe local edit. */
-
 injectOnce('ds-sidebar', `
-/* !important is required here: the aside below sets display:'flex' inline
-   (for its own column layout), and an inline style attribute always beats
-   a class-based rule regardless of specificity, so a plain "display:none"
-   here would silently never apply. Confirmed via computed-style check in
-   the browser during migration verification — v0.1.2 upstream bug, patched
-   locally since this is a copy-pasted (not npm-installed) component. */
-@media (max-width: 1024px) { .ds-sidebar { display: none !important; } }
+.ds-sidebar{display:flex;}
+@media (max-width: 1024px) { .ds-sidebar { display: none; } }
 .ds-sidebar-link:hover:not(.ds-sidebar-link-active){background:var(--ds-color-surface-2);color:var(--ds-color-fg);}
 .ds-sidebar-child:hover:not(.ds-sidebar-child-active){background:var(--ds-color-surface-2);color:var(--ds-color-fg);}
 `);
@@ -28,10 +12,11 @@ function isActive(href, activeHref) {
   return href === activeHref || (href !== '/' && activeHref.startsWith(`${href}/`));
 }
 
-function SidebarItem({ item, activeHref }) {
+function SidebarItem({ item, activeHref, linkComponent }) {
   const active = isActive(item.href, activeHref);
   const hasChildren = item.children && item.children.length > 0;
   const showChildren = hasChildren && active;
+  const Link = linkComponent;
 
   return (
     <div>
@@ -73,12 +58,12 @@ function SidebarItem({ item, activeHref }) {
   );
 }
 
-export function Sidebar({ brand, items, activeHref, footer, className = '', style }) {
+export function Sidebar({ brand, items, activeHref, footer, linkComponent = 'a', className = '', style }) {
   return (
     <aside
       className={`ds-sidebar ${className}`.trim()}
       style={{
-        width: 240, display: 'flex', flexDirection: 'column', height: '100%',
+        width: 240, flexDirection: 'column', height: '100%',
         borderRight: '1px solid var(--ds-color-border)', background: 'var(--ds-color-surface)',
         fontFamily: 'var(--ds-font-sans)', ...style,
       }}
@@ -88,7 +73,7 @@ export function Sidebar({ brand, items, activeHref, footer, className = '', styl
       </div>
       <nav style={{ flex: 1, overflowY: 'auto', padding: '16px 12px', display: 'grid', gap: 4, alignContent: 'start' }}>
         {items.map((item) => (
-          <SidebarItem key={item.href} item={item} activeHref={activeHref} />
+          <SidebarItem key={item.href} item={item} activeHref={activeHref} linkComponent={linkComponent} />
         ))}
       </nav>
       {footer ? (

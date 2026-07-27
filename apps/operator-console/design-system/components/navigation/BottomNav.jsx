@@ -1,11 +1,5 @@
 import React from 'react';
-import Link from 'next/link';
 import { injectOnce } from '../_shared/injectStyle.js';
-
-/* Local deviation from the shared v0.1.2 source: swapped <a href> for
-   next/link's <Link> — see Sidebar.jsx for the full rationale (plain
-   anchors force a hard page reload on every nav, defeating the sticky
-   Topbar/Sidebar's whole purpose). */
 
 injectOnce('ds-bottom-nav', `
 .ds-bottom-nav{display:none;}
@@ -19,7 +13,8 @@ injectOnce('ds-bottom-nav', `
 .ds-bottom-nav-link-active{color:var(--ds-color-accent);font-weight:var(--ds-weight-semibold);}
 `);
 
-export function BottomNav({ items, activeHref, className = '', style }) {
+export function BottomNav({ items, activeHref, linkComponent = 'a', className = '', style }) {
+  const Link = linkComponent;
   return (
     <nav
       className={`ds-bottom-nav ${className}`.trim()}
