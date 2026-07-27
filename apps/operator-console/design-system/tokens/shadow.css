@@ -1,0 +1,7 @@
+:root {
+  --ds-shadow-xs: 0 1px 1px oklch(15% 0.01 264 / 0.04);
+  --ds-shadow-sm: 0 1px 2px oklch(15% 0.01 264 / 0.06), 0 1px 3px oklch(15% 0.01 264 / 0.04);
+  --ds-shadow-md: 0 4px 6px oklch(15% 0.01 264 / 0.05), 0 2px 4px oklch(15% 0.01 264 / 0.04);
+  --ds-shadow-lg: 0 10px 24px oklch(15% 0.01 264 / 0.08), 0 4px 8px oklch(15% 0.01 264 / 0.04);
+  --ds-shadow-xl: 0 24px 48px oklch(15% 0.01 264 / 0.1), 0 8px 16px oklch(15% 0.01 264 / 0.05);
+}

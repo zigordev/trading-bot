@@ -1,0 +1,9 @@
+/* Shared breakpoint where Sidebar hides and BottomNav takes over as primary
+   nav (Topbar's tabs row also uses this to decide contextual vs. mobile-nav
+   content in the consuming app). CSS custom properties can't be read inside
+   @media conditions, so this value is documentation — Sidebar/BottomNav/
+   AppShell hardcode 1024px directly in their injected stylesheets. Keep
+   both in sync if this ever changes. */
+:root {
+  --ds-breakpoint-nav: 1024px;
+}

@@ -2,7 +2,6 @@
 
 import * as React from "react";
 
-import { AppShell } from "@/components/layout/app-shell";
 import { ErrorState } from "@/components/shared/error-state";
 import { useBacktestsSummary } from "@/lib/hooks/use-backtests-summary";
 import { useDataReadiness } from "@/lib/hooks/use-data-readiness";
@@ -154,7 +153,7 @@ function BacktestingPageInner() {
   };
 
   return (
-    <AppShell>
+    <>
       <div className="flex flex-col gap-4">
         <BacktestingKpis rows={rows} loading={isLoading} />
 
@@ -232,7 +231,7 @@ function BacktestingPageInner() {
         }}
         run={selectedRun}
       />
-    </AppShell>
+    </>
   );
 }
 

@@ -6,8 +6,8 @@ import { ExternalLink } from "lucide-react";
 import type { DateRange } from "react-day-picker";
 import type { SortingState } from "@tanstack/react-table";
 
-import { AppShell } from "@/components/layout/app-shell";
-import { PageHeader } from "@/components/layout/page-header";
+import { useTopbarSlot } from "@/components/layout/topbar-slot-context";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { ErrorState } from "@/components/shared/error-state";
 import { useExecutionTrades } from "@/lib/hooks/use-execution-trades";
@@ -39,6 +39,36 @@ interface ExecutionScreenProps {
   mode: "paper" | "live";
 }
 
+const EXECUTION_MODE_TABS: { mode: "paper" | "live"; href: string; label: string }[] = [
+  { mode: "paper", href: "/execution/paper", label: "Paper" },
+  { mode: "live", href: "/execution/live", label: "Live" },
+];
+
+/** Contextual sub-nav for the Execution routes, rendered into Topbar.tabs.
+ * Mirrors Sidebar's Execution > Paper/Live children so the switch is also
+ * reachable below the lg breakpoint, where Sidebar is hidden and BottomNav
+ * only surfaces the 4 top-level destinations. */
+function ExecutionModeTabs({ mode }: { mode: "paper" | "live" }) {
+  return (
+    <>
+      {EXECUTION_MODE_TABS.map((tab) => (
+        <Link
+          key={tab.href}
+          href={tab.href}
+          className={cn(
+            "whitespace-nowrap rounded-[var(--ds-radius-md)] px-3 py-1.5 text-[12px] font-medium transition-colors",
+            mode === tab.mode
+              ? "bg-[var(--ds-color-accent-soft)] text-[var(--ds-color-accent)]"
+              : "text-[var(--ds-color-fg-muted)] hover:bg-[var(--ds-color-surface-2)]",
+          )}
+        >
+          {tab.label}
+        </Link>
+      ))}
+    </>
+  );
+}
+
 export function ExecutionScreen({ mode }: ExecutionScreenProps) {
   return (
     <React.Suspense fallback={null}>
@@ -48,6 +78,7 @@ export function ExecutionScreen({ mode }: ExecutionScreenProps) {
 }
 
 function ExecutionScreenInner({ mode }: ExecutionScreenProps) {
+  const { setTopbarSlot } = useTopbarSlot();
   const [search, setSearch] = useStringFilter("q", "");
   const [selectedSymbol, setSelectedSymbol] = useStringFilter("sym", "all");
   const [selectedTimeframe, setSelectedTimeframe] = useStringFilter("tf", "all");
@@ -204,18 +235,23 @@ function ExecutionScreenInner({ mode }: ExecutionScreenProps) {
     setPageIndex(0);
   };
 
+  React.useEffect(() => {
+    setTopbarSlot({
+      actions: (
+        <Button asChild variant="outline" size="sm" className="gap-1.5">
+          <Link href="/execution/promotions">
+            <ExternalLink className="size-3.5" />
+            Promotions
+          </Link>
+        </Button>
+      ),
+      tabs: <ExecutionModeTabs mode={mode} />,
+    });
+    return () => setTopbarSlot(null);
+  }, [mode, setTopbarSlot]);
+
   return (
-    <AppShell>
-      <PageHeader
-        actions={
-          <Button asChild variant="outline" size="sm" className="gap-1.5">
-            <Link href="/execution/promotions">
-              <ExternalLink className="size-3.5" />
-              Promotions
-            </Link>
-          </Button>
-        }
-      />
+    <>
 
       <div className="flex flex-col gap-4">
         <ExecutionKpis
@@ -297,6 +333,6 @@ function ExecutionScreenInner({ mode }: ExecutionScreenProps) {
         }}
         trade={selectedTrade}
       />
-    </AppShell>
+    </>
   );
 }

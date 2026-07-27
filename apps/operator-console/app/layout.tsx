@@ -7,6 +7,8 @@ import { QueryProvider } from "@/components/providers/query-provider";
 import { OpsRealtimeBridge } from "@/components/providers/ops-realtime-bridge";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
+import { AppShell } from "@/components/layout/app-shell";
+import { TopbarSlotProvider } from "@/components/layout/topbar-slot-context";
 
 import "./globals.css";
 
@@ -33,13 +35,15 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
+    <html lang="en" data-theme="operator-console">
       <body className={`${inter.variable} ${geistMono.variable}`}>
         <NuqsAdapter>
           <QueryProvider>
             <TooltipProvider delayDuration={150}>
               <OpsRealtimeBridge>
-                {children}
+                <TopbarSlotProvider>
+                  <AppShell>{children}</AppShell>
+                </TopbarSlotProvider>
                 <Toaster />
               </OpsRealtimeBridge>
             </TooltipProvider>

@@ -1,6 +1,12 @@
 @import "tailwindcss";
 @plugin "tailwindcss-animate";
 
+/* Shared navigation component library (design-system v0.1.2), copy-pasted in.
+   Defines --ds-* custom properties independent of the --color-* tokens in
+   the @theme block below — no naming conflict. */
+@import "../design-system/styles.css";
+@import "../design-system/themes/operator-console.css";
+
 @theme {
   --color-bg: oklch(99% 0 0);
   --color-surface: oklch(100% 0 0);

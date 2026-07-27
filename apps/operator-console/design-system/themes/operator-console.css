@@ -1,0 +1,23 @@
+/* Example reskin: matches the real "trading-bot" operator console (cool
+   blue accent). Colors only — shape, type, and spacing stay on the shared
+   base tokens from styles.css so every product renders the same component
+   geometry. This app's own color tokens are already oklch — this file is
+   nearly a direct port of apps/operator-console/app/globals.css's palette. */
+:root[data-theme="operator-console"] {
+  --ds-color-bg: oklch(99% 0 0);
+  --ds-color-surface: oklch(100% 0 0);
+  --ds-color-surface-2: oklch(98.5% 0.004 264);
+  --ds-color-surface-3: oklch(96.5% 0.006 264);
+  --ds-color-border: oklch(92% 0.006 264);
+  --ds-color-border-strong: oklch(86% 0.008 264);
+
+  --ds-color-fg: oklch(15% 0.01 264);
+  --ds-color-fg-muted: oklch(44% 0.01 264);
+  --ds-color-fg-subtle: oklch(60% 0.01 264);
+  --ds-color-fg-faint: oklch(72% 0.008 264);
+
+  --ds-color-accent: oklch(50% 0.16 258);
+  --ds-color-accent-hover: oklch(46% 0.17 258);
+  --ds-color-accent-fg: oklch(99% 0 0);
+  --ds-color-accent-soft: oklch(96% 0.03 258);
+}
