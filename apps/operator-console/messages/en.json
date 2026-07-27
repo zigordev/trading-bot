@@ -80,11 +80,17 @@
         "name": "Name",
         "enabled": "Enabled",
         "mode": "Mode",
-        "modeOptions": { "paper": "Paper", "live": "Live" },
+        "modeOptions": {
+          "paper": "Paper",
+          "live": "Live"
+        },
         "autoPromote": "Auto promote",
         "maxPromotions": "Max promotions",
         "replaceOpenPositionPolicy": "Replace open position policy",
-        "policyOptions": { "keep": "Keep existing", "flatten": "Flatten" }
+        "policyOptions": {
+          "keep": "Keep existing",
+          "flatten": "Flatten"
+        }
       }
     },
     "thresholds": {
@@ -152,15 +158,32 @@
         "search_placeholder": "Search pairs…",
         "trigger_label": "Pair"
       },
-      "timeframe": { "placeholder": "Timeframe", "all": "All timeframes" },
-      "strategy": { "placeholder": "Strategy", "all": "All strategies" },
+      "timeframe": {
+        "placeholder": "Timeframe",
+        "all": "All timeframes"
+      },
+      "strategy": {
+        "placeholder": "Strategy",
+        "all": "All strategies"
+      },
       "remove_filter": "Remove filter"
     },
     "kpis": {
-      "rows_ready": { "label": "Rows ready ≥ 99%", "hint": "Pair × timeframe × strategy" },
-      "running": { "label": "Running", "hint": "{{queued}} queued" },
-      "last_completed": { "label": "Last completed" },
-      "avg_score": { "label": "Avg score · last {{count}}", "hint": "{{value}} on top run" }
+      "rows_ready": {
+        "label": "Rows ready ≥ 99%",
+        "hint": "Pair × timeframe × strategy"
+      },
+      "running": {
+        "label": "Running",
+        "hint": "{{queued}} queued"
+      },
+      "last_completed": {
+        "label": "Last completed"
+      },
+      "avg_score": {
+        "label": "Avg score · last {{count}}",
+        "hint": "{{value}} on top run"
+      }
     },
     "table": {
       "column_pair": "Pair",
@@ -438,7 +461,8 @@
     "copy_button": {
       "copy": "Copy",
       "copied": "Copied"
-    }
+    },
+    "close": "Close"
   },
   "data_table": {
     "no_results": "No results.",

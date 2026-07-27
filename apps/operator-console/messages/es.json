@@ -80,11 +80,17 @@
         "name": "Nombre",
         "enabled": "Habilitado",
         "mode": "Modo",
-        "modeOptions": { "paper": "Papel", "live": "En vivo" },
+        "modeOptions": {
+          "paper": "Papel",
+          "live": "En vivo"
+        },
         "autoPromote": "Promoción automática",
         "maxPromotions": "Promociones máximas",
         "replaceOpenPositionPolicy": "Política de reemplazo de posición abierta",
-        "policyOptions": { "keep": "Mantener existente", "flatten": "Cerrar posición" }
+        "policyOptions": {
+          "keep": "Mantener existente",
+          "flatten": "Cerrar posición"
+        }
       }
     },
     "thresholds": {
@@ -152,15 +158,32 @@
         "search_placeholder": "Buscar pares…",
         "trigger_label": "Par"
       },
-      "timeframe": { "placeholder": "Marco temporal", "all": "Todos los marcos temporales" },
-      "strategy": { "placeholder": "Estrategia", "all": "Todas las estrategias" },
+      "timeframe": {
+        "placeholder": "Marco temporal",
+        "all": "Todos los marcos temporales"
+      },
+      "strategy": {
+        "placeholder": "Estrategia",
+        "all": "Todas las estrategias"
+      },
       "remove_filter": "Quitar filtro"
     },
     "kpis": {
-      "rows_ready": { "label": "Filas listas ≥ 99%", "hint": "Par × marco temporal × estrategia" },
-      "running": { "label": "En ejecución", "hint": "{{queued}} en cola" },
-      "last_completed": { "label": "Última completada" },
-      "avg_score": { "label": "Puntuación media · últimas {{count}}", "hint": "{{value}} en la mejor ejecución" }
+      "rows_ready": {
+        "label": "Filas listas ≥ 99%",
+        "hint": "Par × marco temporal × estrategia"
+      },
+      "running": {
+        "label": "En ejecución",
+        "hint": "{{queued}} en cola"
+      },
+      "last_completed": {
+        "label": "Última completada"
+      },
+      "avg_score": {
+        "label": "Puntuación media · últimas {{count}}",
+        "hint": "{{value}} en la mejor ejecución"
+      }
     },
     "table": {
       "column_pair": "Par",
@@ -438,7 +461,8 @@
     "copy_button": {
       "copy": "Copiar",
       "copied": "Copiado"
-    }
+    },
+    "close": "Cerrar"
   },
   "data_table": {
     "no_results": "Sin resultados.",
