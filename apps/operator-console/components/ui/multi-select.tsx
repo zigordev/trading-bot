@@ -19,6 +19,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { usePreferences } from "@/components/providers/preferences-provider";
 
 export interface MultiSelectOption {
   value: string;
@@ -44,14 +45,19 @@ export function MultiSelect({
   options,
   value,
   onChange,
-  placeholder = "Select…",
-  emptyText = "No results.",
-  searchPlaceholder = "Search…",
+  placeholder: providedPlaceholder,
+  emptyText: providedEmptyText,
+  searchPlaceholder: providedSearchPlaceholder,
   maxVisibleBadges = 3,
   className,
   disabled = false,
   triggerLabel,
 }: MultiSelectProps) {
+  const { t } = usePreferences();
+  const placeholder = providedPlaceholder ?? t("ui.multi_select.placeholder");
+  const emptyText = providedEmptyText ?? t("ui.multi_select.empty_text");
+  const searchPlaceholder =
+    providedSearchPlaceholder ?? t("ui.multi_select.search_placeholder");
   const [open, setOpen] = React.useState(false);
 
   const toggle = (next: string) => {
@@ -122,7 +128,7 @@ export function MultiSelect({
                 type="button"
                 onClick={clear}
                 className="rounded-sm p-0.5 text-[var(--color-fg-subtle)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-fg)]"
-                aria-label="Clear selection"
+                aria-label={t("ui.multi_select.clear_selection")}
               >
                 <X className="size-3" />
               </button>

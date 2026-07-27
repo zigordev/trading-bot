@@ -12,6 +12,7 @@ import type { ExecutionTrade } from "@/lib/api";
 import { splitSymbol } from "@/lib/backtesting/derive-rows";
 import { formatPercent, formatPrice, formatTimestamp } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { usePreferences } from "@/components/providers/preferences-provider";
 
 const STATUS_VARIANT: Record<
   ExecutionTrade["status"],
@@ -23,11 +24,11 @@ const STATUS_VARIANT: Record<
   rejected: "danger",
 };
 
-const STATUS_LABEL: Record<ExecutionTrade["status"], string> = {
-  open: "Open",
-  closed: "Closed",
-  cancelled: "Cancelled",
-  rejected: "Rejected",
+const STATUS_LABEL_KEY: Record<ExecutionTrade["status"], string> = {
+  open: "status.trade_status.open",
+  closed: "status.trade_status.closed",
+  cancelled: "status.trade_status.cancelled",
+  rejected: "status.trade_status.rejected",
 };
 
 const SIDE_VARIANT: Record<ExecutionTrade["side"], "success" | "danger"> = {
@@ -60,12 +61,13 @@ export function ExecutionTradesTable({
   onRowSelect,
   toolbar,
 }: ExecutionTradesTableProps) {
+  const { t } = usePreferences();
   const columns = React.useMemo<ColumnDef<ExecutionTrade, unknown>[]>(
     () => [
       {
         id: "symbolCode",
         accessorKey: "symbolCode",
-        header: "Pair",
+        header: t("execution.trades_table.pair_header"),
         meta: { sticky: "left" },
         cell: ({ row }) => {
           const { base, quote } = splitSymbol(row.original.symbolCode);
@@ -85,7 +87,7 @@ export function ExecutionTradesTable({
       {
         id: "side",
         accessorKey: "side",
-        header: "Side",
+        header: t("execution.trades_table.side_header"),
         enableSorting: false,
         cell: ({ row }) => {
           const isLong = row.original.side === "long";
@@ -93,7 +95,7 @@ export function ExecutionTradesTable({
           return (
             <Badge variant={SIDE_VARIANT[row.original.side]} className="gap-1">
               <Icon className="size-3" />
-              {isLong ? "Long" : "Short"}
+              {t(isLong ? "status.trade_side.long" : "status.trade_side.short")}
             </Badge>
           );
         },
@@ -101,7 +103,7 @@ export function ExecutionTradesTable({
       {
         id: "status",
         accessorKey: "status",
-        header: "Status",
+        header: t("execution.trades_table.status_header"),
         enableSorting: false,
         cell: ({ row }) => {
           const status = row.original.status;
@@ -110,7 +112,7 @@ export function ExecutionTradesTable({
           return (
             <Badge variant={STATUS_VARIANT[status]} className="gap-1">
               {Icon ? <Icon className="size-3" /> : null}
-              {STATUS_LABEL[status]}
+              {t(STATUS_LABEL_KEY[status])}
             </Badge>
           );
         },
@@ -118,7 +120,7 @@ export function ExecutionTradesTable({
       {
         id: "strategy",
         accessorKey: "strategyName",
-        header: "Strategy",
+        header: t("execution.trades_table.strategy_header"),
         enableSorting: false,
         meta: { hideOnNarrow: true },
         cell: ({ row }) => (
@@ -130,7 +132,7 @@ export function ExecutionTradesTable({
       {
         id: "openedAt",
         accessorKey: "openedAt",
-        header: "Opened",
+        header: t("execution.trades_table.opened_header"),
         cell: ({ row }) => (
           <span className="num text-[12px] text-[var(--color-fg-muted)]">
             {formatTimestamp(row.original.openedAt, { style: "compact" })}
@@ -140,7 +142,7 @@ export function ExecutionTradesTable({
       {
         id: "closedAt",
         accessorKey: "closedAt",
-        header: "Closed",
+        header: t("execution.trades_table.closed_header"),
         meta: { hideOnNarrow: true },
         cell: ({ row }) =>
           row.original.closedAt ? (
@@ -154,7 +156,7 @@ export function ExecutionTradesTable({
       {
         id: "entryPrice",
         accessorKey: "entryPrice",
-        header: "Entry",
+        header: t("execution.trades_table.entry_header"),
         enableSorting: false,
         meta: { align: "right" },
         cell: ({ row }) => (
@@ -164,7 +166,7 @@ export function ExecutionTradesTable({
       {
         id: "exitPrice",
         accessorKey: "exitPrice",
-        header: "Exit",
+        header: t("execution.trades_table.exit_header"),
         enableSorting: false,
         meta: { align: "right", hideOnNarrow: true },
         cell: ({ row }) =>
@@ -177,7 +179,7 @@ export function ExecutionTradesTable({
       {
         id: "realizedPnlPercent",
         accessorKey: "realizedPnlPercent",
-        header: "PnL %",
+        header: t("execution.trades_table.pnl_percent_header"),
         meta: { align: "right" },
         cell: ({ row }) => {
           const pnl = row.original.realizedPnlPercent;
@@ -211,7 +213,7 @@ export function ExecutionTradesTable({
               event.stopPropagation();
               onRowSelect(row.original);
             }}
-            aria-label="Open trade details"
+            aria-label={t("execution.trades_table.open_details_aria")}
             className="text-[var(--color-fg-subtle)]"
           >
             <ChevronRight />
@@ -219,7 +221,7 @@ export function ExecutionTradesTable({
         ),
       },
     ],
-    [onRowSelect],
+    [onRowSelect, t],
   );
 
   const pageCount = Math.max(1, Math.ceil(totalCount / pageSize));
@@ -241,7 +243,7 @@ export function ExecutionTradesTable({
         onSortingChange,
       }}
       toolbar={toolbar}
-      empty="No trades match the current filters."
+      empty={t("execution.trades_table.empty_state")}
     />
   );
 }

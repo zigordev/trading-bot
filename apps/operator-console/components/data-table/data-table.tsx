@@ -20,6 +20,7 @@ import { ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight } from "luci
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { usePreferences } from "@/components/providers/preferences-provider";
 
 declare module "@tanstack/react-table" {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -86,6 +87,7 @@ export function DataTable<TData>({
   toolbar,
   footer,
 }: DataTableProps<TData>) {
+  const { t } = usePreferences();
   const isPaginationControlled = manualPagination || Boolean(onPaginationChange);
   const [internalPagination, setInternalPagination] = React.useState({
     pageIndex,
@@ -242,7 +244,7 @@ return (
                     colSpan={table.getVisibleLeafColumns().length}
                     className="px-3 py-12 text-center text-[var(--color-fg-subtle)]"
                   >
-                    {empty ?? "No results."}
+                    {empty ?? t("data_table.no_results")}
                   </td>
                 </tr>
               ) : (
@@ -299,6 +301,7 @@ export function DataTablePagination<TData>({
   table,
   pageSizeOptions = [10, 25, 50, 100],
 }: DataTablePaginationProps<TData>) {
+  const { t } = usePreferences();
   const totalRows = table.getFilteredRowModel().rows.length;
   const { pageIndex, pageSize } = table.getState().pagination;
   const start = totalRows === 0 ? 0 : pageIndex * pageSize + 1;
@@ -308,12 +311,16 @@ export function DataTablePagination<TData>({
     <div className="flex flex-wrap items-center justify-between gap-3 px-1 text-[12px] text-[var(--color-fg-subtle)]">
       <div className="num">
         {totalRows > 0
-          ? `${start.toLocaleString()}–${end.toLocaleString()} of ${totalRows.toLocaleString()}`
-          : "No rows"}
+          ? t("data_table.pagination_range", {
+              start: start.toLocaleString(),
+              end: end.toLocaleString(),
+              total: totalRows.toLocaleString(),
+            })
+          : t("data_table.no_rows")}
       </div>
       <div className="flex items-center gap-3">
         <label className="flex items-center gap-2">
-          <span>Rows</span>
+          <span>{t("data_table.rows")}</span>
           <select
             value={pageSize}
             onChange={(event) => table.setPageSize(Number(event.target.value))}

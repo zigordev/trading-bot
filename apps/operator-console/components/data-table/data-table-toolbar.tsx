@@ -14,6 +14,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { usePreferences } from "@/components/providers/preferences-provider";
 
 interface ColumnDescriptor {
   id: string;
@@ -43,6 +44,7 @@ export function DataTableToolbar({
   end,
   className,
 }: DataTableToolbarProps) {
+  const { t } = usePreferences();
   return (
     <div
       className={cn(
@@ -55,7 +57,7 @@ export function DataTableToolbar({
         <div className="relative min-w-[200px] flex-1">
           <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-[var(--color-fg-subtle)]" />
           <Input
-            placeholder={search.placeholder ?? "Search…"}
+            placeholder={search.placeholder ?? t("data_table.search_placeholder")}
             value={search.value}
             onChange={(event) => search.onChange(event.target.value)}
             className="h-9 pl-8"
@@ -73,11 +75,11 @@ export function DataTableToolbar({
                 className="h-8 gap-1.5"
               >
                 <Columns3 className="size-3.5" />
-                Columns
+                {t("data_table.columns")}
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-[200px]">
-              <DropdownMenuLabel>Toggle columns</DropdownMenuLabel>
+              <DropdownMenuLabel>{t("data_table.toggle_columns")}</DropdownMenuLabel>
               <DropdownMenuSeparator />
               {columns.items.map((col) => (
                 <DropdownMenuCheckboxItem

@@ -10,6 +10,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { usePreferences } from "@/components/providers/preferences-provider";
 
 interface CopyButtonProps {
   value: string;
@@ -20,10 +21,13 @@ interface CopyButtonProps {
 
 export function CopyButton({
   value,
-  label = "Copy",
+  label: providedLabel,
   className,
   size = "sm",
 }: CopyButtonProps) {
+  const { t } = usePreferences();
+  const label = providedLabel ?? t("shared.copy_button.copy");
+  const copiedLabel = t("shared.copy_button.copied");
   const [copied, setCopied] = React.useState(false);
 
   const handleCopy = async (event: React.MouseEvent) => {
@@ -45,7 +49,7 @@ export function CopyButton({
           variant="ghost"
           size={size === "sm" ? "icon-sm" : "icon"}
           onClick={handleCopy}
-          aria-label={copied ? "Copied" : label}
+          aria-label={copied ? copiedLabel : label}
           className={cn(
             "text-[var(--color-fg-subtle)] hover:text-[var(--color-fg)]",
             className,
@@ -58,7 +62,7 @@ export function CopyButton({
           )}
         </Button>
       </TooltipTrigger>
-      <TooltipContent>{copied ? "Copied" : label}</TooltipContent>
+      <TooltipContent>{copied ? copiedLabel : label}</TooltipContent>
     </Tooltip>
   );
 }
