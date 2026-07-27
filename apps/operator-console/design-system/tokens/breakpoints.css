@@ -7,3 +7,10 @@
 :root {
   --ds-breakpoint-nav: 1024px;
 }
+
+/* Utility classes for content that must exist on both sides of the nav
+   breakpoint but only render on one — e.g. a contextual sub-nav that's
+   redundant with Sidebar's nested children on desktop, but is the only way
+   to reach that destination on mobile where Sidebar is hidden. */
+@media (min-width: 1025px) { .ds-hide-desktop { display: none !important; } }
+@media (max-width: 1024px) { .ds-hide-mobile { display: none !important; } }

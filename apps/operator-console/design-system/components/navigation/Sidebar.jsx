@@ -63,7 +63,7 @@ export function Sidebar({ brand, items, activeHref, footer, linkComponent = 'a',
     <aside
       className={`ds-sidebar ${className}`.trim()}
       style={{
-        width: 240, flexDirection: 'column', height: '100%',
+        width: 240, flexShrink: 0, flexDirection: 'column',
         borderRight: '1px solid var(--ds-color-border)', background: 'var(--ds-color-surface)',
         fontFamily: 'var(--ds-font-sans)', ...style,
       }}
