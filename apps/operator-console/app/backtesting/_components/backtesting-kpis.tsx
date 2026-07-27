@@ -11,6 +11,7 @@ import {
 import { formatPercent, formatScore, formatTimestamp } from "@/lib/format";
 import type { BacktestRow } from "@/lib/backtesting/types";
 import { KpiTile } from "@/components/shared/kpi-tile";
+import { usePreferences } from "@/components/providers/preferences-provider";
 
 interface BacktestingKpisProps {
   rows: BacktestRow[];
@@ -18,6 +19,7 @@ interface BacktestingKpisProps {
 }
 
 export function BacktestingKpis({ rows, loading }: BacktestingKpisProps) {
+  const { t } = usePreferences();
   const total = rows.length;
   const ready = rows.filter((row) => (row.klineCoverage ?? 0) >= 99).length;
   const running = rows.reduce((sum, row) => sum + row.progress.running, 0);
@@ -57,23 +59,23 @@ export function BacktestingKpis({ rows, loading }: BacktestingKpisProps) {
   return (
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
       <KpiTile
-        label="Rows ready ≥ 99%"
+        label={t("backtesting.kpis.rows_ready.label")}
         value={`${ready}/${total}`}
-        hint="Pair × timeframe × strategy"
+        hint={t("backtesting.kpis.rows_ready.hint")}
         tone={total === 0 ? "default" : ready === total ? "success" : "warning"}
         loading={loading}
         icon={<GaugeCircle className="size-4" />}
       />
       <KpiTile
-        label="Running"
+        label={t("backtesting.kpis.running.label")}
         value={running.toLocaleString()}
-        hint={`${queued} queued`}
+        hint={t("backtesting.kpis.running.hint", { queued })}
         tone={running > 0 ? "accent" : "default"}
         loading={loading}
         icon={<CircleDot className="size-4" />}
       />
       <KpiTile
-        label="Last completed"
+        label={t("backtesting.kpis.last_completed.label")}
         value={
           lastRunRow?.latestRun
             ? formatTimestamp(lastRunRow.latestRun.finishedAt, { style: "relative" })
@@ -88,11 +90,13 @@ export function BacktestingKpis({ rows, loading }: BacktestingKpisProps) {
         icon={<Hourglass className="size-4" />}
       />
       <KpiTile
-        label="Avg score · last 20"
+        label={t("backtesting.kpis.avg_score.label", { count: 20 })}
         value={formatScore(avgScore)}
         hint={
           avgScore !== null && lastRunRow?.latestRun
-            ? `${formatPercent(lastRunRow.latestRun.totalPnlPercent, { signed: true })} on top run`
+            ? t("backtesting.kpis.avg_score.hint", {
+                value: formatPercent(lastRunRow.latestRun.totalPnlPercent, { signed: true }),
+              })
             : undefined
         }
         spark={spark.length > 1 ? spark : undefined}

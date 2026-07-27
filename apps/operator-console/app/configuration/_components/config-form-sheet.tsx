@@ -70,9 +70,14 @@ export function ConfigFormSheet({
     const payload = values as Record<string, unknown>;
     const promise = save.mutateAsync({ payload, id: editingId ?? null });
     toast.promise(promise, {
-      loading: isEdit ? "Saving…" : "Creating…",
-      success: isEdit ? "Saved" : "Created",
-      error: (err) => (err instanceof Error ? err.message : "Failed to save"),
+      loading: isEdit
+        ? t("toast.config_save.saving")
+        : t("toast.config_save.creating"),
+      success: isEdit
+        ? t("toast.config_save.saved")
+        : t("toast.config_save.created"),
+      error: (err) =>
+        err instanceof Error ? err.message : t("toast.config_save.error"),
     });
     try {
       await promise;
@@ -87,7 +92,7 @@ export function ConfigFormSheet({
       open={open}
       onOpenChange={onOpenChange}
       size="md"
-      title={`${isEdit ? "Edit" : "Add"} ${t(resource.labelSingularKey).toLowerCase()}`}
+      title={`${isEdit ? t("configuration.actions.edit") : t("configuration.actions.add")} ${t(resource.labelSingularKey).toLowerCase()}`}
       footer={
         <div className="flex items-center justify-end gap-2">
           <Button
@@ -97,7 +102,7 @@ export function ConfigFormSheet({
             onClick={() => onOpenChange(false)}
             disabled={save.isPending}
           >
-            Cancel
+            {t("configuration.actions.cancel")}
           </Button>
           <Button
             type="button"
@@ -105,7 +110,11 @@ export function ConfigFormSheet({
             onClick={onSubmit}
             disabled={save.isPending}
           >
-            {save.isPending ? "Saving…" : isEdit ? "Save changes" : "Create"}
+            {save.isPending
+              ? t("configuration.actions.saving")
+              : isEdit
+                ? t("configuration.actions.save")
+                : t("configuration.actions.create")}
           </Button>
         </div>
       }
@@ -174,7 +183,7 @@ function FieldControl({ field }: { field: ConfigField }) {
         render={({ field: rhf }) => (
           <Select value={String(rhf.value ?? "")} onValueChange={rhf.onChange}>
             <SelectTrigger id={field.name} className="h-9">
-              <SelectValue placeholder="Select…" />
+              <SelectValue placeholder={t("configuration.actions.select_placeholder")} />
             </SelectTrigger>
             <SelectContent>
               {field.options.map((opt) => (
@@ -223,7 +232,7 @@ function FieldControl({ field }: { field: ConfigField }) {
           <AssetLabel asset={asset} size={18} />
         ) : (
           <span className="text-[var(--color-fg-subtle)]">
-            {field.placeholder ?? "Auto-filled from pair"}
+            {field.placeholder ?? t("configuration.actions.autofilled_placeholder")}
           </span>
         )}
       </div>
@@ -305,6 +314,7 @@ function JsonField({
   placeholder?: string;
 }) {
   const form = useFormContext();
+  const { t } = usePreferences();
   const value = form.watch(name);
   const [text, setText] = React.useState(() =>
     JSON.stringify(value ?? {}, null, 2),
@@ -322,7 +332,9 @@ function JsonField({
       form.setValue(name, parsed, { shouldDirty: true, shouldValidate: true });
       setParseError(null);
     } catch (err) {
-      setParseError(err instanceof Error ? err.message : "Invalid JSON");
+      setParseError(
+        err instanceof Error ? err.message : t("configuration.actions.invalid_json"),
+      );
     }
   };
 

@@ -9,8 +9,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ScoreCell } from "@/components/shared/score-cell";
 import { SymbolAvatar } from "@/components/shared/symbol-avatar";
 import { splitSymbol } from "@/lib/backtesting/derive-rows";
+import { usePreferences } from "@/components/providers/preferences-provider";
 
 export function TopPerformers() {
+  const { t } = usePreferences();
   const { data, isLoading, isError } = useBacktestsSummary();
 
   const top = React.useMemo(() => {
@@ -21,8 +23,8 @@ export function TopPerformers() {
 
   return (
     <SectionCard
-      title="Top performers"
-      description="Highest-scoring runs from the last batch"
+      title={t("overview.top_performers.title")}
+      description={t("overview.top_performers.description")}
       padding="default"
       bodyClassName="p-0"
     >
@@ -34,7 +36,7 @@ export function TopPerformers() {
         </div>
       ) : isError || top.length === 0 ? (
         <p className="px-4 py-8 text-center text-[12px] text-[var(--color-fg-subtle)]">
-          No completed runs yet.
+          {t("overview.top_performers.empty")}
         </p>
       ) : (
         <ul className="divide-y divide-[var(--color-border)]">

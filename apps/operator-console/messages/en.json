@@ -96,6 +96,134 @@
       "maxDrawdownPercentHint": "Largest peak-to-trough drop allowed (lower is stricter).",
       "maxReversalRatio": "Max reversal ratio",
       "maxReversalRatioHint": "Allowed proportion of trades closing on reversal."
+    },
+    "actions": {
+      "add": "Add",
+      "edit": "Edit",
+      "duplicate": "Duplicate",
+      "delete": "Delete",
+      "more_actions": "More actions",
+      "cancel": "Cancel",
+      "save": "Save changes",
+      "saving": "Saving…",
+      "create": "Create",
+      "yes": "Yes",
+      "no": "No",
+      "select_placeholder": "Select…",
+      "autofilled_placeholder": "Auto-filled from pair",
+      "invalid_json": "Invalid JSON",
+      "search_placeholder": "Search {{resource}}…"
+    },
+    "confirm": {
+      "delete_title": "Delete {{name}}?",
+      "delete_description": "This permanently removes the {{resource}} record from the control plane. The action cannot be undone."
+    },
+    "empty": {
+      "no_records": "No {{resource}} configured yet."
+    },
+    "combobox": {
+      "placeholder": "Search Binance pairs…",
+      "search_placeholder": "Type to search Binance…",
+      "empty": "No matching pairs."
+    }
+  },
+  "backtesting": {
+    "error": {
+      "title": "Failed to load backtests",
+      "description": "One or more endpoints returned an error. Retry, or check the control plane."
+    },
+    "filters": {
+      "status": {
+        "ready": "Ready",
+        "partial": "Partial",
+        "missing": "Missing",
+        "error": "Error",
+        "placeholder": "All statuses",
+        "search_placeholder": "Search statuses…",
+        "trigger_label": "Status"
+      },
+      "chip_search": "search \"{{search}}\"",
+      "chip_timeframe": "tf: {{timeframe}}",
+      "chip_strategy": "strategy: {{strategy}}",
+      "clear_all": "Clear all",
+      "search_placeholder": "Search pair, strategy, timeframe…",
+      "pairs": {
+        "placeholder": "All pairs",
+        "search_placeholder": "Search pairs…",
+        "trigger_label": "Pair"
+      },
+      "timeframe": { "placeholder": "Timeframe", "all": "All timeframes" },
+      "strategy": { "placeholder": "Strategy", "all": "All strategies" },
+      "remove_filter": "Remove filter"
+    },
+    "kpis": {
+      "rows_ready": { "label": "Rows ready ≥ 99%", "hint": "Pair × timeframe × strategy" },
+      "running": { "label": "Running", "hint": "{{queued}} queued" },
+      "last_completed": { "label": "Last completed" },
+      "avg_score": { "label": "Avg score · last {{count}}", "hint": "{{value}} on top run" }
+    }
+  },
+  "execution": {
+    "kpis": {
+      "realized_pnl_label": "Realized PnL (filtered)",
+      "trades_count_one": "{{count}} trade",
+      "trades_count_other": "{{count}} trades",
+      "open_positions_label": "Open positions",
+      "recent_trades_label": "Recent trades · {{hours}}h",
+      "win_rate_label": "Win rate · last {{count}}"
+    },
+    "actions": {
+      "promotions": "Promotions"
+    },
+    "errors": {
+      "load_trades_title": "Failed to load trades",
+      "load_trades_description": "The control plane returned an error. Retry, or check the server logs."
+    }
+  },
+  "overview": {
+    "kpi": {
+      "realized_pnl": "Realized PnL",
+      "trades_24h": "{{count}} trades · 24h",
+      "open_positions": "Open positions",
+      "closed_today": "{{count}} closed today",
+      "active_promotions": "Active promotions",
+      "data_readiness": "Data readiness",
+      "pair_timeframe": "{{count}} pair×timeframe"
+    },
+    "health_status": {
+      "healthy": "Healthy",
+      "degraded": "Degraded",
+      "down": "Offline",
+      "unknown": "Unknown"
+    },
+    "system_health": {
+      "title": "System health",
+      "realtime_channel": "Realtime channel",
+      "realtime_hint": "/ws/ops · {{status}}",
+      "control_plane": "Control plane",
+      "control_plane_hint": "/v1/ops/* responding",
+      "backtest_queue": "Backtest queue",
+      "queue_depth_one": "{{count}} job pending",
+      "queue_depth_other": "{{count}} jobs pending"
+    },
+    "top_performers": {
+      "title": "Top performers",
+      "description": "Highest-scoring runs from the last batch",
+      "empty": "No completed runs yet."
+    }
+  },
+  "toast": {
+    "config_delete": {
+      "loading": "Deleting…",
+      "success": "Deleted",
+      "error": "Failed to delete"
+    },
+    "config_save": {
+      "saving": "Saving…",
+      "creating": "Creating…",
+      "saved": "Saved",
+      "created": "Created",
+      "error": "Failed to save"
     }
   }
 }
