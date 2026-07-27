@@ -1,0 +1,101 @@
+{
+  "nav": {
+    "overview": "Resumen",
+    "backtesting": "Backtesting",
+    "execution": "Ejecución",
+    "execution_paper": "Papel",
+    "execution_live": "En vivo",
+    "configuration": "Configuración",
+    "language": "Idioma",
+    "theme": "Tema"
+  },
+  "theme": {
+    "toggle": "Cambiar tema",
+    "light": "Claro",
+    "dark": "Oscuro"
+  },
+  "language": {
+    "english": "Inglés",
+    "spanish": "Español"
+  },
+  "shell": {
+    "control_plane": "Plano de control",
+    "local": "local"
+  },
+  "configuration": {
+    "resources": {
+      "symbols": "Pares",
+      "timeframes": "Marcos temporales",
+      "strategies": "Estrategias",
+      "risk-profiles": "Perfiles de riesgo",
+      "analysis-settings": "Ajustes de análisis",
+      "execution-settings": "Ajustes de ejecución"
+    },
+    "resources_singular": {
+      "symbols": "Par",
+      "timeframes": "Marco temporal",
+      "strategies": "Estrategia",
+      "risk-profiles": "Perfil de riesgo",
+      "analysis-settings": "Ajuste de análisis",
+      "execution-settings": "Ajuste de ejecución"
+    },
+    "fields": {
+      "symbols": {
+        "code": "Par",
+        "baseAsset": "Activo base",
+        "destinationAsset": "Activo destino",
+        "active": "Activo"
+      },
+      "timeframes": {
+        "code": "Código",
+        "longerTimeframeCode": "Código de marco temporal superior",
+        "longerTimeframeMultiplier": "Multiplicador de marco temporal superior",
+        "periodMs": "Periodo (ms)",
+        "active": "Activo"
+      },
+      "strategies": {
+        "name": "Nombre",
+        "description": "Descripción",
+        "activated": "Activada",
+        "kind": "Tipo de estrategia",
+        "promotionThresholds": "Umbrales de promoción",
+        "promotionThresholdsDescription": "Los backtests que cumplan TODOS los umbrales son aptos para promoción automática."
+      },
+      "risk-profiles": {
+        "name": "Nombre",
+        "description": "Descripción",
+        "maximumStopLoss": "Stop loss máximo",
+        "minimumStopLoss": "Stop loss mínimo",
+        "swingGap": "Swing gap",
+        "rrr": "RRR",
+        "enabled": "Habilitado"
+      },
+      "analysis-settings": {
+        "name": "Nombre",
+        "strategyName": "Estrategia",
+        "technicalAnalysisSettings": "Ajustes de análisis técnico",
+        "enabled": "Habilitado"
+      },
+      "execution-settings": {
+        "name": "Nombre",
+        "enabled": "Habilitado",
+        "mode": "Modo",
+        "modeOptions": { "paper": "Papel", "live": "En vivo" },
+        "autoPromote": "Promoción automática",
+        "maxPromotions": "Promociones máximas",
+        "replaceOpenPositionPolicy": "Política de reemplazo de posición abierta",
+        "policyOptions": { "keep": "Mantener existente", "flatten": "Cerrar posición" }
+      }
+    },
+    "thresholds": {
+      "minTradeCount": "Número mínimo de operaciones",
+      "minTradeCountHint": "Operaciones mínimas que debe producir un backtest.",
+      "minTradesPer1000Candles": "Mín. operaciones / 1k velas",
+      "minTradesPer1000CandlesHint": "Densidad: operaciones por cada 1000 velas repetidas.",
+      "maxDrawdownPercent": "Drawdown máximo %",
+      "maxDrawdownPercentHint": "Mayor caída de pico a valle permitida (menor es más estricto).",
+      "maxReversalRatio": "Ratio de reversión máximo",
+      "maxReversalRatioHint": "Proporción permitida de operaciones cerradas por reversión."
+    }
+  }
+}

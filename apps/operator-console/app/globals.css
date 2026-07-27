@@ -69,6 +69,55 @@
   --animate-collapsible-up: collapsible-up 180ms ease-out;
 }
 
+/* Dark mode override. Deliberately unlayered (not inside @theme/@layer) —
+   @theme's output lives in a cascade layer, and an unlayered normal-priority
+   declaration always beats a layered one regardless of source order or
+   selector specificity, so this overrides @theme's registration without
+   needing !important. Only --color-* tokens vary by mode; radius/font/
+   shadow stay the same in both. Semantic (success/warning/danger/info)
+   values are copied verbatim from design-system/tokens/colors.css's own
+   dark block since this app's light values already match it byte-for-byte. */
+:root[data-mode="dark"] {
+  color-scheme: dark;
+
+  --color-bg: oklch(16% 0.008 264);
+  --color-surface: oklch(20% 0.008 264);
+  --color-surface-2: oklch(24% 0.008 264);
+  --color-surface-3: oklch(28% 0.008 264);
+  --color-border: oklch(32% 0.01 264);
+  --color-border-strong: oklch(40% 0.012 264);
+
+  --color-fg: oklch(96% 0.004 264);
+  --color-fg-muted: oklch(74% 0.008 264);
+  --color-fg-subtle: oklch(62% 0.008 264);
+  --color-fg-faint: oklch(50% 0.008 264);
+
+  --color-accent: oklch(68% 0.15 258);
+  --color-accent-hover: oklch(74% 0.14 258);
+  --color-accent-fg: oklch(14% 0.01 258);
+  --color-accent-soft: oklch(30% 0.06 258);
+
+  --color-success: oklch(70% 0.15 155);
+  --color-success-fg: oklch(88% 0.08 155);
+  --color-success-bg: oklch(28% 0.05 155);
+  --color-success-border: oklch(40% 0.08 155);
+
+  --color-warning: oklch(74% 0.14 75);
+  --color-warning-fg: oklch(90% 0.06 85);
+  --color-warning-bg: oklch(30% 0.05 75);
+  --color-warning-border: oklch(42% 0.08 75);
+
+  --color-danger: oklch(68% 0.18 25);
+  --color-danger-fg: oklch(90% 0.06 25);
+  --color-danger-bg: oklch(30% 0.06 25);
+  --color-danger-border: oklch(42% 0.09 25);
+
+  --color-info: oklch(70% 0.13 240);
+  --color-info-fg: oklch(90% 0.05 240);
+  --color-info-bg: oklch(28% 0.05 240);
+  --color-info-border: oklch(40% 0.07 240);
+}
+
 @layer base {
   :root {
     --background: var(--color-bg);

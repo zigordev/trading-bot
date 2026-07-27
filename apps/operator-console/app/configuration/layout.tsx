@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 
 import { cn } from "@/lib/utils";
 import { configResources } from "@/lib/configuration/schemas";
+import { usePreferences } from "@/components/providers/preferences-provider";
 
 /**
  * Resource switching lives in Sidebar's Configuration > [resources] nesting
@@ -21,6 +22,7 @@ export default function ConfigurationLayout({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
+  const { t } = usePreferences();
 
   return (
     <div className="flex flex-col gap-4">
@@ -40,7 +42,7 @@ export default function ConfigurationLayout({
                   : "text-[var(--color-fg-muted)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-fg)]",
               )}
             >
-              {resource.label}
+              {t(resource.labelKey)}
             </Link>
           );
         })}

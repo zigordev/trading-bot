@@ -21,3 +21,23 @@
   --ds-color-accent-fg: oklch(99% 0 0);
   --ds-color-accent-soft: oklch(96% 0.03 258);
 }
+
+:root[data-theme="operator-console"][data-mode="dark"] {
+  color-scheme: dark;
+  --ds-color-bg: oklch(16% 0.008 264);
+  --ds-color-surface: oklch(20% 0.008 264);
+  --ds-color-surface-2: oklch(24% 0.008 264);
+  --ds-color-surface-3: oklch(28% 0.008 264);
+  --ds-color-border: oklch(32% 0.01 264);
+  --ds-color-border-strong: oklch(40% 0.012 264);
+
+  --ds-color-fg: oklch(96% 0.004 264);
+  --ds-color-fg-muted: oklch(74% 0.008 264);
+  --ds-color-fg-subtle: oklch(62% 0.008 264);
+  --ds-color-fg-faint: oklch(50% 0.008 264);
+
+  --ds-color-accent: oklch(68% 0.15 258);
+  --ds-color-accent-hover: oklch(74% 0.14 258);
+  --ds-color-accent-fg: oklch(14% 0.01 258);
+  --ds-color-accent-soft: oklch(30% 0.06 258);
+}

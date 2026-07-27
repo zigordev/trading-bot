@@ -6,6 +6,7 @@ import { notFound, useParams } from "next/navigation";
 import { ErrorState } from "@/components/shared/error-state";
 import { useConfigResource } from "@/lib/hooks/use-config-resource";
 import { configResources } from "@/lib/configuration/schemas";
+import { usePreferences } from "@/components/providers/preferences-provider";
 
 import { ConfigTable } from "../_components/config-table";
 import { ConfigFormSheet } from "../_components/config-form-sheet";
@@ -13,6 +14,7 @@ import { ConfigFormSheet } from "../_components/config-form-sheet";
 export default function ConfigurationResourcePage() {
   const params = useParams<{ resource: string }>();
   const resource = configResources[params.resource];
+  const { t } = usePreferences();
   if (!resource) {
     notFound();
   }
@@ -37,7 +39,7 @@ export default function ConfigurationResourcePage() {
     <>
       {records.isError ? (
         <ErrorState
-          title={`Failed to load ${resource.label.toLowerCase()}`}
+          title={`Failed to load ${t(resource.labelKey).toLowerCase()}`}
           description="The control plane returned an error."
           onRetry={() => records.refetch()}
         />

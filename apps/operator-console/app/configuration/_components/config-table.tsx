@@ -28,6 +28,7 @@ import { DataTableToolbar } from "@/components/data-table/data-table-toolbar";
 import { useDeleteConfigResource } from "@/lib/hooks/use-config-resource";
 import type { ConfigField, ConfigResourceDefinition } from "@/lib/configuration/schemas";
 import { AssetLabel, PairLabel } from "@/components/shared/symbol-avatar";
+import { usePreferences } from "@/components/providers/preferences-provider";
 
 interface ConfigTableProps {
   resource: ConfigResourceDefinition;
@@ -44,8 +45,10 @@ export function ConfigTable({
   onEdit,
   onCreate,
 }: ConfigTableProps) {
+  const { t } = usePreferences();
   const [search, setSearch] = React.useState("");
-  const singularLabel = resource.label.toLowerCase().replace(/s$/, "");
+  const resourceLabel = t(resource.labelKey).toLowerCase();
+  const singularLabel = t(resource.labelSingularKey).toLowerCase();
   const [pendingDelete, setPendingDelete] = React.useState<
     Record<string, unknown> | null
   >(null);
@@ -62,7 +65,7 @@ export function ConfigTable({
         return {
           id: path,
           accessorFn: (row) => readPath(row, path),
-          header: field.label,
+          header: t(field.labelKey),
           cell: ({ row }) => formatValue(field.kind, readPath(row.original, path)),
         };
       }),
@@ -127,7 +130,7 @@ export function ConfigTable({
         ),
       },
     ];
-  }, [resource, onEdit]);
+  }, [resource, onEdit, t]);
 
   return (
     <>
@@ -140,7 +143,7 @@ export function ConfigTable({
         empty={
           <div className="flex flex-col items-center gap-3 py-10">
             <div className="text-[13px] text-[var(--color-fg-subtle)]">
-              No {resource.label.toLowerCase()} configured yet.
+              No {resourceLabel} configured yet.
             </div>
             <Button size="sm" className="gap-1.5" onClick={onCreate}>
               <Plus className="size-3.5" />
@@ -155,7 +158,7 @@ export function ConfigTable({
             search={{
               value: search,
               onChange: setSearch,
-              placeholder: `Search ${resource.label.toLowerCase()}…`,
+              placeholder: `Search ${resourceLabel}…`,
             }}
             end={
               <Button size="sm" className="gap-1.5" onClick={onCreate}>
@@ -183,7 +186,7 @@ export function ConfigTable({
               ?
             </AlertDialogTitle>
             <AlertDialogDescription>
-              This permanently removes the {resource.label.toLowerCase()} record
+              This permanently removes the {resourceLabel} record
               from the control plane. The action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>

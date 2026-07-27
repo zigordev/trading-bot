@@ -15,6 +15,8 @@ import { Logo } from "@/design-system/components/navigation/Logo.jsx";
 import type { AppShellNavItem } from "@/design-system/components/navigation/AppShell";
 import { WsStatusDot } from "@/components/shared/ws-status-dot";
 import { useTopbarSlot } from "@/components/layout/topbar-slot-context";
+import { usePreferences, type Translate } from "@/components/providers/preferences-provider";
+import { ThemeButton, LanguageButton } from "@/components/layout/topbar-utilities";
 import { configResources } from "@/lib/configuration/schemas";
 
 /**
@@ -24,45 +26,51 @@ import { configResources } from "@/lib/configuration/schemas";
  * items that have an icon) both read from this list. Configuration's
  * resources (Pairs/Timeframes/Strategies/...) are nested here directly
  * rather than living in a separate in-page nav (configuration/layout.tsx),
- * matching Execution's Paper/Live pattern.
+ * matching Execution's Paper/Live pattern. Built as a function (not a
+ * module-level constant) since labels now come from t() — a plain constant
+ * would be evaluated once at import, before PreferencesProvider mounts.
  */
-export const navItems: AppShellNavItem[] = [
-  { href: "/", label: "Overview", icon: <LayoutDashboard className="size-4" aria-hidden /> },
-  { href: "/backtesting", label: "Backtesting", icon: <History className="size-4" aria-hidden /> },
-  {
-    href: "/execution",
-    label: "Execution",
-    icon: <LineChart className="size-4" aria-hidden />,
-    children: [
-      { href: "/execution/paper", label: "Paper" },
-      { href: "/execution/live", label: "Live" },
-    ],
-  },
-  {
-    href: "/configuration",
-    label: "Configuration",
-    icon: <Settings className="size-4" aria-hidden />,
-    children: Object.values(configResources).map((resource) => ({
-      href: `/configuration/${resource.key}`,
-      label: resource.label,
-    })),
-  },
-];
+function getNavItems(t: Translate): AppShellNavItem[] {
+  return [
+    { href: "/", label: t("nav.overview"), icon: <LayoutDashboard className="size-4" aria-hidden /> },
+    { href: "/backtesting", label: t("nav.backtesting"), icon: <History className="size-4" aria-hidden /> },
+    {
+      href: "/execution",
+      label: t("nav.execution"),
+      icon: <LineChart className="size-4" aria-hidden />,
+      children: [
+        { href: "/execution/paper", label: t("nav.execution_paper") },
+        { href: "/execution/live", label: t("nav.execution_live") },
+      ],
+    },
+    {
+      href: "/configuration",
+      label: t("nav.configuration"),
+      icon: <Settings className="size-4" aria-hidden />,
+      children: Object.values(configResources).map((resource) => ({
+        href: `/configuration/${resource.key}`,
+        label: t(resource.labelKey),
+      })),
+    },
+  ];
+}
 
 function Brand() {
   return (
-    // size stays at the default "md": Logo only renders `tagline` at
-    // size="lg" (documented in Logo.d.ts), but at "lg" the mark grows to
-    // 64px against the Sidebar/Topbar's fixed 56px header row and visibly
-    // clips (confirmed in-browser: getBoundingClientRect() top -4.5px,
-    // cut off by the viewport edge). Keeping the tagline prop here is a
-    // no-op today (never renders below "lg") but is left in place in case
-    // a future Logo revision or a taller header makes it safe to show.
+    // size="sm" matches kini/gpool's nav brand exactly (their default "md"
+    // was an uncoordinated per-migration choice, not a deliberate size —
+    // see design-system's Logo.d.ts SIZES: sm=34px, md=48px, lg=64px).
+    // "lg" is out regardless: its mark grows to 64px against the
+    // Sidebar/Topbar's fixed 56px header row and visibly clips (confirmed
+    // in-browser: getBoundingClientRect() top -4.5px, cut off by the
+    // viewport edge). `tagline` is a no-op below "lg" but left in place in
+    // case a future Logo revision or taller header makes it safe to show.
     <Logo
       mark={<LineChart className="size-4" aria-hidden />}
       wordmark="Trading Bot"
       tagline="Operator Console"
       shape="circle"
+      size="sm"
       href="/"
       linkComponent={Link}
     />
@@ -70,10 +78,11 @@ function Brand() {
 }
 
 function SidebarFooter() {
+  const { t } = usePreferences();
   return (
     <div>
       <div className="text-[11px] leading-tight text-[var(--ds-color-fg-subtle)]">
-        Control plane
+        {t("shell.control_plane")}
       </div>
       <div className="truncate font-mono text-[11px] text-[var(--ds-color-fg-muted)]">
         {process.env.NEXT_PUBLIC_CONTROL_PLANE_BASE_URL ?? "http://localhost:3020"}
@@ -83,13 +92,16 @@ function SidebarFooter() {
 }
 
 function TopbarUtilities() {
+  const { t } = usePreferences();
   return (
     <div className="flex items-center gap-3">
       <WsStatusDot />
       <div className="hidden items-center gap-2 rounded-[var(--ds-radius-md)] border border-[var(--ds-color-border)] px-2.5 py-1 text-[11px] text-[var(--ds-color-fg-muted)] md:flex">
         <span className="size-1.5 rounded-full bg-[var(--ds-color-success)]" />
-        <span>local</span>
+        <span>{t("shell.local")}</span>
       </div>
+      <ThemeButton />
+      <LanguageButton />
     </div>
   );
 }
@@ -104,11 +116,12 @@ function TopbarUtilities() {
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const { slot } = useTopbarSlot();
+  const { t } = usePreferences();
 
   return (
     <DsAppShell
       brand={<Brand />}
-      sidebarItems={navItems}
+      sidebarItems={getNavItems(t)}
       activeHref={pathname}
       sidebarFooter={<SidebarFooter />}
       linkComponent={Link}
