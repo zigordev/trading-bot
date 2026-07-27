@@ -7,6 +7,14 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { configResources } from "@/lib/configuration/schemas";
 
+/**
+ * Resource switching lives in Sidebar's Configuration > [resources] nesting
+ * (see components/layout/app-shell.tsx) on desktop. The `nav` below is a
+ * mobile-only fallback (`ds-hide-desktop`) — Sidebar is hidden below the
+ * lg breakpoint and BottomNav only surfaces top-level destinations, so this
+ * is the only way to switch resources on a small screen. Mirrors the same
+ * pattern used for Execution's Paper/Live switch.
+ */
 export default function ConfigurationLayout({
   children,
 }: {
@@ -15,33 +23,27 @@ export default function ConfigurationLayout({
   const pathname = usePathname();
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[220px_minmax(0,1fr)]">
-      <nav className="lg:sticky lg:top-[72px] lg:self-start">
-        <p className="mb-2 px-2 text-[11px] font-semibold uppercase tracking-wide text-[var(--color-fg-subtle)]">
-          Resources
-        </p>
-        <ul className="flex flex-col gap-1">
-          {Object.values(configResources).map((resource) => {
-            const href = `/configuration/${resource.key}`;
-            const active =
-              pathname === href || pathname.startsWith(`${href}/`);
-            return (
-              <li key={resource.key}>
-                <Link
-                  href={href}
-                  className={cn(
-                    "block rounded-[var(--radius-md)] px-3 py-2 text-[13px] transition-colors",
-                    active
-                      ? "bg-[var(--color-accent-soft)] text-[var(--color-accent)]"
-                      : "text-[var(--color-fg-muted)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-fg)]",
-                  )}
-                >
-                  {resource.label}
-                </Link>
-              </li>
-            );
-          })}
-        </ul>
+    <div className="flex flex-col gap-4">
+      <nav className="ds-hide-desktop flex flex-wrap gap-1">
+        {Object.values(configResources).map((resource) => {
+          const href = `/configuration/${resource.key}`;
+          const active =
+            pathname === href || pathname.startsWith(`${href}/`);
+          return (
+            <Link
+              key={resource.key}
+              href={href}
+              className={cn(
+                "rounded-[var(--radius-md)] px-3 py-1.5 text-[12px] font-medium transition-colors",
+                active
+                  ? "bg-[var(--color-accent-soft)] text-[var(--color-accent)]"
+                  : "text-[var(--color-fg-muted)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-fg)]",
+              )}
+            >
+              {resource.label}
+            </Link>
+          );
+        })}
       </nav>
       <div className="min-w-0">{children}</div>
     </div>

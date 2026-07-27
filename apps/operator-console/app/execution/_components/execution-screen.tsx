@@ -47,10 +47,12 @@ const EXECUTION_MODE_TABS: { mode: "paper" | "live"; href: string; label: string
 /** Contextual sub-nav for the Execution routes, rendered into Topbar.tabs.
  * Mirrors Sidebar's Execution > Paper/Live children so the switch is also
  * reachable below the lg breakpoint, where Sidebar is hidden and BottomNav
- * only surfaces the 4 top-level destinations. */
+ * only surfaces the 4 top-level destinations. Wrapped in `ds-hide-desktop`
+ * so it doesn't duplicate Sidebar's own Paper/Live nesting on desktop —
+ * mobile-only fallback, not a second nav. */
 function ExecutionModeTabs({ mode }: { mode: "paper" | "live" }) {
   return (
-    <>
+    <div className="ds-hide-desktop flex items-center gap-2">
       {EXECUTION_MODE_TABS.map((tab) => (
         <Link
           key={tab.href}
@@ -65,7 +67,7 @@ function ExecutionModeTabs({ mode }: { mode: "paper" | "live" }) {
           {tab.label}
         </Link>
       ))}
-    </>
+    </div>
   );
 }
 

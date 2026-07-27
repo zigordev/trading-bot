@@ -15,12 +15,16 @@ import { Logo } from "@/design-system/components/navigation/Logo.jsx";
 import type { AppShellNavItem } from "@/design-system/components/navigation/AppShell";
 import { WsStatusDot } from "@/components/shared/ws-status-dot";
 import { useTopbarSlot } from "@/components/layout/topbar-slot-context";
+import { configResources } from "@/lib/configuration/schemas";
 
 /**
  * Single source of truth for primary navigation — previously byte-duplicated
  * across the old sidebar.tsx and topbar.tsx. `Sidebar` (desktop) and
  * `BottomNav` (mobile, via AppShell's automatic derivation of the first 5
- * items that have an icon) both read from this list.
+ * items that have an icon) both read from this list. Configuration's
+ * resources (Pairs/Timeframes/Strategies/...) are nested here directly
+ * rather than living in a separate in-page nav (configuration/layout.tsx),
+ * matching Execution's Paper/Live pattern.
  */
 export const navItems: AppShellNavItem[] = [
   { href: "/", label: "Overview", icon: <LayoutDashboard className="size-4" aria-hidden /> },
@@ -34,7 +38,15 @@ export const navItems: AppShellNavItem[] = [
       { href: "/execution/live", label: "Live" },
     ],
   },
-  { href: "/configuration", label: "Configuration", icon: <Settings className="size-4" aria-hidden /> },
+  {
+    href: "/configuration",
+    label: "Configuration",
+    icon: <Settings className="size-4" aria-hidden />,
+    children: Object.values(configResources).map((resource) => ({
+      href: `/configuration/${resource.key}`,
+      label: resource.label,
+    })),
+  },
 ];
 
 function Brand() {
@@ -50,7 +62,7 @@ function Brand() {
       mark={<LineChart className="size-4" aria-hidden />}
       wordmark="Trading Bot"
       tagline="Operator Console"
-      shape="square"
+      shape="circle"
       href="/"
       linkComponent={Link}
     />
