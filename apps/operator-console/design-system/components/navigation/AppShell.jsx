@@ -5,6 +5,7 @@ import { Topbar } from './Topbar.jsx';
 import { BottomNav } from './BottomNav.jsx';
 
 injectOnce('ds-app-shell', `
+.ds-app-shell-main { padding-bottom: var(--ds-space-6); }
 @media (max-width: 1024px) {
   .ds-app-shell-main--with-bottom-nav { padding-bottom: calc(var(--ds-space-16) + var(--ds-space-6)); }
 }
@@ -25,6 +26,7 @@ export function AppShell({
   sidebarFooter,
   topbar = {},
   hasSidebar = true,
+  linkComponent = 'a',
   children,
   className = '',
   style,
@@ -34,18 +36,18 @@ export function AppShell({
   return (
     <div className={`ds-app-shell ${className}`.trim()} style={{ display: 'flex', minHeight: '100vh', background: 'var(--ds-color-bg)', ...style }}>
       {hasSidebar ? (
-        <Sidebar brand={brand} items={sidebarItems} activeHref={activeHref} footer={sidebarFooter} />
+        <Sidebar brand={brand} items={sidebarItems} activeHref={activeHref} footer={sidebarFooter} linkComponent={linkComponent} />
       ) : null}
       <div style={{ display: 'flex', flexDirection: 'column', flex: '1 1 auto', minWidth: 0 }}>
         <Topbar brand={brand} hideBrandOnDesktop={hasSidebar} {...topbar} />
         <main
-          className={bottomItems.length ? 'ds-app-shell-main--with-bottom-nav' : ''}
-          style={{ flex: '1 1 auto', padding: 'var(--ds-space-6)' }}
+          className={`ds-app-shell-main ${bottomItems.length ? 'ds-app-shell-main--with-bottom-nav' : ''}`.trim()}
+          style={{ flex: '1 1 auto', paddingTop: 'var(--ds-space-6)', paddingRight: 'var(--ds-space-6)', paddingLeft: 'var(--ds-space-6)' }}
         >
           {children}
         </main>
       </div>
-      {bottomItems.length ? <BottomNav items={bottomItems} activeHref={activeHref} /> : null}
+      {bottomItems.length ? <BottomNav items={bottomItems} activeHref={activeHref} linkComponent={linkComponent} /> : null}
     </div>
   );
 }

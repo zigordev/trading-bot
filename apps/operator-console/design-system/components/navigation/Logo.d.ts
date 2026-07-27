@@ -11,6 +11,9 @@ export interface LogoProps {
   size?: 'sm' | 'md' | 'lg';
   shape?: 'circle' | 'square';
   href?: string;
+  /** Component/tag used when `href` is set. Default 'a'. Pass your router's
+   * Link for client-side navigation instead of a full page reload. */
+  linkComponent?: React.ElementType;
   className?: string;
   style?: React.CSSProperties;
 }

@@ -34,6 +34,10 @@ export interface AppShellProps {
   topbar?: AppShellTopbarSlots;
   /** Default true. All three products use a sidebar after the nav unification. */
   hasSidebar?: boolean;
+  /** Forwarded to Sidebar/BottomNav. Default 'a'. Pass your router's Link
+   * (next/link, react-router's Link, etc.) for client-side navigation instead
+   * of a full page reload — the framework-agnostic default is a plain anchor. */
+  linkComponent?: React.ElementType;
   children: React.ReactNode;
   className?: string;
   style?: React.CSSProperties;

@@ -1,9 +1,4 @@
 import React from 'react';
-import Link from 'next/link';
-
-/* Local deviation from the shared v0.1.2 source: when `href` is set, render
-   next/link's <Link> instead of a plain <a>. See Sidebar.jsx for the full
-   rationale (plain anchors force a hard page reload on every nav). */
 
 const SIZES = {
   sm: { mark: 34, font: '0.9rem', wordmark: '0.9375rem' },
@@ -19,18 +14,22 @@ export function Logo({
   size = 'md',
   shape = 'circle',
   href,
+  linkComponent = 'a',
   className = '',
   style,
 }) {
   const dim = SIZES[size] ?? SIZES.md;
-  const wrapperStyle = {
-    display: 'inline-flex', alignItems: 'center', gap: 'var(--ds-space-3)',
-    textDecoration: 'none', color: 'inherit', ...style,
-  };
-  const wrapperClassName = `ds-logo ${className}`.trim();
+  const Tag = href ? linkComponent : 'span';
 
-  const content = (
-    <>
+  return (
+    <Tag
+      href={href}
+      className={`ds-logo ${className}`.trim()}
+      style={{
+        display: 'inline-flex', alignItems: 'center', gap: 'var(--ds-space-3)',
+        textDecoration: 'none', color: 'inherit', ...style,
+      }}
+    >
       <span
         aria-hidden="true"
         style={{
@@ -67,20 +66,6 @@ export function Logo({
           ) : null}
         </span>
       ) : null}
-    </>
-  );
-
-  if (href) {
-    return (
-      <Link href={href} className={wrapperClassName} style={wrapperStyle}>
-        {content}
-      </Link>
-    );
-  }
-
-  return (
-    <span className={wrapperClassName} style={wrapperStyle}>
-      {content}
-    </span>
+    </Tag>
   );
 }
