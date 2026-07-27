@@ -5,8 +5,7 @@ import Link from "next/link";
 import { ArrowLeft, ChevronRight } from "lucide-react";
 import type { ColumnDef } from "@tanstack/react-table";
 
-import { AppShell } from "@/components/layout/app-shell";
-import { PageHeader } from "@/components/layout/page-header";
+import { useTopbarSlot } from "@/components/layout/topbar-slot-context";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ErrorState } from "@/components/shared/error-state";
@@ -29,6 +28,7 @@ export default function PromotionsPage() {
 }
 
 function PromotionsPageInner() {
+  const { setTopbarSlot } = useTopbarSlot();
   const summary = useExecutionSummary();
   const [filter, setFilter] = useEnumState(
     "view",
@@ -36,6 +36,31 @@ function PromotionsPageInner() {
     "active",
   );
   const [selectedId, setSelectedId] = useSelectedRow();
+
+  React.useEffect(() => {
+    setTopbarSlot({
+      title: "Promotions",
+      actions: (
+        <Button asChild variant="outline" size="sm" className="gap-1.5">
+          <Link href="/execution">
+            <ArrowLeft className="size-3.5" />
+            Back to trades
+          </Link>
+        </Button>
+      ),
+      meta: (
+        <div className="inline-flex rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] p-0.5">
+          <FilterButton active={filter === "active"} onClick={() => setFilter("active")}>
+            Active
+          </FilterButton>
+          <FilterButton active={filter === "all"} onClick={() => setFilter("all")}>
+            All history
+          </FilterButton>
+        </div>
+      ),
+    });
+    return () => setTopbarSlot(null);
+  }, [filter, setFilter, setTopbarSlot]);
 
   const promotions = React.useMemo(() => {
     const list = summary.data?.activePromotions ?? [];
@@ -178,32 +203,7 @@ function PromotionsPageInner() {
   );
 
   return (
-    <AppShell>
-      <PageHeader
-        title="Promotions"
-        actions={
-          <Button asChild variant="outline" size="sm" className="gap-1.5">
-            <Link href="/execution">
-              <ArrowLeft className="size-3.5" />
-              Back to trades
-            </Link>
-          </Button>
-        }
-        meta={
-          <div className="inline-flex rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] p-0.5">
-            <FilterButton
-              active={filter === "active"}
-              onClick={() => setFilter("active")}
-            >
-              Active
-            </FilterButton>
-            <FilterButton active={filter === "all"} onClick={() => setFilter("all")}>
-              All history
-            </FilterButton>
-          </div>
-        }
-      />
-
+    <>
       {summary.isError ? (
         <ErrorState
           title="Failed to load promotions"
@@ -295,7 +295,7 @@ function PromotionsPageInner() {
           </div>
         )}
       </DetailSheet>
-    </AppShell>
+    </>
   );
 }
 
