@@ -161,6 +161,84 @@
       "running": { "label": "En ejecución", "hint": "{{queued}} en cola" },
       "last_completed": { "label": "Última completada" },
       "avg_score": { "label": "Puntuación media · últimas {{count}}", "hint": "{{value}} en la mejor ejecución" }
+    },
+    "table": {
+      "column_pair": "Par",
+      "column_timeframe": "TF",
+      "column_strategy": "Estrategia",
+      "column_klines": "Klines",
+      "column_trades": "Operaciones",
+      "column_progress": "Progreso",
+      "column_score": "Puntuación",
+      "kline_coverage_hover_title": "Cobertura de klines por marco temporal",
+      "more_actions": "Más acciones",
+      "view_details": "Ver detalles",
+      "empty": "Ningún backtest coincide con los filtros actuales."
+    },
+    "detail": {
+      "footer_last_run": "Última ejecución {{time}}",
+      "footer_no_runs": "Aún no hay ejecuciones completadas",
+      "promote_paper": "Promover a paper",
+      "promote_paper_tooltip": "El endpoint de promoción aún no está conectado — la promoción automática se ejecuta en el servidor.",
+      "promote_live": "Promover a real",
+      "promote_live_tooltip": "La promoción a real está detrás de un feature flag del plano de control.",
+      "tab_summary": "Resumen",
+      "tab_runs": "Ejecuciones",
+      "tab_thresholds": "Umbrales",
+      "tab_readiness": "Preparación",
+      "latest_run_highlights": "Aspectos destacados de la última ejecución",
+      "thresholds_empty": "Aún no hay ejecuciones completadas para evaluar los umbrales.",
+      "thresholds_not_configured_prefix": "No hay umbrales de promoción configurados para la estrategia",
+      "thresholds_not_configured_suffix": ".",
+      "stat_status": "Estado",
+      "stat_latest_score": "Última puntuación",
+      "stat_kline_coverage": "Cobertura de klines",
+      "stat_job_progress": "Progreso del trabajo",
+      "stat_total_pnl": "PnL total",
+      "stat_equity_pnl": "PnL de equity",
+      "stat_drawdown": "Drawdown",
+      "stat_reversal_ratio": "Ratio de reversión",
+      "stat_trades": "Operaciones",
+      "stat_signals": "Señales",
+      "stat_score": "Puntuación",
+      "stat_finished": "Finalizado",
+      "stat_backtest_duration": "Duración del backtest",
+      "stat_data_fetch": "Obtención de datos",
+      "stat_replay_klines": "Klines de repetición",
+      "runs_empty": "No hay ejecuciones recientes disponibles para esta fila.",
+      "runs_list_score": "puntuación {{score}}",
+      "runs_list_summary_one": "PnL {{pnl}} · {{count}} operación",
+      "runs_list_summary_other": "PnL {{pnl}} · {{count}} operaciones",
+      "readiness_klines_heading": "Klines",
+      "readiness_no_klines": "No se reportaron datos de klines.",
+      "readiness_trades_heading": "Operaciones",
+      "readiness_no_trades": "No se reportaron datos de operaciones.",
+      "run_sheet_title": "Ejecución de backtest",
+      "trade_outcomes_heading": "Resultados de operaciones",
+      "tag_stop_loss": "Stop loss",
+      "tag_take_profit": "Take profit",
+      "tag_reversal": "Reversión",
+      "tag_window_end": "Fin de ventana",
+      "timing_heading": "Tiempos",
+      "identifiers_heading": "Identificadores",
+      "identifier_backtest_id": "ID de backtest",
+      "identifier_analysis_setting": "Configuración de análisis"
+    },
+    "heatmap": {
+      "day_sun": "Dom",
+      "day_mon": "Lun",
+      "day_tue": "Mar",
+      "day_wed": "Mié",
+      "day_thu": "Jue",
+      "day_fri": "Vie",
+      "day_sat": "Sáb",
+      "heading": "Mapa de calor de horarios de entrada",
+      "legend_negative": "Negativo",
+      "legend_thin": "Escaso",
+      "legend_favorable": "Favorable",
+      "empty": "No hay análisis de horarios disponible para esta ejecución.",
+      "tooltip_with_trades": "{{label}}\nOperaciones: {{tradeCount}}\nTasa de acierto: {{winRate}}%\nExpectativa: {{expectancy}}\nPnL promedio: {{avgPnl}}",
+      "tooltip_no_trades": "{{label}}\nSin operaciones"
     }
   },
   "execution": {
@@ -178,6 +256,96 @@
     "errors": {
       "load_trades_title": "Error al cargar las operaciones",
       "load_trades_description": "El plano de control devolvió un error. Reintenta o revisa los registros del servidor."
+    },
+    "filters": {
+      "search_chip": "buscar \"{{query}}\"",
+      "timeframe_chip": "tf: {{timeframe}}",
+      "strategy_chip": "estrategia: {{strategy}}",
+      "side_chip": "lado: {{side}}",
+      "opened_range_chip": "apertura: rango",
+      "clear_all": "Limpiar todo",
+      "search_placeholder": "Buscar par, estrategia, ID de orden…",
+      "pair_placeholder": "Par",
+      "all_pairs": "Todos los pares",
+      "timeframe_placeholder": "Marco temporal",
+      "all_timeframes": "Todos los TF",
+      "strategy_placeholder": "Estrategia",
+      "all_strategies": "Todas las estrategias",
+      "side_placeholder": "Lado",
+      "any_side": "Cualquier lado",
+      "all_statuses_placeholder": "Todos los estados",
+      "search_statuses_placeholder": "Buscar estados…",
+      "status_trigger_label": "Estado",
+      "opened_range_placeholder": "Rango de apertura",
+      "remove_filter_aria": "Quitar filtro"
+    },
+    "trades_table": {
+      "pair_header": "Par",
+      "side_header": "Lado",
+      "status_header": "Estado",
+      "strategy_header": "Estrategia",
+      "opened_header": "Apertura",
+      "closed_header": "Cierre",
+      "entry_header": "Entrada",
+      "exit_header": "Salida",
+      "pnl_percent_header": "PnL %",
+      "open_details_aria": "Abrir detalles de la operación",
+      "empty_state": "Ninguna operación coincide con los filtros actuales."
+    },
+    "trade_detail": {
+      "section_performance": "Rendimiento",
+      "section_prices": "Precios",
+      "section_timing": "Tiempos",
+      "section_references": "Referencias",
+      "realized_pnl_percent": "PnL realizado %",
+      "realized_pnl_usd": "PnL realizado $",
+      "fees": "Comisiones",
+      "notional": "Nocional",
+      "quantity": "Cantidad",
+      "duration": "Duración",
+      "entry": "Entrada",
+      "exit": "Salida",
+      "stop_loss": "Stop loss",
+      "take_profit": "Take profit",
+      "opened": "Apertura",
+      "closed": "Cierre",
+      "close_reason": "Motivo de cierre",
+      "execution_settings": "Configuración de ejecución",
+      "trade_id": "ID de operación",
+      "external_order_id": "ID de orden externa",
+      "position_id": "ID de posición",
+      "analysis_setting": "Configuración de análisis",
+      "source_backtest": "Backtest de origen",
+      "risk_profile": "Perfil de riesgo"
+    },
+    "promotions": {
+      "title": "Promociones",
+      "back_to_trades": "Volver a operaciones",
+      "filter_active": "Activas",
+      "filter_all_history": "Todo el historial",
+      "pair_header": "Par",
+      "strategy_header": "Estrategia",
+      "mode_header": "Modo",
+      "status_header": "Estado",
+      "status_active": "Activa",
+      "status_superseded": "Reemplazada",
+      "execution_settings_header": "Configuración de ejecución",
+      "risk_profile_header": "Perfil de riesgo",
+      "selection_header": "Selección",
+      "promoted_header": "Promovida",
+      "open_details_aria": "Abrir detalles de la promoción",
+      "error_title": "Error al cargar las promociones",
+      "error_description": "El endpoint de resumen de ejecución devolvió un error.",
+      "empty_state": "Todavía no hay promociones.",
+      "detail_title_fallback": "Promoción",
+      "selection_value": "Valor de selección",
+      "promoted_at": "Promovida el",
+      "execution_settings": "Configuración de ejecución",
+      "risk_profile": "Perfil de riesgo",
+      "identifiers_section": "Identificadores",
+      "promotion_id": "ID de promoción",
+      "analysis_setting": "Configuración de análisis",
+      "source_backtest": "Backtest de origen"
     }
   },
   "overview": {
@@ -210,6 +378,25 @@
       "title": "Mejores resultados",
       "description": "Ejecuciones con mejor puntuación del último lote",
       "empty": "Aún no hay ejecuciones completadas."
+    },
+    "activity_feed": {
+      "title": "Actividad",
+      "description": "Transmisión de operaciones en vivo",
+      "empty_title": "Esperando eventos",
+      "empty_description": "La actividad de /ws/ops aparecerá aquí a medida que ocurra.",
+      "type_backtests": "Backtests",
+      "type_execution": "Ejecución",
+      "type_data": "Datos",
+      "type_config": "Configuración",
+      "summary_refresh": "actualización de resumen",
+      "readiness_refresh": "actualización de disponibilidad"
+    },
+    "equity_curve": {
+      "title": "Curva de capital",
+      "description": "PnL realizado acumulado en las operaciones recientes",
+      "failed_to_load": "Error al cargar",
+      "empty": "Aún no hay operaciones cerradas",
+      "tooltip_label": "Capital"
     }
   },
   "toast": {
@@ -224,6 +411,83 @@
       "saved": "Guardado",
       "created": "Creado",
       "error": "No se pudo guardar"
+    }
+  },
+  "shared": {
+    "error_state": {
+      "default_title": "Algo salió mal",
+      "retry": "Reintentar"
+    },
+    "ws_status_dot": {
+      "connected": "Conectado",
+      "disconnected": "Desconectado",
+      "connecting": "Conectando"
+    },
+    "metric_gate": {
+      "pass": "aprobado",
+      "fail": "fallido",
+      "na": "n/d",
+      "target_prefix": "objetivo"
+    },
+    "readiness_bar": {
+      "ready": "Listo",
+      "partial": "Parcial",
+      "missing": "Faltante",
+      "error": "Error"
+    },
+    "copy_button": {
+      "copy": "Copiar",
+      "copied": "Copiado"
+    }
+  },
+  "data_table": {
+    "no_results": "Sin resultados.",
+    "no_rows": "Sin filas",
+    "pagination_range": "{{start}}–{{end}} de {{total}}",
+    "rows": "Filas",
+    "search_placeholder": "Buscar…",
+    "columns": "Columnas",
+    "toggle_columns": "Mostrar/ocultar columnas"
+  },
+  "ui": {
+    "combobox": {
+      "placeholder": "Seleccionar…",
+      "search_placeholder": "Buscar…",
+      "empty_text": "Sin resultados.",
+      "clear_selection": "Borrar selección",
+      "loading": "Cargando…"
+    },
+    "multi_select": {
+      "placeholder": "Seleccionar…",
+      "empty_text": "Sin resultados.",
+      "search_placeholder": "Buscar…",
+      "clear_selection": "Borrar selección"
+    },
+    "date_range_picker": {
+      "placeholder": "Elegir un rango",
+      "preset_24h": "Últimas 24h",
+      "preset_7d": "Últimos 7d",
+      "preset_30d": "Últimos 30d",
+      "preset_90d": "Últimos 90d",
+      "quick_ranges": "Rangos rápidos",
+      "clear": "Borrar",
+      "clear_date_range": "Borrar rango de fechas"
+    }
+  },
+  "status": {
+    "trade_status": {
+      "open": "Abierta",
+      "closed": "Cerrada",
+      "cancelled": "Cancelada",
+      "rejected": "Rechazada"
+    },
+    "trade_side": {
+      "long": "Largo",
+      "short": "Corto"
+    },
+    "trade_mode": {
+      "live": "En vivo",
+      "paper": "Simulado"
     }
   }
 }

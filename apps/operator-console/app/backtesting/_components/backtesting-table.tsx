@@ -24,6 +24,7 @@ import { ReadinessBar } from "@/components/shared/readiness-bar";
 import { ScoreCell } from "@/components/shared/score-cell";
 import { SymbolAvatar } from "@/components/shared/symbol-avatar";
 import type { BacktestRow } from "@/lib/backtesting/types";
+import { usePreferences } from "@/components/providers/preferences-provider";
 
 interface BacktestingTableProps {
   rows: BacktestRow[];
@@ -46,12 +47,13 @@ export function BacktestingTable({
   onRowSelect,
   toolbar,
 }: BacktestingTableProps) {
+  const { t } = usePreferences();
   const columns = React.useMemo<ColumnDef<BacktestRow, unknown>[]>(
     () => [
       {
         id: "symbol",
         accessorKey: "symbol",
-        header: "Pair",
+        header: t("backtesting.table.column_pair"),
         meta: { sticky: "left" },
         cell: ({ row }) => (
           <div className="flex items-center gap-2">
@@ -67,13 +69,13 @@ export function BacktestingTable({
       {
         id: "timeframe",
         accessorKey: "timeframeCode",
-        header: "TF",
+        header: t("backtesting.table.column_timeframe"),
         meta: { align: "right", cellClassName: "font-mono text-[12px]" },
       },
       {
         id: "strategy",
         accessorKey: "strategyName",
-        header: "Strategy",
+        header: t("backtesting.table.column_strategy"),
         cell: ({ row }) => (
           <span className="text-[12px] text-[var(--color-fg-muted)]">
             {row.original.strategyName}
@@ -83,7 +85,7 @@ export function BacktestingTable({
       {
         id: "kline",
         accessorFn: (row) => row.klineCoverage ?? 0,
-        header: "Klines",
+        header: t("backtesting.table.column_klines"),
         meta: { hideOnNarrow: true },
         cell: ({ row }) => {
           const coverage = row.original.klineCoverage;
@@ -102,7 +104,7 @@ export function BacktestingTable({
                 </HoverCardTrigger>
                 <HoverCardContent align="start" className="w-72">
                   <p className="mb-2 text-[12px] font-medium text-[var(--color-fg)]">
-                    Per-timeframe kline coverage
+                    {t("backtesting.table.kline_coverage_hover_title")}
                   </p>
                   <ul className="space-y-1.5">
                     {row.original.readiness?.klineDimensions?.map((dim) => (
@@ -135,7 +137,7 @@ export function BacktestingTable({
       {
         id: "trades",
         accessorFn: (row) => row.tradesCoverage ?? 0,
-        header: "Trades",
+        header: t("backtesting.table.column_trades"),
         meta: { hideOnNarrow: true },
         cell: ({ row }) => {
           const coverage = row.original.tradesCoverage;
@@ -154,7 +156,7 @@ export function BacktestingTable({
       {
         id: "progress",
         accessorFn: (row) => row.progress.progressPercent,
-        header: "Progress",
+        header: t("backtesting.table.column_progress"),
         cell: ({ row }) => (
           <ProgressCell
             total={row.original.progress.total}
@@ -168,7 +170,7 @@ export function BacktestingTable({
       {
         id: "score",
         accessorFn: (row) => row.latestRun?.score ?? 0,
-        header: "Score",
+        header: t("backtesting.table.column_score"),
         meta: { align: "right" },
         cell: ({ row }) => (
           <ScoreCell value={row.original.latestRun?.score ?? null} history={row.original.scoreHistory} />
@@ -188,7 +190,7 @@ export function BacktestingTable({
                   variant="ghost"
                   size="icon-sm"
                   onClick={(event) => event.stopPropagation()}
-                  aria-label="More actions"
+                  aria-label={t("backtesting.table.more_actions")}
                   className="text-[var(--color-fg-subtle)]"
                 >
                   <MoreHorizontal />
@@ -199,7 +201,7 @@ export function BacktestingTable({
                 onClick={(event) => event.stopPropagation()}
               >
                 <DropdownMenuItem onSelect={() => onRowSelect(row.original)}>
-                  View details
+                  {t("backtesting.table.view_details")}
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -207,7 +209,7 @@ export function BacktestingTable({
         ),
       },
     ],
-    [onRowSelect],
+    [onRowSelect, t],
   );
 
   return (
@@ -225,7 +227,7 @@ export function BacktestingTable({
         onColumnVisibilityChange,
       }}
       toolbar={toolbar}
-      empty="No backtests match the current filters."
+      empty={t("backtesting.table.empty")}
       pageSize={25}
     />
   );

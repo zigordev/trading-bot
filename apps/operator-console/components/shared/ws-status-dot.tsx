@@ -2,15 +2,17 @@
 
 import { useWsStatus } from "@/components/providers/ops-realtime-bridge";
 import { cn } from "@/lib/utils";
+import { usePreferences } from "@/components/providers/preferences-provider";
 
 export function WsStatusDot() {
+  const { t } = usePreferences();
   const status = useWsStatus();
   const label =
     status === "open"
-      ? "Connected"
+      ? t("shared.ws_status_dot.connected")
       : status === "closed"
-        ? "Disconnected"
-        : "Connecting";
+        ? t("shared.ws_status_dot.disconnected")
+        : t("shared.ws_status_dot.connecting");
 
   return (
     <div className="flex items-center gap-2 text-[11px] text-[var(--color-fg-muted)]">

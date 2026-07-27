@@ -10,6 +10,7 @@ import { IdCell } from "@/components/shared/id-cell";
 import { ScoreCell } from "@/components/shared/score-cell";
 import { SymbolAvatar } from "@/components/shared/symbol-avatar";
 import { splitSymbol } from "@/lib/backtesting/derive-rows";
+import { usePreferences } from "@/components/providers/preferences-provider";
 
 interface RunDetailSheetProps {
   open: boolean;
@@ -18,6 +19,7 @@ interface RunDetailSheetProps {
 }
 
 export function RunDetailSheet({ open, onOpenChange, run }: RunDetailSheetProps) {
+  const { t } = usePreferences();
   if (!run) return null;
   const { base, quote } = splitSymbol(run.symbol);
   return (
@@ -29,7 +31,7 @@ export function RunDetailSheet({ open, onOpenChange, run }: RunDetailSheetProps)
         <div className="flex items-center gap-2">
           <SymbolAvatar baseAsset={base} quoteAsset={quote} size={24} />
           <div>
-            <div className="text-[14px]">Backtest run</div>
+            <div className="text-[14px]">{t("backtesting.detail.run_sheet_title")}</div>
             <div className="mt-0.5 text-[12px] font-normal text-[var(--color-fg-muted)]">
               {run.symbol} · {run.timeframeCode} · {run.strategyName}
             </div>
@@ -39,23 +41,32 @@ export function RunDetailSheet({ open, onOpenChange, run }: RunDetailSheetProps)
     >
       <div className="space-y-4">
         <div className="grid grid-cols-2 gap-3">
-          <Stat label="Score" value={<ScoreCell value={run.score} />} />
-          <Stat label="Total PnL" value={<NumColored value={run.totalPnlPercent} suffix="%" signed />} />
-          <Stat label="Equity PnL" value={<NumColored value={run.equityCurvePnlPercent} suffix="%" signed />} />
-          <Stat label="Drawdown" value={<NumColored value={run.maxDrawdownPercent} suffix="%" />} />
-          <Stat label="Trades" value={run.tradeCount.toLocaleString()} />
-          <Stat label="Reversal ratio" value={run.reversalRatio.toFixed(2)} />
+          <Stat label={t("backtesting.detail.stat_score")} value={<ScoreCell value={run.score} />} />
+          <Stat
+            label={t("backtesting.detail.stat_total_pnl")}
+            value={<NumColored value={run.totalPnlPercent} suffix="%" signed />}
+          />
+          <Stat
+            label={t("backtesting.detail.stat_equity_pnl")}
+            value={<NumColored value={run.equityCurvePnlPercent} suffix="%" signed />}
+          />
+          <Stat
+            label={t("backtesting.detail.stat_drawdown")}
+            value={<NumColored value={run.maxDrawdownPercent} suffix="%" />}
+          />
+          <Stat label={t("backtesting.detail.stat_trades")} value={run.tradeCount.toLocaleString()} />
+          <Stat label={t("backtesting.detail.stat_reversal_ratio")} value={run.reversalRatio.toFixed(2)} />
         </div>
 
         <div className="space-y-2">
           <h3 className="text-[11px] font-medium uppercase tracking-wide text-[var(--color-fg-subtle)]">
-            Trade outcomes
+            {t("backtesting.detail.trade_outcomes_heading")}
           </h3>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <Tag label="Stop loss" value={run.stopLossTradeCount} tone="danger" />
-            <Tag label="Take profit" value={run.takeProfitTradeCount} tone="success" />
-            <Tag label="Reversal" value={run.reversalTradeCount} tone="warning" />
-            <Tag label="Window end" value={run.windowEndTradeCount} tone="default" />
+            <Tag label={t("backtesting.detail.tag_stop_loss")} value={run.stopLossTradeCount} tone="danger" />
+            <Tag label={t("backtesting.detail.tag_take_profit")} value={run.takeProfitTradeCount} tone="success" />
+            <Tag label={t("backtesting.detail.tag_reversal")} value={run.reversalTradeCount} tone="warning" />
+            <Tag label={t("backtesting.detail.tag_window_end")} value={run.windowEndTradeCount} tone="default" />
           </div>
         </div>
 
@@ -63,23 +74,38 @@ export function RunDetailSheet({ open, onOpenChange, run }: RunDetailSheetProps)
 
         <div className="space-y-2">
           <h3 className="text-[11px] font-medium uppercase tracking-wide text-[var(--color-fg-subtle)]">
-            Timing
+            {t("backtesting.detail.timing_heading")}
           </h3>
           <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-[12px]">
-            <Stat label="Finished" value={formatTimestamp(run.finishedAt, { style: "full" })} />
-            <Stat label="Backtest duration" value={formatDuration(run.backtestDurationMs)} />
-            <Stat label="Data fetch" value={formatDuration(run.dataRetrievalDurationMs)} />
-            <Stat label="Replay klines" value={run.replayKlineCount.toLocaleString()} />
+            <Stat
+              label={t("backtesting.detail.stat_finished")}
+              value={formatTimestamp(run.finishedAt, { style: "full" })}
+            />
+            <Stat
+              label={t("backtesting.detail.stat_backtest_duration")}
+              value={formatDuration(run.backtestDurationMs)}
+            />
+            <Stat
+              label={t("backtesting.detail.stat_data_fetch")}
+              value={formatDuration(run.dataRetrievalDurationMs)}
+            />
+            <Stat
+              label={t("backtesting.detail.stat_replay_klines")}
+              value={run.replayKlineCount.toLocaleString()}
+            />
           </dl>
         </div>
 
         <div className="space-y-2">
           <h3 className="text-[11px] font-medium uppercase tracking-wide text-[var(--color-fg-subtle)]">
-            Identifiers
+            {t("backtesting.detail.identifiers_heading")}
           </h3>
           <dl className="space-y-2 text-[12px]">
-            <Identifier label="Backtest ID" value={run.backtestId} />
-            <Identifier label="Analysis setting" value={run.analysisSettingId} />
+            <Identifier label={t("backtesting.detail.identifier_backtest_id")} value={run.backtestId} />
+            <Identifier
+              label={t("backtesting.detail.identifier_analysis_setting")}
+              value={run.analysisSettingId}
+            />
           </dl>
         </div>
       </div>
@@ -87,9 +113,19 @@ export function RunDetailSheet({ open, onOpenChange, run }: RunDetailSheetProps)
   );
 }
 
-const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const DAY_LABEL_KEYS = [
+  "backtesting.heatmap.day_sun",
+  "backtesting.heatmap.day_mon",
+  "backtesting.heatmap.day_tue",
+  "backtesting.heatmap.day_wed",
+  "backtesting.heatmap.day_thu",
+  "backtesting.heatmap.day_fri",
+  "backtesting.heatmap.day_sat",
+];
 
 function TimeslotHeatmap({ buckets }: { buckets: TimeslotAnalysisBucket[] }) {
+  const { t } = usePreferences();
+  const dayLabels = React.useMemo(() => DAY_LABEL_KEYS.map((key) => t(key)), [t]);
   const bucketBySlot = React.useMemo(() => {
     const map = new Map<string, TimeslotAnalysisBucket>();
     for (const bucket of buckets) {
@@ -103,17 +139,17 @@ function TimeslotHeatmap({ buckets }: { buckets: TimeslotAnalysisBucket[] }) {
     <div className="space-y-2">
       <div className="flex items-center justify-between gap-3">
         <h3 className="text-[11px] font-medium uppercase tracking-wide text-[var(--color-fg-subtle)]">
-          Entry timeslot heatmap
+          {t("backtesting.heatmap.heading")}
         </h3>
         <div className="flex items-center gap-2 text-[11px] text-[var(--color-fg-subtle)]">
-          <LegendSwatch className="bg-[var(--color-danger-bg)]" label="Negative" />
-          <LegendSwatch className="bg-[var(--color-warning-bg)]" label="Thin" />
-          <LegendSwatch className="bg-[var(--color-success-bg)]" label="Favorable" />
+          <LegendSwatch className="bg-[var(--color-danger-bg)]" label={t("backtesting.heatmap.legend_negative")} />
+          <LegendSwatch className="bg-[var(--color-warning-bg)]" label={t("backtesting.heatmap.legend_thin")} />
+          <LegendSwatch className="bg-[var(--color-success-bg)]" label={t("backtesting.heatmap.legend_favorable")} />
         </div>
       </div>
       {!hasTrades ? (
         <div className="rounded-[var(--radius-md)] border border-[var(--color-border)] px-3 py-2 text-[12px] text-[var(--color-fg-muted)]">
-          No timeslot analysis available for this run.
+          {t("backtesting.heatmap.empty")}
         </div>
       ) : (
         <div className="overflow-x-auto rounded-[var(--radius-md)] border border-[var(--color-border)] p-3">
@@ -133,7 +169,7 @@ function TimeslotHeatmap({ buckets }: { buckets: TimeslotAnalysisBucket[] }) {
                   {hour}
                 </div>
               ))}
-              {DAY_LABELS.map((day, dayIndex) => (
+              {dayLabels.map((day, dayIndex) => (
                 <React.Fragment key={day}>
                   <div className="flex h-7 items-center text-[11px] text-[var(--color-fg-subtle)]">
                     {day}
@@ -165,10 +201,17 @@ function TimeslotCell({
   bucket: TimeslotAnalysisBucket | undefined;
   label: string;
 }) {
+  const { t } = usePreferences();
   const tradeCount = bucket?.tradeCount ?? 0;
   const title = bucket
-    ? `${label}\nTrades: ${tradeCount}\nWin rate: ${(bucket.winRate * 100).toFixed(1)}%\nExpectancy: ${formatPercent(bucket.expectancyPercent, { signed: true, digits: 2 })}\nAverage PnL: ${formatPercent(bucket.averagePnlPercent, { signed: true, digits: 2 })}`
-    : `${label}\nNo trades`;
+    ? t("backtesting.heatmap.tooltip_with_trades", {
+        label,
+        tradeCount,
+        winRate: (bucket.winRate * 100).toFixed(1),
+        expectancy: formatPercent(bucket.expectancyPercent, { signed: true, digits: 2 }),
+        avgPnl: formatPercent(bucket.averagePnlPercent, { signed: true, digits: 2 }),
+      })
+    : t("backtesting.heatmap.tooltip_no_trades", { label });
   const colorClass =
     tradeCount === 0
       ? "bg-[var(--color-surface-3)]"

@@ -15,8 +15,10 @@ import { useExecutionSummary } from "@/lib/hooks/use-execution-summary";
 import { formatTimestamp, formatUsd } from "@/lib/format";
 import { SectionCard } from "@/components/layout/section-card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { usePreferences } from "@/components/providers/preferences-provider";
 
 export function EquityCurve() {
+  const { t } = usePreferences();
   const { data, isLoading, isError } = useExecutionSummary();
 
   const points = React.useMemo(() => {
@@ -39,15 +41,17 @@ export function EquityCurve() {
 
   return (
     <SectionCard
-      title="Equity curve"
-      description="Cumulative realized PnL over recent trades"
+      title={t("overview.equity_curve.title")}
+      description={t("overview.equity_curve.description")}
       padding="default"
     >
       {isLoading ? (
         <Skeleton className="h-56 w-full" />
       ) : isError || points.length === 0 ? (
         <div className="flex h-56 items-center justify-center text-[12px] text-[var(--color-fg-subtle)]">
-          {isError ? "Failed to load" : "No closed trades yet"}
+          {isError
+            ? t("overview.equity_curve.failed_to_load")
+            : t("overview.equity_curve.empty")}
         </div>
       ) : (
         <div className="h-56 w-full">
@@ -88,7 +92,10 @@ export function EquityCurve() {
                 labelFormatter={(value) =>
                   formatTimestamp(value as number, { style: "full" })
                 }
-                formatter={(value: number) => [formatUsd(value, { signed: true }), "Equity"]}
+                formatter={(value: number) => [
+                  formatUsd(value, { signed: true }),
+                  t("overview.equity_curve.tooltip_label"),
+                ]}
               />
               <Area
                 type="monotone"

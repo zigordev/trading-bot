@@ -18,6 +18,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { usePreferences } from "@/components/providers/preferences-provider";
 
 export interface ComboboxOption {
   value: string;
@@ -44,15 +45,20 @@ export function Combobox({
   options,
   value,
   onChange,
-  placeholder = "Select…",
-  searchPlaceholder = "Search…",
-  emptyText = "No results.",
+  placeholder: providedPlaceholder,
+  searchPlaceholder: providedSearchPlaceholder,
+  emptyText: providedEmptyText,
   onSearch,
   loading = false,
   allowClear = true,
   disabled = false,
   className,
 }: ComboboxProps) {
+  const { t } = usePreferences();
+  const placeholder = providedPlaceholder ?? t("ui.combobox.placeholder");
+  const searchPlaceholder =
+    providedSearchPlaceholder ?? t("ui.combobox.search_placeholder");
+  const emptyText = providedEmptyText ?? t("ui.combobox.empty_text");
   const [open, setOpen] = React.useState(false);
   const [query, setQuery] = React.useState("");
   const selected = options.find((o) => o.value === value) ?? null;
@@ -97,7 +103,7 @@ export function Combobox({
                 type="button"
                 onClick={clear}
                 className="rounded-sm p-0.5 text-[var(--color-fg-subtle)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-fg)]"
-                aria-label="Clear selection"
+                aria-label={t("ui.combobox.clear_selection")}
               >
                 <X className="size-3" />
               </button>
@@ -121,7 +127,7 @@ export function Combobox({
             {loading ? (
               <div className="flex items-center justify-center gap-2 py-6 text-[12px] text-[var(--color-fg-subtle)]">
                 <Loader2 className="size-3.5 animate-spin" />
-                Loading…
+                {t("ui.combobox.loading")}
               </div>
             ) : (
               <>

@@ -4,6 +4,7 @@ import * as React from "react";
 
 import { cn } from "@/lib/utils";
 import { formatPercent } from "@/lib/format";
+import { usePreferences } from "@/components/providers/preferences-provider";
 
 export type ReadinessStatus = "ready" | "partial" | "missing" | "error";
 
@@ -30,11 +31,11 @@ const STATUS_COLOR: Record<ReadinessStatus, string> = {
   error: "bg-[var(--color-danger)]",
 };
 
-const STATUS_LABEL: Record<ReadinessStatus, string> = {
-  ready: "Ready",
-  partial: "Partial",
-  missing: "Missing",
-  error: "Error",
+const STATUS_TEXT_KEY: Record<ReadinessStatus, string> = {
+  ready: "shared.readiness_bar.ready",
+  partial: "shared.readiness_bar.partial",
+  missing: "shared.readiness_bar.missing",
+  error: "shared.readiness_bar.error",
 };
 
 export function ReadinessBar({
@@ -45,6 +46,7 @@ export function ReadinessBar({
   className,
   showLabel = true,
 }: ReadinessBarProps) {
+  const { t } = usePreferences();
   const pct = ratio ?? 0;
   return (
     <div className={cn("flex min-w-[120px] flex-col gap-1", className)}>
@@ -71,7 +73,7 @@ export function ReadinessBar({
           <span className="num">
             {ratio !== null && ratio !== undefined
               ? formatPercent(ratio * 100, { digits: 1 })
-              : STATUS_LABEL[status]}
+              : t(STATUS_TEXT_KEY[status])}
           </span>
           {typeof rowCount === "number" && (
             <span className="num">{rowCount.toLocaleString()}</span>
