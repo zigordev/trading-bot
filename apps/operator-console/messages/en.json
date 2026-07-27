@@ -1,0 +1,101 @@
+{
+  "nav": {
+    "overview": "Overview",
+    "backtesting": "Backtesting",
+    "execution": "Execution",
+    "execution_paper": "Paper",
+    "execution_live": "Live",
+    "configuration": "Configuration",
+    "language": "Language",
+    "theme": "Theme"
+  },
+  "theme": {
+    "toggle": "Toggle theme",
+    "light": "Light",
+    "dark": "Dark"
+  },
+  "language": {
+    "english": "English",
+    "spanish": "Spanish"
+  },
+  "shell": {
+    "control_plane": "Control plane",
+    "local": "local"
+  },
+  "configuration": {
+    "resources": {
+      "symbols": "Pairs",
+      "timeframes": "Timeframes",
+      "strategies": "Strategies",
+      "risk-profiles": "Risk profiles",
+      "analysis-settings": "Analysis settings",
+      "execution-settings": "Execution settings"
+    },
+    "resources_singular": {
+      "symbols": "Pair",
+      "timeframes": "Timeframe",
+      "strategies": "Strategy",
+      "risk-profiles": "Risk profile",
+      "analysis-settings": "Analysis setting",
+      "execution-settings": "Execution setting"
+    },
+    "fields": {
+      "symbols": {
+        "code": "Pair",
+        "baseAsset": "Base asset",
+        "destinationAsset": "Destination asset",
+        "active": "Active"
+      },
+      "timeframes": {
+        "code": "Code",
+        "longerTimeframeCode": "Longer timeframe code",
+        "longerTimeframeMultiplier": "Longer timeframe multiplier",
+        "periodMs": "Period (ms)",
+        "active": "Active"
+      },
+      "strategies": {
+        "name": "Name",
+        "description": "Description",
+        "activated": "Activated",
+        "kind": "Strategy kind",
+        "promotionThresholds": "Promotion thresholds",
+        "promotionThresholdsDescription": "Backtests that meet ALL thresholds are eligible for automatic promotion."
+      },
+      "risk-profiles": {
+        "name": "Name",
+        "description": "Description",
+        "maximumStopLoss": "Maximum stop loss",
+        "minimumStopLoss": "Minimum stop loss",
+        "swingGap": "Swing gap",
+        "rrr": "RRR",
+        "enabled": "Enabled"
+      },
+      "analysis-settings": {
+        "name": "Name",
+        "strategyName": "Strategy",
+        "technicalAnalysisSettings": "Technical analysis settings",
+        "enabled": "Enabled"
+      },
+      "execution-settings": {
+        "name": "Name",
+        "enabled": "Enabled",
+        "mode": "Mode",
+        "modeOptions": { "paper": "Paper", "live": "Live" },
+        "autoPromote": "Auto promote",
+        "maxPromotions": "Max promotions",
+        "replaceOpenPositionPolicy": "Replace open position policy",
+        "policyOptions": { "keep": "Keep existing", "flatten": "Flatten" }
+      }
+    },
+    "thresholds": {
+      "minTradeCount": "Min trade count",
+      "minTradeCountHint": "Minimum trades a backtest must produce.",
+      "minTradesPer1000Candles": "Min trades / 1k candles",
+      "minTradesPer1000CandlesHint": "Density: trades per 1000 replayed candles.",
+      "maxDrawdownPercent": "Max drawdown %",
+      "maxDrawdownPercentHint": "Largest peak-to-trough drop allowed (lower is stricter).",
+      "maxReversalRatio": "Max reversal ratio",
+      "maxReversalRatioHint": "Allowed proportion of trades closing on reversal."
+    }
+  }
+}
