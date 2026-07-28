@@ -17,12 +17,13 @@ import { StickyFiltersBar } from "@/components/layout/sticky-filters-bar";
 import { SymbolAvatar } from "@/components/shared/symbol-avatar";
 import { splitSymbol } from "@/lib/backtesting/derive-rows";
 import type { RowStatus } from "@/lib/backtesting/types";
+import { usePreferences } from "@/components/providers/preferences-provider";
 
-const STATUS_OPTIONS: { value: RowStatus; label: string }[] = [
-  { value: "ready", label: "Ready" },
-  { value: "partial", label: "Partial" },
-  { value: "missing", label: "Missing" },
-  { value: "error", label: "Error" },
+const STATUS_OPTIONS: { value: RowStatus; labelKey: string }[] = [
+  { value: "ready", labelKey: "backtesting.filters.status.ready" },
+  { value: "partial", labelKey: "backtesting.filters.status.partial" },
+  { value: "missing", labelKey: "backtesting.filters.status.missing" },
+  { value: "error", labelKey: "backtesting.filters.status.error" },
 ];
 
 interface BacktestingFiltersProps {
@@ -69,6 +70,7 @@ export function BacktestingFilters({
   hasActiveFilters,
   topOffset,
 }: BacktestingFiltersProps) {
+  const { t } = usePreferences();
   const symbolOptions: MultiSelectOption[] = symbols.map((symbol) => {
     const { base, quote } = splitSymbol(symbol);
     return {
@@ -79,15 +81,18 @@ export function BacktestingFilters({
   });
   const statusOptions: MultiSelectOption[] = STATUS_OPTIONS.map((opt) => ({
     value: opt.value,
-    label: opt.label,
+    label: t(opt.labelKey),
   }));
+  const statusLabelByValue = new Map(
+    STATUS_OPTIONS.map((opt) => [opt.value, t(opt.labelKey)]),
+  );
 
   const chips: React.ReactNode[] = [];
   if (search) {
     chips.push(
       <FilterChip
         key="search"
-        label={`search "${search}"`}
+        label={t("backtesting.filters.chip_search", { search })}
         onClear={() => onSearchChange("")}
       />,
     );
@@ -96,7 +101,7 @@ export function BacktestingFilters({
     chips.push(
       <FilterChip
         key="tf"
-        label={`tf: ${selectedTimeframe}`}
+        label={t("backtesting.filters.chip_timeframe", { timeframe: selectedTimeframe })}
         onClear={() => onTimeframeChange("all")}
       />,
     );
@@ -105,7 +110,7 @@ export function BacktestingFilters({
     chips.push(
       <FilterChip
         key="strategy"
-        label={`strategy: ${selectedStrategy}`}
+        label={t("backtesting.filters.chip_strategy", { strategy: selectedStrategy })}
         onClear={() => onStrategyChange("all")}
       />,
     );
@@ -129,7 +134,7 @@ export function BacktestingFilters({
     chips.push(
       <FilterChip
         key={`status-${status}`}
-        label={status}
+        label={statusLabelByValue.get(status as RowStatus) ?? status}
         onClear={() => onStatusesChange(selectedStatuses.filter((s) => s !== status))}
       />,
     );
@@ -148,7 +153,7 @@ export function BacktestingFilters({
                 onClick={onClearAll}
                 className="ml-1 text-[11px] font-medium text-[var(--color-fg-subtle)] hover:text-[var(--color-fg)]"
               >
-                Clear all
+                {t("backtesting.filters.clear_all")}
               </button>
             )}
           </>
@@ -157,7 +162,7 @@ export function BacktestingFilters({
     >
       <div className="min-w-[200px] flex-1">
         <input
-          placeholder="Search pair, strategy, timeframe…"
+          placeholder={t("backtesting.filters.search_placeholder")}
           value={search}
           onChange={(event) => onSearchChange(event.target.value)}
           className="h-9 w-full rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-[13px] outline-none transition-colors placeholder:text-[var(--color-fg-faint)] focus:border-[var(--color-accent)] focus:ring-2 focus:ring-[var(--color-accent)]"
@@ -168,17 +173,17 @@ export function BacktestingFilters({
           options={symbolOptions}
           value={selectedSymbols}
           onChange={onSymbolsChange}
-          placeholder="All pairs"
-          searchPlaceholder="Search pairs…"
-          triggerLabel="Pair"
+          placeholder={t("backtesting.filters.pairs.placeholder")}
+          searchPlaceholder={t("backtesting.filters.pairs.search_placeholder")}
+          triggerLabel={t("backtesting.filters.pairs.trigger_label")}
         />
       </div>
       <Select value={selectedTimeframe} onValueChange={onTimeframeChange}>
         <SelectTrigger className="h-9 w-[140px]">
-          <SelectValue placeholder="Timeframe" />
+          <SelectValue placeholder={t("backtesting.filters.timeframe.placeholder")} />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="all">All timeframes</SelectItem>
+          <SelectItem value="all">{t("backtesting.filters.timeframe.all")}</SelectItem>
           {timeframes.map((tf) => (
             <SelectItem key={tf} value={tf}>
               {tf}
@@ -188,10 +193,10 @@ export function BacktestingFilters({
       </Select>
       <Select value={selectedStrategy} onValueChange={onStrategyChange}>
         <SelectTrigger className="h-9 w-[180px]">
-          <SelectValue placeholder="Strategy" />
+          <SelectValue placeholder={t("backtesting.filters.strategy.placeholder")} />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="all">All strategies</SelectItem>
+          <SelectItem value="all">{t("backtesting.filters.strategy.all")}</SelectItem>
           {strategies.map((strategy) => (
             <SelectItem key={strategy} value={strategy}>
               {strategy}
@@ -204,9 +209,9 @@ export function BacktestingFilters({
           options={statusOptions}
           value={selectedStatuses}
           onChange={onStatusesChange}
-          placeholder="All statuses"
-          searchPlaceholder="Search statuses…"
-          triggerLabel="Status"
+          placeholder={t("backtesting.filters.status.placeholder")}
+          searchPlaceholder={t("backtesting.filters.status.search_placeholder")}
+          triggerLabel={t("backtesting.filters.status.trigger_label")}
         />
       </div>
       <div className="ml-auto flex items-center gap-2">{toolbar}</div>
@@ -215,6 +220,7 @@ export function BacktestingFilters({
 }
 
 function FilterChip({ label, onClear }: { label: React.ReactNode; onClear: () => void }) {
+  const { t } = usePreferences();
   return (
     <Badge variant="outline" className="gap-1 pr-1">
       {label}
@@ -224,7 +230,7 @@ function FilterChip({ label, onClear }: { label: React.ReactNode; onClear: () =>
         variant="ghost"
         onClick={onClear}
         className="size-4 rounded-full p-0 text-[var(--color-fg-subtle)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-fg)]"
-        aria-label="Remove filter"
+        aria-label={t("backtesting.filters.remove_filter")}
       >
         <X className="size-2.5" />
       </Button>

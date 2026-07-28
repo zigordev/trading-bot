@@ -5,6 +5,7 @@ import { AlertTriangle, RotateCw } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { usePreferences } from "@/components/providers/preferences-provider";
 
 interface ErrorStateProps {
   title?: string;
@@ -24,14 +25,17 @@ function describeError(error: unknown): string | undefined {
 }
 
 export function ErrorState({
-  title = "Something went wrong",
+  title: providedTitle,
   description,
   error,
   onRetry,
-  retryLabel = "Retry",
+  retryLabel: providedRetryLabel,
   className,
   size = "md",
 }: ErrorStateProps) {
+  const { t } = usePreferences();
+  const title = providedTitle ?? t("shared.error_state.default_title");
+  const retryLabel = providedRetryLabel ?? t("shared.error_state.retry");
   const message = describeError(error);
   return (
     <div

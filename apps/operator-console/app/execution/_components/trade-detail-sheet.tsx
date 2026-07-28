@@ -18,6 +18,7 @@ import { DetailSheet } from "@/components/shared/detail-sheet";
 import { IdCell } from "@/components/shared/id-cell";
 import { SymbolAvatar } from "@/components/shared/symbol-avatar";
 import { splitSymbol } from "@/lib/backtesting/derive-rows";
+import { usePreferences } from "@/components/providers/preferences-provider";
 
 interface TradeDetailSheetProps {
   open: boolean;
@@ -25,7 +26,15 @@ interface TradeDetailSheetProps {
   trade: ExecutionTrade | null;
 }
 
+const STATUS_LABEL_KEY: Record<ExecutionTrade["status"], string> = {
+  open: "status.trade_status.open",
+  closed: "status.trade_status.closed",
+  cancelled: "status.trade_status.cancelled",
+  rejected: "status.trade_status.rejected",
+};
+
 export function TradeDetailSheet({ open, onOpenChange, trade }: TradeDetailSheetProps) {
+  const { t } = usePreferences();
   if (!trade) return null;
   const { base, quote } = splitSymbol(trade.symbolCode);
 
@@ -56,7 +65,7 @@ export function TradeDetailSheet({ open, onOpenChange, trade }: TradeDetailSheet
             ) : (
               <ArrowDown className="size-3" />
             )}
-            {trade.side === "long" ? "Long" : "Short"}
+            {t(trade.side === "long" ? "status.trade_side.long" : "status.trade_side.short")}
           </Badge>
           <Badge variant={statusVariant(trade.status)} className="gap-1">
             {trade.status === "open" ? (
@@ -64,17 +73,19 @@ export function TradeDetailSheet({ open, onOpenChange, trade }: TradeDetailSheet
             ) : trade.status === "closed" ? (
               <Lock className="size-3" />
             ) : null}
-            {trade.status}
+            {t(STATUS_LABEL_KEY[trade.status])}
           </Badge>
-          <Badge variant={trade.mode === "live" ? "accent" : "outline"}>{trade.mode}</Badge>
+          <Badge variant={trade.mode === "live" ? "accent" : "outline"}>
+            {t(trade.mode === "live" ? "status.trade_mode.live" : "status.trade_mode.paper")}
+          </Badge>
         </div>
       }
     >
       <div className="space-y-4">
-        <Section label="Performance">
+        <Section label={t("execution.trade_detail.section_performance")}>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
             <Stat
-              label="Realized PnL %"
+              label={t("execution.trade_detail.realized_pnl_percent")}
               value={
                 <PnlCell
                   value={trade.realizedPnlPercent}
@@ -83,7 +94,7 @@ export function TradeDetailSheet({ open, onOpenChange, trade }: TradeDetailSheet
               }
             />
             <Stat
-              label="Realized PnL $"
+              label={t("execution.trade_detail.realized_pnl_usd")}
               value={
                 <PnlCell
                   value={trade.realizedPnlUsd}
@@ -91,67 +102,67 @@ export function TradeDetailSheet({ open, onOpenChange, trade }: TradeDetailSheet
                 />
               }
             />
-            <Stat label="Fees" value={formatUsd(trade.feesUsd)} />
-            <Stat label="Notional" value={formatUsd(trade.notionalUsd)} />
-            <Stat label="Quantity" value={trade.quantity.toLocaleString()} />
+            <Stat label={t("execution.trade_detail.fees")} value={formatUsd(trade.feesUsd)} />
+            <Stat label={t("execution.trade_detail.notional")} value={formatUsd(trade.notionalUsd)} />
+            <Stat label={t("execution.trade_detail.quantity")} value={trade.quantity.toLocaleString()} />
             <Stat
-              label="Duration"
+              label={t("execution.trade_detail.duration")}
               value={trade.durationMs !== null ? formatDuration(trade.durationMs) : "—"}
             />
           </div>
         </Section>
 
-        <Section label="Prices">
+        <Section label={t("execution.trade_detail.section_prices")}>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-2">
-            <Stat label="Entry" value={formatPrice(trade.entryPrice)} />
+            <Stat label={t("execution.trade_detail.entry")} value={formatPrice(trade.entryPrice)} />
             <Stat
-              label="Exit"
+              label={t("execution.trade_detail.exit")}
               value={trade.exitPrice !== null ? formatPrice(trade.exitPrice) : "—"}
             />
             <Stat
-              label="Stop loss"
+              label={t("execution.trade_detail.stop_loss")}
               value={trade.stopLossPrice !== null ? formatPrice(trade.stopLossPrice) : "—"}
             />
             <Stat
-              label="Take profit"
+              label={t("execution.trade_detail.take_profit")}
               value={trade.takeProfitPrice !== null ? formatPrice(trade.takeProfitPrice) : "—"}
             />
           </div>
         </Section>
 
-        <Section label="Timing">
+        <Section label={t("execution.trade_detail.section_timing")}>
           <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-[12px]">
-            <Stat label="Opened" value={formatTimestamp(trade.openedAt, { style: "full" })} />
+            <Stat label={t("execution.trade_detail.opened")} value={formatTimestamp(trade.openedAt, { style: "full" })} />
             <Stat
-              label="Closed"
+              label={t("execution.trade_detail.closed")}
               value={
                 trade.closedAt
                   ? formatTimestamp(trade.closedAt, { style: "full" })
                   : "—"
               }
             />
-            <Stat label="Close reason" value={trade.closeReason ?? "—"} />
+            <Stat label={t("execution.trade_detail.close_reason")} value={trade.closeReason ?? "—"} />
             <Stat
-              label="Execution settings"
+              label={t("execution.trade_detail.execution_settings")}
               value={trade.executionSettingsName ?? "—"}
             />
           </dl>
         </Section>
 
-        <Section label="References">
+        <Section label={t("execution.trade_detail.section_references")}>
           <dl className="space-y-2 text-[12px]">
-            <Identifier label="Trade ID" value={trade.tradeId} />
+            <Identifier label={t("execution.trade_detail.trade_id")} value={trade.tradeId} />
             {trade.externalOrderId && (
-              <Identifier label="External order ID" value={trade.externalOrderId} />
+              <Identifier label={t("execution.trade_detail.external_order_id")} value={trade.externalOrderId} />
             )}
             {trade.positionId && (
-              <Identifier label="Position ID" value={trade.positionId} />
+              <Identifier label={t("execution.trade_detail.position_id")} value={trade.positionId} />
             )}
-            <Identifier label="Analysis setting" value={trade.analysisSettingId} />
+            <Identifier label={t("execution.trade_detail.analysis_setting")} value={trade.analysisSettingId} />
             {trade.sourceBacktestId && (
-              <Identifier label="Source backtest" value={trade.sourceBacktestId} />
+              <Identifier label={t("execution.trade_detail.source_backtest")} value={trade.sourceBacktestId} />
             )}
-            <KeyValue label="Risk profile" value={trade.riskProfileName} />
+            <KeyValue label={t("execution.trade_detail.risk_profile")} value={trade.riskProfileName} />
           </dl>
         </Section>
       </div>

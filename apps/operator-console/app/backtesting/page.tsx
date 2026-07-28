@@ -2,8 +2,8 @@
 
 import * as React from "react";
 
-import { AppShell } from "@/components/layout/app-shell";
 import { ErrorState } from "@/components/shared/error-state";
+import { usePreferences } from "@/components/providers/preferences-provider";
 import { useBacktestsSummary } from "@/lib/hooks/use-backtests-summary";
 import { useDataReadiness } from "@/lib/hooks/use-data-readiness";
 import { useStrategies } from "@/lib/hooks/use-strategies";
@@ -36,6 +36,7 @@ export default function BacktestingPage() {
 }
 
 function BacktestingPageInner() {
+  const { t } = usePreferences();
   const summary = useBacktestsSummary();
   const readiness = useDataReadiness();
   const strategies = useStrategies();
@@ -154,7 +155,7 @@ function BacktestingPageInner() {
   };
 
   return (
-    <AppShell>
+    <>
       <div className="flex flex-col gap-4">
         <BacktestingKpis rows={rows} loading={isLoading} />
 
@@ -187,8 +188,8 @@ function BacktestingPageInner() {
 
         {hasError ? (
           <ErrorState
-            title="Failed to load backtests"
-            description="One or more endpoints returned an error. Retry, or check the control plane."
+            title={t("backtesting.error.title")}
+            description={t("backtesting.error.description")}
             onRetry={() => {
               summary.refetch();
               readiness.refetch();
@@ -232,7 +233,7 @@ function BacktestingPageInner() {
         }}
         run={selectedRun}
       />
-    </AppShell>
+    </>
   );
 }
 

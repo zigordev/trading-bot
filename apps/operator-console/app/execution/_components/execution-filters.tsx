@@ -19,12 +19,13 @@ import { StickyFiltersBar } from "@/components/layout/sticky-filters-bar";
 import { SymbolAvatar } from "@/components/shared/symbol-avatar";
 import { splitSymbol } from "@/lib/backtesting/derive-rows";
 import type { ExecutionTrade } from "@/lib/api";
+import { usePreferences } from "@/components/providers/preferences-provider";
 
-const STATUS_OPTIONS: { value: ExecutionTrade["status"]; label: string }[] = [
-  { value: "open", label: "Open" },
-  { value: "closed", label: "Closed" },
-  { value: "cancelled", label: "Cancelled" },
-  { value: "rejected", label: "Rejected" },
+const STATUS_OPTIONS: { value: ExecutionTrade["status"]; labelKey: string }[] = [
+  { value: "open", labelKey: "status.trade_status.open" },
+  { value: "closed", labelKey: "status.trade_status.closed" },
+  { value: "cancelled", labelKey: "status.trade_status.cancelled" },
+  { value: "rejected", labelKey: "status.trade_status.rejected" },
 ];
 
 interface ExecutionFiltersProps {
@@ -81,15 +82,20 @@ export function ExecutionFilters({
   topOffset,
   toolbar,
 }: ExecutionFiltersProps) {
+  const { t } = usePreferences();
   const statusOptions: MultiSelectOption[] = STATUS_OPTIONS.map((opt) => ({
     value: opt.value,
-    label: opt.label,
+    label: t(opt.labelKey),
   }));
 
   const chips: React.ReactNode[] = [];
   if (search) {
     chips.push(
-      <FilterChip key="q" label={`search "${search}"`} onClear={() => onSearchChange("")} />,
+      <FilterChip
+        key="q"
+        label={t("execution.filters.search_chip", { query: search })}
+        onClear={() => onSearchChange("")}
+      />,
     );
   }
   if (selectedSymbol !== "all") {
@@ -111,7 +117,7 @@ export function ExecutionFilters({
     chips.push(
       <FilterChip
         key="tf"
-        label={`tf: ${selectedTimeframe}`}
+        label={t("execution.filters.timeframe_chip", { timeframe: selectedTimeframe })}
         onClear={() => onTimeframeChange("all")}
       />,
     );
@@ -120,7 +126,7 @@ export function ExecutionFilters({
     chips.push(
       <FilterChip
         key="strategy"
-        label={`strategy: ${selectedStrategy}`}
+        label={t("execution.filters.strategy_chip", { strategy: selectedStrategy })}
         onClear={() => onStrategyChange("all")}
       />,
     );
@@ -129,7 +135,9 @@ export function ExecutionFilters({
     chips.push(
       <FilterChip
         key="side"
-        label={`side: ${selectedSide}`}
+        label={t("execution.filters.side_chip", {
+          side: t(selectedSide === "long" ? "status.trade_side.long" : "status.trade_side.short"),
+        })}
         onClear={() => onSideChange("all")}
       />,
     );
@@ -138,7 +146,7 @@ export function ExecutionFilters({
     chips.push(
       <FilterChip
         key={`status-${status}`}
-        label={status}
+        label={t(`status.trade_status.${status}`)}
         onClear={() => onStatusesChange(selectedStatuses.filter((s) => s !== status))}
       />,
     );
@@ -147,7 +155,7 @@ export function ExecutionFilters({
     chips.push(
       <FilterChip
         key="range"
-        label={`opened: range`}
+        label={t("execution.filters.opened_range_chip")}
         onClear={() => onDateRangeChange(undefined)}
       />,
     );
@@ -166,7 +174,7 @@ export function ExecutionFilters({
                 onClick={onClearAll}
                 className="ml-1 text-[11px] font-medium text-[var(--color-fg-subtle)] hover:text-[var(--color-fg)]"
               >
-                Clear all
+                {t("execution.filters.clear_all")}
               </button>
             )}
           </>
@@ -175,7 +183,7 @@ export function ExecutionFilters({
     >
       <div className="min-w-[220px] flex-1">
         <input
-          placeholder="Search pair, strategy, order ID…"
+          placeholder={t("execution.filters.search_placeholder")}
           value={search}
           onChange={(event) => onSearchChange(event.target.value)}
           className="h-9 w-full rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-[13px] outline-none transition-colors placeholder:text-[var(--color-fg-faint)] focus:border-[var(--color-accent)] focus:ring-2 focus:ring-[var(--color-accent)]"
@@ -183,10 +191,10 @@ export function ExecutionFilters({
       </div>
       <Select value={selectedSymbol} onValueChange={onSymbolChange}>
         <SelectTrigger className="h-9 w-[180px]">
-          <SelectValue placeholder="Pair" />
+          <SelectValue placeholder={t("execution.filters.pair_placeholder")} />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="all">All pairs</SelectItem>
+          <SelectItem value="all">{t("execution.filters.all_pairs")}</SelectItem>
           {symbols.map((symbol) => {
             const { base, quote } = splitSymbol(symbol);
             return (
@@ -202,10 +210,10 @@ export function ExecutionFilters({
       </Select>
       <Select value={selectedTimeframe} onValueChange={onTimeframeChange}>
         <SelectTrigger className="h-9 w-[120px]">
-          <SelectValue placeholder="Timeframe" />
+          <SelectValue placeholder={t("execution.filters.timeframe_placeholder")} />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="all">All TF</SelectItem>
+          <SelectItem value="all">{t("execution.filters.all_timeframes")}</SelectItem>
           {timeframes.map((tf) => (
             <SelectItem key={tf} value={tf}>
               {tf}
@@ -215,10 +223,10 @@ export function ExecutionFilters({
       </Select>
       <Select value={selectedStrategy} onValueChange={onStrategyChange}>
         <SelectTrigger className="h-9 w-[160px]">
-          <SelectValue placeholder="Strategy" />
+          <SelectValue placeholder={t("execution.filters.strategy_placeholder")} />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="all">All strategies</SelectItem>
+          <SelectItem value="all">{t("execution.filters.all_strategies")}</SelectItem>
           {strategies.map((strategy) => (
             <SelectItem key={strategy} value={strategy}>
               {strategy}
@@ -228,12 +236,12 @@ export function ExecutionFilters({
       </Select>
       <Select value={selectedSide} onValueChange={(next) => onSideChange(next as typeof selectedSide)}>
         <SelectTrigger className="h-9 w-[110px]">
-          <SelectValue placeholder="Side" />
+          <SelectValue placeholder={t("execution.filters.side_placeholder")} />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="all">Any side</SelectItem>
-          <SelectItem value="long">Long</SelectItem>
-          <SelectItem value="short">Short</SelectItem>
+          <SelectItem value="all">{t("execution.filters.any_side")}</SelectItem>
+          <SelectItem value="long">{t("status.trade_side.long")}</SelectItem>
+          <SelectItem value="short">{t("status.trade_side.short")}</SelectItem>
         </SelectContent>
       </Select>
       <div className="w-[170px]">
@@ -241,15 +249,15 @@ export function ExecutionFilters({
           options={statusOptions}
           value={selectedStatuses}
           onChange={onStatusesChange}
-          placeholder="All statuses"
-          searchPlaceholder="Search statuses…"
-          triggerLabel="Status"
+          placeholder={t("execution.filters.all_statuses_placeholder")}
+          searchPlaceholder={t("execution.filters.search_statuses_placeholder")}
+          triggerLabel={t("execution.filters.status_trigger_label")}
         />
       </div>
       <DateRangePicker
         value={dateRange}
         onChange={onDateRangeChange}
-        placeholder="Opened range"
+        placeholder={t("execution.filters.opened_range_placeholder")}
         className="w-[230px]"
       />
       {toolbar && <div className="ml-auto flex items-center gap-2">{toolbar}</div>}
@@ -258,6 +266,7 @@ export function ExecutionFilters({
 }
 
 function FilterChip({ label, onClear }: { label: React.ReactNode; onClear: () => void }) {
+  const { t } = usePreferences();
   return (
     <Badge variant="outline" className="gap-1 pr-1">
       {label}
@@ -267,7 +276,7 @@ function FilterChip({ label, onClear }: { label: React.ReactNode; onClear: () =>
         variant="ghost"
         onClick={onClear}
         className="size-4 rounded-full p-0 text-[var(--color-fg-subtle)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-fg)]"
-        aria-label="Remove filter"
+        aria-label={t("execution.filters.remove_filter_aria")}
       >
         <X className="size-2.5" />
       </Button>

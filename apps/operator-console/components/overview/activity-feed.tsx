@@ -17,30 +17,31 @@ import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/shared/empty-state";
 import { SymbolAvatar } from "@/components/shared/symbol-avatar";
 import { splitSymbol } from "@/lib/backtesting/derive-rows";
+import { usePreferences } from "@/components/providers/preferences-provider";
 
 type FeedEntry = OpsRealtimeEvent & { receivedAt: number };
 
 const TYPE_META: Record<
   OpsRealtimeEvent["type"],
-  { label: string; icon: React.ReactNode; tone: "default" | "accent" | "warning" }
+  { labelKey: string; icon: React.ReactNode; tone: "default" | "accent" | "warning" }
 > = {
   "ops.backtests.updated": {
-    label: "Backtests",
+    labelKey: "overview.activity_feed.type_backtests",
     icon: <PlayCircle className="size-3.5" />,
     tone: "accent",
   },
   "ops.execution.updated": {
-    label: "Execution",
+    labelKey: "overview.activity_feed.type_execution",
     icon: <Wallet className="size-3.5" />,
     tone: "default",
   },
   "ops.data-readiness.updated": {
-    label: "Data",
+    labelKey: "overview.activity_feed.type_data",
     icon: <Database className="size-3.5" />,
     tone: "warning",
   },
   "config.resource.updated": {
-    label: "Config",
+    labelKey: "overview.activity_feed.type_config",
     icon: <Settings2 className="size-3.5" />,
     tone: "default",
   },
@@ -68,20 +69,23 @@ function PairList({ symbols }: { symbols: string[] }) {
   );
 }
 
-function describeEvent(event: OpsRealtimeEvent): React.ReactNode {
+function describeEvent(
+  event: OpsRealtimeEvent,
+  t: (key: string, params?: Record<string, string | number>) => string,
+): React.ReactNode {
   switch (event.type) {
     case "ops.backtests.updated":
     case "ops.execution.updated":
       return event.payload.symbols.length ? (
         <PairList symbols={event.payload.symbols} />
       ) : (
-        "summary refresh"
+        t("overview.activity_feed.summary_refresh")
       );
     case "ops.data-readiness.updated":
       return event.payload.symbols.length ? (
         <PairList symbols={event.payload.symbols} />
       ) : (
-        "readiness refresh"
+        t("overview.activity_feed.readiness_refresh")
       );
     case "config.resource.updated":
       return `${event.payload.resource} · ${event.payload.operation}`;
@@ -91,6 +95,7 @@ function describeEvent(event: OpsRealtimeEvent): React.ReactNode {
 const MAX_ENTRIES = 20;
 
 export function ActivityFeed() {
+  const { t } = usePreferences();
   const [entries, setEntries] = React.useState<FeedEntry[]>([]);
 
   React.useEffect(() => {
@@ -103,8 +108,8 @@ export function ActivityFeed() {
 
   return (
     <SectionCard
-      title="Activity"
-      description="Live operations stream"
+      title={t("overview.activity_feed.title")}
+      description={t("overview.activity_feed.description")}
       padding="default"
       bodyClassName="p-0"
     >
@@ -112,8 +117,8 @@ export function ActivityFeed() {
         <div className="p-4">
           <EmptyState
             size="sm"
-            title="Listening for events"
-            description="Activity from /ws/ops will appear here as it happens."
+            title={t("overview.activity_feed.empty_title")}
+            description={t("overview.activity_feed.empty_description")}
             icon={<Activity className="size-4" />}
           />
         </div>
@@ -138,10 +143,10 @@ export function ActivityFeed() {
                 <div className="flex min-w-0 flex-1 flex-col">
                   <div className="flex items-center gap-2">
                     <Badge variant="outline" className="text-[10px]">
-                      {meta.label}
+                      {t(meta.labelKey)}
                     </Badge>
                     <span className="min-w-0 flex-1 text-[12px] text-[var(--color-fg-muted)]">
-                      {describeEvent(entry)}
+                      {describeEvent(entry, t)}
                     </span>
                   </div>
                   <span className="text-[11px] text-[var(--color-fg-subtle)]">

@@ -3,7 +3,7 @@ import { z } from "zod";
 export type ConfigField =
   | {
       name: string;
-      label: string;
+      labelKey: string;
       kind: "text";
       placeholder?: string;
       optional?: boolean;
@@ -11,7 +11,7 @@ export type ConfigField =
     }
   | {
       name: string;
-      label: string;
+      labelKey: string;
       kind: "textarea";
       placeholder?: string;
       optional?: boolean;
@@ -20,15 +20,15 @@ export type ConfigField =
     }
   | {
       name: string;
-      label: string;
+      labelKey: string;
       kind: "select";
-      options: { value: string; label: string }[];
+      options: { value: string; labelKey: string }[];
       defaultValue?: string;
       optional?: boolean;
     }
   | {
       name: string;
-      label: string;
+      labelKey: string;
       kind: "number";
       placeholder?: string;
       optional?: boolean;
@@ -36,39 +36,40 @@ export type ConfigField =
     }
   | {
       name: string;
-      label: string;
+      labelKey: string;
       kind: "boolean";
       defaultValue?: boolean;
     }
   | {
       name: string;
-      label: string;
+      labelKey: string;
       kind: "symbol";
       placeholder?: string;
     }
   | {
       name: string;
-      label: string;
+      labelKey: string;
       kind: "asset-display";
       placeholder?: string;
     }
   | {
       name: string;
-      label: string;
+      labelKey: string;
       kind: "json";
       placeholder?: string;
       defaultValue?: string;
     }
   | {
       name: string;
-      label: string;
+      labelKey: string;
       kind: "promotion-thresholds";
-      description?: string;
+      descriptionKey?: string;
     };
 
 export type ConfigResourceDefinition = {
   key: string;
-  label: string;
+  labelKey: string;
+  labelSingularKey: string;
   endpoint: string;
   titleField: string;
   idField?: string;
@@ -143,7 +144,8 @@ const executionSettingSchema = z.object({
 export const configResources: Record<string, ConfigResourceDefinition> = {
   symbols: {
     key: "symbols",
-    label: "Pairs",
+    labelKey: "configuration.resources.symbols",
+    labelSingularKey: "configuration.resources_singular.symbols",
     endpoint: "symbols",
     titleField: "code",
     idField: "code",
@@ -155,20 +157,21 @@ export const configResources: Record<string, ConfigResourceDefinition> = {
       active: true,
     }),
     fields: [
-      { name: "code", label: "Pair", kind: "symbol", placeholder: "BTCUSDT" },
-      { name: "baseAsset", label: "Base asset", kind: "asset-display", placeholder: "Auto-filled from pair" },
+      { name: "code", labelKey: "configuration.fields.symbols.code", kind: "symbol", placeholder: "BTCUSDT" },
+      { name: "baseAsset", labelKey: "configuration.fields.symbols.baseAsset", kind: "asset-display", placeholder: "Auto-filled from pair" },
       {
         name: "destinationAsset",
-        label: "Destination asset",
+        labelKey: "configuration.fields.symbols.destinationAsset",
         kind: "asset-display",
         placeholder: "Auto-filled from pair",
       },
-      { name: "active", label: "Active", kind: "boolean" },
+      { name: "active", labelKey: "configuration.fields.symbols.active", kind: "boolean" },
     ],
   },
   timeframes: {
     key: "timeframes",
-    label: "Timeframes",
+    labelKey: "configuration.resources.timeframes",
+    labelSingularKey: "configuration.resources_singular.timeframes",
     endpoint: "timeframes",
     titleField: "code",
     idField: "code",
@@ -181,20 +184,21 @@ export const configResources: Record<string, ConfigResourceDefinition> = {
       active: true,
     }),
     fields: [
-      { name: "code", label: "Code", kind: "text", placeholder: "1m" },
-      { name: "longerTimeframeCode", label: "Longer timeframe code", kind: "text" },
+      { name: "code", labelKey: "configuration.fields.timeframes.code", kind: "text", placeholder: "1m" },
+      { name: "longerTimeframeCode", labelKey: "configuration.fields.timeframes.longerTimeframeCode", kind: "text" },
       {
         name: "longerTimeframeMultiplier",
-        label: "Longer timeframe multiplier",
+        labelKey: "configuration.fields.timeframes.longerTimeframeMultiplier",
         kind: "number",
       },
-      { name: "periodMs", label: "Period (ms)", kind: "number" },
-      { name: "active", label: "Active", kind: "boolean" },
+      { name: "periodMs", labelKey: "configuration.fields.timeframes.periodMs", kind: "number" },
+      { name: "active", labelKey: "configuration.fields.timeframes.active", kind: "boolean" },
     ],
   },
   strategies: {
     key: "strategies",
-    label: "Strategies",
+    labelKey: "configuration.resources.strategies",
+    labelSingularKey: "configuration.resources_singular.strategies",
     endpoint: "strategies",
     titleField: "name",
     idField: "name",
@@ -214,27 +218,27 @@ export const configResources: Record<string, ConfigResourceDefinition> = {
       },
     }),
     fields: [
-      { name: "name", label: "Name", kind: "text" },
-      { name: "description", label: "Description", kind: "textarea", rows: 2 },
-      { name: "activated", label: "Activated", kind: "boolean" },
+      { name: "name", labelKey: "configuration.fields.strategies.name", kind: "text" },
+      { name: "description", labelKey: "configuration.fields.strategies.description", kind: "textarea", rows: 2 },
+      { name: "activated", labelKey: "configuration.fields.strategies.activated", kind: "boolean" },
       {
         name: "parameters.kind",
-        label: "Strategy kind",
+        labelKey: "configuration.fields.strategies.kind",
         kind: "text",
         placeholder: "strategy1",
       },
       {
         name: "parameters.promotionThresholds",
-        label: "Promotion thresholds",
+        labelKey: "configuration.fields.strategies.promotionThresholds",
         kind: "promotion-thresholds",
-        description:
-          "Backtests that meet ALL thresholds are eligible for automatic promotion.",
+        descriptionKey: "configuration.fields.strategies.promotionThresholdsDescription",
       },
     ],
   },
   "risk-profiles": {
     key: "risk-profiles",
-    label: "Risk profiles",
+    labelKey: "configuration.resources.risk-profiles",
+    labelSingularKey: "configuration.resources_singular.risk-profiles",
     endpoint: "risk-profiles",
     titleField: "name",
     idField: "name",
@@ -249,18 +253,19 @@ export const configResources: Record<string, ConfigResourceDefinition> = {
       enabled: true,
     }),
     fields: [
-      { name: "name", label: "Name", kind: "text" },
-      { name: "description", label: "Description", kind: "textarea", rows: 2 },
-      { name: "maximumStopLoss", label: "Maximum stop loss", kind: "number" },
-      { name: "minimumStopLoss", label: "Minimum stop loss", kind: "number" },
-      { name: "swingGap", label: "Swing gap", kind: "number" },
-      { name: "rrr", label: "RRR", kind: "number" },
-      { name: "enabled", label: "Enabled", kind: "boolean" },
+      { name: "name", labelKey: "configuration.fields.risk-profiles.name", kind: "text" },
+      { name: "description", labelKey: "configuration.fields.risk-profiles.description", kind: "textarea", rows: 2 },
+      { name: "maximumStopLoss", labelKey: "configuration.fields.risk-profiles.maximumStopLoss", kind: "number" },
+      { name: "minimumStopLoss", labelKey: "configuration.fields.risk-profiles.minimumStopLoss", kind: "number" },
+      { name: "swingGap", labelKey: "configuration.fields.risk-profiles.swingGap", kind: "number" },
+      { name: "rrr", labelKey: "configuration.fields.risk-profiles.rrr", kind: "number" },
+      { name: "enabled", labelKey: "configuration.fields.risk-profiles.enabled", kind: "boolean" },
     ],
   },
   "analysis-settings": {
     key: "analysis-settings",
-    label: "Analysis settings",
+    labelKey: "configuration.resources.analysis-settings",
+    labelSingularKey: "configuration.resources_singular.analysis-settings",
     endpoint: "analysis-settings",
     titleField: "name",
     idField: "name",
@@ -272,20 +277,21 @@ export const configResources: Record<string, ConfigResourceDefinition> = {
       enabled: true,
     }),
     fields: [
-      { name: "name", label: "Name", kind: "text" },
-      { name: "strategyName", label: "Strategy", kind: "text" },
+      { name: "name", labelKey: "configuration.fields.analysis-settings.name", kind: "text" },
+      { name: "strategyName", labelKey: "configuration.fields.analysis-settings.strategyName", kind: "text" },
       {
         name: "technicalAnalysisSettings",
-        label: "Technical analysis settings",
+        labelKey: "configuration.fields.analysis-settings.technicalAnalysisSettings",
         kind: "json",
         placeholder: '{\n  "fastPeriod": 9,\n  "slowPeriod": 21\n}',
       },
-      { name: "enabled", label: "Enabled", kind: "boolean" },
+      { name: "enabled", labelKey: "configuration.fields.analysis-settings.enabled", kind: "boolean" },
     ],
   },
   "execution-settings": {
     key: "execution-settings",
-    label: "Execution settings",
+    labelKey: "configuration.resources.execution-settings",
+    labelSingularKey: "configuration.resources_singular.execution-settings",
     endpoint: "execution-settings",
     titleField: "name",
     idField: "name",
@@ -299,26 +305,26 @@ export const configResources: Record<string, ConfigResourceDefinition> = {
       replaceOpenPositionPolicy: "flatten",
     }),
     fields: [
-      { name: "name", label: "Name", kind: "text" },
-      { name: "enabled", label: "Enabled", kind: "boolean" },
+      { name: "name", labelKey: "configuration.fields.execution-settings.name", kind: "text" },
+      { name: "enabled", labelKey: "configuration.fields.execution-settings.enabled", kind: "boolean" },
       {
         name: "mode",
-        label: "Mode",
+        labelKey: "configuration.fields.execution-settings.mode",
         kind: "select",
         options: [
-          { value: "paper", label: "Paper" },
-          { value: "live", label: "Live" },
+          { value: "paper", labelKey: "configuration.fields.execution-settings.modeOptions.paper" },
+          { value: "live", labelKey: "configuration.fields.execution-settings.modeOptions.live" },
         ],
       },
-      { name: "autoPromote", label: "Auto promote", kind: "boolean" },
-      { name: "maxPromotions", label: "Max promotions", kind: "number" },
+      { name: "autoPromote", labelKey: "configuration.fields.execution-settings.autoPromote", kind: "boolean" },
+      { name: "maxPromotions", labelKey: "configuration.fields.execution-settings.maxPromotions", kind: "number" },
       {
         name: "replaceOpenPositionPolicy",
-        label: "Replace open position policy",
+        labelKey: "configuration.fields.execution-settings.replaceOpenPositionPolicy",
         kind: "select",
         options: [
-          { value: "keep", label: "Keep existing" },
-          { value: "flatten", label: "Flatten" },
+          { value: "keep", labelKey: "configuration.fields.execution-settings.policyOptions.keep" },
+          { value: "flatten", labelKey: "configuration.fields.execution-settings.policyOptions.flatten" },
         ],
       },
     ],

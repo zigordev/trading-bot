@@ -6,8 +6,10 @@ import { ExternalLink } from "lucide-react";
 import type { DateRange } from "react-day-picker";
 import type { SortingState } from "@tanstack/react-table";
 
-import { AppShell } from "@/components/layout/app-shell";
-import { PageHeader } from "@/components/layout/page-header";
+import { useTopbarSlot } from "@/components/layout/topbar-slot-context";
+import { usePreferences, type Translate } from "@/components/providers/preferences-provider";
+import { SegmentedControl } from "@/design-system/components/navigation/SegmentedControl.jsx";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { ErrorState } from "@/components/shared/error-state";
 import { useExecutionTrades } from "@/lib/hooks/use-execution-trades";
@@ -39,6 +41,25 @@ interface ExecutionScreenProps {
   mode: "paper" | "live";
 }
 
+/** Paper vs Live is a mode: same screen, same columns, different dataset —
+ * so it belongs in the Topbar's `mode` slot, not the Sidebar. Both halves
+ * are real links, keeping the mode deep-linkable and shareable. Live is
+ * marked `danger` so the whole control repaints: "am I looking at real
+ * money?" should never require reading the URL to answer. */
+function ExecutionModeToggle({ mode, t }: { mode: "paper" | "live"; t: Translate }) {
+  return (
+    <SegmentedControl
+      ariaLabel={t("nav.execution")}
+      linkComponent={Link}
+      value={mode}
+      options={[
+        { value: "paper", label: t("nav.execution_paper"), href: "/execution/paper" },
+        { value: "live", label: t("nav.execution_live"), href: "/execution/live", tone: "danger" },
+      ]}
+    />
+  );
+}
+
 export function ExecutionScreen({ mode }: ExecutionScreenProps) {
   return (
     <React.Suspense fallback={null}>
@@ -48,6 +69,8 @@ export function ExecutionScreen({ mode }: ExecutionScreenProps) {
 }
 
 function ExecutionScreenInner({ mode }: ExecutionScreenProps) {
+  const { setTopbarSlot } = useTopbarSlot();
+  const { t } = usePreferences();
   const [search, setSearch] = useStringFilter("q", "");
   const [selectedSymbol, setSelectedSymbol] = useStringFilter("sym", "all");
   const [selectedTimeframe, setSelectedTimeframe] = useStringFilter("tf", "all");
@@ -204,18 +227,23 @@ function ExecutionScreenInner({ mode }: ExecutionScreenProps) {
     setPageIndex(0);
   };
 
+  React.useEffect(() => {
+    setTopbarSlot({
+      actions: (
+        <Button asChild variant="outline" size="sm" className="gap-1.5">
+          <Link href="/execution/promotions">
+            <ExternalLink className="size-3.5" />
+            {t("execution.actions.promotions")}
+          </Link>
+        </Button>
+      ),
+      mode: <ExecutionModeToggle mode={mode} t={t} />,
+    });
+    return () => setTopbarSlot(null);
+  }, [mode, setTopbarSlot, t]);
+
   return (
-    <AppShell>
-      <PageHeader
-        actions={
-          <Button asChild variant="outline" size="sm" className="gap-1.5">
-            <Link href="/execution/promotions">
-              <ExternalLink className="size-3.5" />
-              Promotions
-            </Link>
-          </Button>
-        }
-      />
+    <>
 
       <div className="flex flex-col gap-4">
         <ExecutionKpis
@@ -268,8 +296,8 @@ function ExecutionScreenInner({ mode }: ExecutionScreenProps) {
 
         {trades.isError ? (
           <ErrorState
-            title="Failed to load trades"
-            description="The control plane returned an error. Retry, or check the server logs."
+            title={t("execution.errors.load_trades_title")}
+            description={t("execution.errors.load_trades_description")}
             onRetry={() => trades.refetch()}
           />
         ) : (
@@ -297,6 +325,6 @@ function ExecutionScreenInner({ mode }: ExecutionScreenProps) {
         }}
         trade={selectedTrade}
       />
-    </AppShell>
+    </>
   );
 }
