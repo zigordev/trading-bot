@@ -30,13 +30,13 @@ function getNavItems(t: Translate): AppShellNavItem[] {
     { href: "/", label: t("nav.overview"), icon: <Icon name="layout-dashboard" className="size-4" /> },
     { href: "/backtesting", label: t("nav.backtesting"), icon: <Icon name="history" className="size-4" /> },
     {
+      // Paper/Live is a mode, not two destinations — it lives in the
+      // Topbar's `mode` slot (see execution-screen.tsx). Nesting it here
+      // duplicated the whole subtree and forced a mobile-only mirror of
+      // the same switch, since BottomNav only surfaces top-level items.
       href: "/execution",
       label: t("nav.execution"),
       icon: <Icon name="chart-line" className="size-4" />,
-      children: [
-        { href: "/execution/paper", label: t("nav.execution_paper") },
-        { href: "/execution/live", label: t("nav.execution_live") },
-      ],
     },
     {
       href: "/configuration",
@@ -126,6 +126,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         actions: slot.actions,
         meta: slot.meta,
         tabs: slot.tabs,
+        mode: slot.mode,
         utilities: <TopbarUtilities />,
       }}
     >

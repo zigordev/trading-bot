@@ -40,4 +40,29 @@
   --ds-color-accent-hover: oklch(74% 0.14 258);
   --ds-color-accent-fg: oklch(14% 0.01 258);
   --ds-color-accent-soft: oklch(30% 0.06 258);
+  /* Semantic colours are brand-neutral (red means danger in every theme),
+     so these mirror tokens/colors.css's dark values verbatim. They must be
+     restated per theme: the generic dark block is `[data-theme="dark"]` — a
+     theme, not a mode — so it never applies alongside a product theme, and
+     without these the light values win and semantic UI renders pale
+     washes on a dark surface. */
+  --ds-color-success: oklch(70% 0.15 155);
+  --ds-color-success-fg: oklch(88% 0.08 155);
+  --ds-color-success-bg: oklch(28% 0.05 155);
+  --ds-color-success-border: oklch(40% 0.08 155);
+
+  --ds-color-warning: oklch(74% 0.14 75);
+  --ds-color-warning-fg: oklch(90% 0.06 85);
+  --ds-color-warning-bg: oklch(30% 0.05 75);
+  --ds-color-warning-border: oklch(42% 0.08 75);
+
+  --ds-color-danger: oklch(68% 0.18 25);
+  --ds-color-danger-fg: oklch(90% 0.06 25);
+  --ds-color-danger-bg: oklch(30% 0.06 25);
+  --ds-color-danger-border: oklch(42% 0.09 25);
+
+  --ds-color-info: oklch(70% 0.13 240);
+  --ds-color-info-fg: oklch(90% 0.05 240);
+  --ds-color-info-bg: oklch(28% 0.05 240);
+  --ds-color-info-border: oklch(40% 0.07 240);
 }

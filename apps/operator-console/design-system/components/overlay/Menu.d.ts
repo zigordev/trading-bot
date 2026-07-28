@@ -5,8 +5,10 @@ export interface MenuProps {
   trigger: React.ReactNode;
   /** Panel content, or a render function receiving `{ close }` to dismiss on item click. */
   children: React.ReactNode | ((args: { close: () => void }) => React.ReactNode);
-  /** Panel horizontal alignment relative to the trigger. Default 'end' (right-aligned). */
+  /** Panel horizontal alignment relative to the trigger. Default 'end' (right-aligned). Ignored when `block`. */
   align?: 'start' | 'end';
+  /** Full-width trigger and panel — for a sidebar-width control like ScopeSwitcher. */
+  block?: boolean;
   className?: string;
   style?: React.CSSProperties;
 }

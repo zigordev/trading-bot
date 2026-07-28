@@ -20,6 +20,8 @@ export type TopbarSlot = {
   actions?: ReactNode;
   meta?: ReactNode;
   tabs?: ReactNode;
+  /** Mode switch for the screen — e.g. Execution's Paper/Live. */
+  mode?: ReactNode;
 };
 
 interface TopbarSlotContextValue {
