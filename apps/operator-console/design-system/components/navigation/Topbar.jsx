@@ -5,7 +5,7 @@ injectOnce('ds-topbar', `
 .ds-topbar{position:sticky;top:0;z-index:50;background:var(--ds-color-surface-translucent);
   backdrop-filter:blur(var(--ds-color-surface-blur));-webkit-backdrop-filter:blur(var(--ds-color-surface-blur));
   border-bottom:1px solid var(--ds-color-border);}
-.ds-topbar-tabs{display:flex;align-items:center;gap:var(--ds-space-2);overflow-x:auto;scrollbar-width:none;}
+.ds-topbar-tabs{display:flex;align-items:center;gap:var(--ds-space-2);overflow-x:auto;scrollbar-width:none;flex:1 1 auto;min-width:0;}
 .ds-topbar-tabs::-webkit-scrollbar{display:none;}
 .ds-topbar-brand{display:flex;flex-shrink:0;}
 @media (min-width: 1025px) { .ds-topbar-brand--hide-desktop{display:none;} }
@@ -46,19 +46,15 @@ export function Topbar({
               </div>
             ) : null}
           </div>
-        ) : (
-          <div style={{ flex: '1 1 auto' }} />
-        )}
+        ) : null}
+
+        {tabs ? (
+          <div className="ds-topbar-tabs">{tabs}</div>
+        ) : (!hasHeaderText ? <div style={{ flex: '1 1 auto' }} /> : null)}
 
         {actions ? <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--ds-space-2)', flexShrink: 0 }}>{actions}</div> : null}
         {utilities ? <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--ds-space-1)', flexShrink: 0 }}>{utilities}</div> : null}
       </div>
-
-      {tabs ? (
-        <div className="ds-topbar-tabs" style={{ padding: '0 var(--ds-space-5) var(--ds-space-2)' }}>
-          {tabs}
-        </div>
-      ) : null}
 
       {subBar ? (
         <div style={{ borderTop: '1px solid var(--ds-color-border)', padding: 'var(--ds-space-2) var(--ds-space-5)' }}>
