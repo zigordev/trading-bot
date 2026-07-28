@@ -4,6 +4,7 @@ import * as React from "react";
 import { Check, Minus, X } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { usePreferences } from "@/components/providers/preferences-provider";
 
 export type MetricGateStatus = "pass" | "fail" | "skip";
 
@@ -28,6 +29,12 @@ const STATUS_ICON: Record<MetricGateStatus, React.ReactNode> = {
   skip: <Minus className="size-3" />,
 };
 
+const STATUS_TEXT_KEY: Record<MetricGateStatus, string> = {
+  pass: "shared.metric_gate.pass",
+  fail: "shared.metric_gate.fail",
+  skip: "shared.metric_gate.na",
+};
+
 export function MetricGate({
   label,
   status,
@@ -36,6 +43,7 @@ export function MetricGate({
   hint,
   className,
 }: MetricGateProps) {
+  const { t } = usePreferences();
   return (
     <div
       className={cn(
@@ -49,7 +57,7 @@ export function MetricGate({
             "flex size-5 shrink-0 items-center justify-center rounded-full",
             STATUS_BADGE[status],
           )}
-          aria-label={status}
+          aria-label={t(STATUS_TEXT_KEY[status])}
         >
           {STATUS_ICON[status]}
         </span>
@@ -66,7 +74,7 @@ export function MetricGate({
         </span>
         {threshold !== undefined && (
           <span className="num text-[11px] text-[var(--color-fg-subtle)]">
-            target {threshold}
+            {t("shared.metric_gate.target_prefix")} {threshold}
           </span>
         )}
       </div>
@@ -75,6 +83,7 @@ export function MetricGate({
 }
 
 export function MetricGateLegend({ className }: { className?: string }) {
+  const { t } = usePreferences();
   return (
     <div
       className={cn(
@@ -86,19 +95,19 @@ export function MetricGateLegend({ className }: { className?: string }) {
         <span className={cn("flex size-4 items-center justify-center rounded-full", STATUS_BADGE.pass)}>
           <Check className="size-2.5" />
         </span>
-        pass
+        {t(STATUS_TEXT_KEY.pass)}
       </span>
       <span className="inline-flex items-center gap-1.5">
         <span className={cn("flex size-4 items-center justify-center rounded-full", STATUS_BADGE.fail)}>
           <X className="size-2.5" />
         </span>
-        fail
+        {t(STATUS_TEXT_KEY.fail)}
       </span>
       <span className="inline-flex items-center gap-1.5">
         <span className={cn("flex size-4 items-center justify-center rounded-full", STATUS_BADGE.skip)}>
           <Minus className="size-2.5" />
         </span>
-        n/a
+        {t(STATUS_TEXT_KEY.skip)}
       </span>
     </div>
   );

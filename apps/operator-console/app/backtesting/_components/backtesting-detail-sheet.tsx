@@ -33,6 +33,7 @@ import { ReadinessBar } from "@/components/shared/readiness-bar";
 import { ScoreCell } from "@/components/shared/score-cell";
 import { SymbolAvatar } from "@/components/shared/symbol-avatar";
 import { ProgressCell } from "@/components/shared/progress-cell";
+import { usePreferences } from "@/components/providers/preferences-provider";
 
 interface BacktestingDetailSheetProps {
   open: boolean;
@@ -51,6 +52,7 @@ export function BacktestingDetailSheet({
   thresholds,
   onRunSelect,
 }: BacktestingDetailSheetProps) {
+  const { t } = usePreferences();
   if (!row) return null;
   const evals = evaluateThresholds(row.latestRun, thresholds);
 
@@ -74,8 +76,10 @@ export function BacktestingDetailSheet({
         <div className="flex items-center justify-between gap-3">
           <div className="text-[12px] text-[var(--color-fg-subtle)]">
             {row.latestRun
-              ? `Last run ${formatTimestamp(row.latestRun.finishedAt, { style: "relative" })}`
-              : "No completed runs yet"}
+              ? t("backtesting.detail.footer_last_run", {
+                  time: formatTimestamp(row.latestRun.finishedAt, { style: "relative" }),
+                })
+              : t("backtesting.detail.footer_no_runs")}
           </div>
           <div className="flex items-center gap-2">
             <Tooltip>
@@ -83,12 +87,12 @@ export function BacktestingDetailSheet({
                 <span tabIndex={0}>
                   <Button type="button" variant="outline" size="sm" disabled className="gap-1.5">
                     <Lock className="size-3.5" />
-                    Promote to paper
+                    {t("backtesting.detail.promote_paper")}
                   </Button>
                 </span>
               </TooltipTrigger>
               <TooltipContent>
-                Promotion endpoint is not wired up yet — automatic promotion runs server-side.
+                {t("backtesting.detail.promote_paper_tooltip")}
               </TooltipContent>
             </Tooltip>
             <Tooltip>
@@ -96,11 +100,11 @@ export function BacktestingDetailSheet({
                 <span tabIndex={0}>
                   <Button type="button" size="sm" disabled className="gap-1.5">
                     <Lock className="size-3.5" />
-                    Promote to live
+                    {t("backtesting.detail.promote_live")}
                   </Button>
                 </span>
               </TooltipTrigger>
-              <TooltipContent>Live promotion behind a control-plane feature flag.</TooltipContent>
+              <TooltipContent>{t("backtesting.detail.promote_live_tooltip")}</TooltipContent>
             </Tooltip>
           </div>
         </div>
@@ -108,10 +112,10 @@ export function BacktestingDetailSheet({
     >
       <Tabs defaultValue="summary" className="flex flex-col gap-4">
         <TabsList>
-          <TabsTrigger value="summary">Summary</TabsTrigger>
-          <TabsTrigger value="runs">Runs</TabsTrigger>
-          <TabsTrigger value="thresholds">Thresholds</TabsTrigger>
-          <TabsTrigger value="readiness">Readiness</TabsTrigger>
+          <TabsTrigger value="summary">{t("backtesting.detail.tab_summary")}</TabsTrigger>
+          <TabsTrigger value="runs">{t("backtesting.detail.tab_runs")}</TabsTrigger>
+          <TabsTrigger value="thresholds">{t("backtesting.detail.tab_thresholds")}</TabsTrigger>
+          <TabsTrigger value="readiness">{t("backtesting.detail.tab_readiness")}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="summary" className="space-y-4">
@@ -119,7 +123,7 @@ export function BacktestingDetailSheet({
           {row.latestRun && (
             <div className="rounded-[var(--radius-lg)] border border-[var(--color-border)] p-3">
               <p className="text-[11px] font-medium uppercase tracking-wide text-[var(--color-fg-subtle)]">
-                Latest run highlights
+                {t("backtesting.detail.latest_run_highlights")}
               </p>
               <RunSummary run={row.latestRun} />
             </div>
@@ -137,7 +141,7 @@ export function BacktestingDetailSheet({
           <MetricGateLegend />
           {evals.length === 0 ? (
             <p className="text-[12px] text-[var(--color-fg-subtle)]">
-              No completed runs yet to evaluate thresholds.
+              {t("backtesting.detail.thresholds_empty")}
             </p>
           ) : (
             <div className="flex flex-col gap-2">
@@ -155,8 +159,9 @@ export function BacktestingDetailSheet({
           )}
           {!thresholds && (
             <p className="text-[11px] text-[var(--color-fg-subtle)]">
-              No promotion thresholds configured for strategy{" "}
-              <span className="font-mono">{row.strategyName}</span>.
+              {t("backtesting.detail.thresholds_not_configured_prefix")}{" "}
+              <span className="font-mono">{row.strategyName}</span>
+              {t("backtesting.detail.thresholds_not_configured_suffix")}
             </p>
           )}
         </TabsContent>
@@ -170,10 +175,11 @@ export function BacktestingDetailSheet({
 }
 
 function SummaryGrid({ row }: { row: BacktestRow }) {
+  const { t } = usePreferences();
   return (
     <div className="grid grid-cols-2 gap-3">
       <SummaryCell
-        label="Status"
+        label={t("backtesting.detail.stat_status")}
         value={
           <Badge
             variant={
@@ -186,16 +192,16 @@ function SummaryGrid({ row }: { row: BacktestRow }) {
                     : "default"
             }
           >
-            {row.status}
+            {t(`backtesting.filters.status.${row.status}`)}
           </Badge>
         }
       />
       <SummaryCell
-        label="Latest score"
+        label={t("backtesting.detail.stat_latest_score")}
         value={<ScoreCell value={row.latestRun?.score ?? null} history={row.scoreHistory} />}
       />
       <SummaryCell
-        label="Kline coverage"
+        label={t("backtesting.detail.stat_kline_coverage")}
         value={
           <ReadinessBar
             ratio={row.klineCoverage !== null ? row.klineCoverage / 100 : null}
@@ -204,7 +210,7 @@ function SummaryGrid({ row }: { row: BacktestRow }) {
         }
       />
       <SummaryCell
-        label="Job progress"
+        label={t("backtesting.detail.stat_job_progress")}
         value={
           <ProgressCell
             total={row.progress.total}
@@ -232,14 +238,21 @@ function SummaryCell({ label, value }: { label: string; value: React.ReactNode }
 }
 
 function RunSummary({ run }: { run: RecentBacktestRun }) {
+  const { t } = usePreferences();
   return (
     <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-2 text-[12px]">
-      <RunStat label="Total PnL" value={formatPercent(run.totalPnlPercent, { signed: true })} />
-      <RunStat label="Equity PnL" value={formatPercent(run.equityCurvePnlPercent, { signed: true })} />
-      <RunStat label="Drawdown" value={formatPercent(run.maxDrawdownPercent)} />
-      <RunStat label="Reversal ratio" value={run.reversalRatio.toFixed(2)} />
-      <RunStat label="Trades" value={run.tradeCount.toLocaleString()} />
-      <RunStat label="Signals" value={run.signalCount.toLocaleString()} />
+      <RunStat
+        label={t("backtesting.detail.stat_total_pnl")}
+        value={formatPercent(run.totalPnlPercent, { signed: true })}
+      />
+      <RunStat
+        label={t("backtesting.detail.stat_equity_pnl")}
+        value={formatPercent(run.equityCurvePnlPercent, { signed: true })}
+      />
+      <RunStat label={t("backtesting.detail.stat_drawdown")} value={formatPercent(run.maxDrawdownPercent)} />
+      <RunStat label={t("backtesting.detail.stat_reversal_ratio")} value={run.reversalRatio.toFixed(2)} />
+      <RunStat label={t("backtesting.detail.stat_trades")} value={run.tradeCount.toLocaleString()} />
+      <RunStat label={t("backtesting.detail.stat_signals")} value={run.signalCount.toLocaleString()} />
     </dl>
   );
 }
@@ -260,10 +273,11 @@ function RunsList({
   runs: RecentBacktestRun[];
   onRunSelect: (run: RecentBacktestRun) => void;
 }) {
+  const { t } = usePreferences();
   if (runs.length === 0) {
     return (
       <p className="text-[12px] text-[var(--color-fg-subtle)]">
-        No recent runs available for this row.
+        {t("backtesting.detail.runs_empty")}
       </p>
     );
   }
@@ -283,13 +297,20 @@ function RunsList({
                 {formatTimestamp(run.finishedAt, { style: "compact" })}
               </span>
               <span className="text-[11px] text-[var(--color-fg-subtle)]">
-                PnL {formatPercent(run.totalPnlPercent, { signed: true })} ·{" "}
-                {run.tradeCount.toLocaleString()} trades
+                {t(
+                  run.tradeCount === 1
+                    ? "backtesting.detail.runs_list_summary_one"
+                    : "backtesting.detail.runs_list_summary_other",
+                  {
+                    pnl: formatPercent(run.totalPnlPercent, { signed: true }),
+                    count: run.tradeCount.toLocaleString(),
+                  },
+                )}
               </span>
             </div>
             <div className="flex items-center gap-2">
               <span className="num text-[12px] text-[var(--color-fg-muted)]">
-                score {formatScore(run.score)}
+                {t("backtesting.detail.runs_list_score", { score: formatScore(run.score) })}
               </span>
               <ExternalLink className="size-3.5 text-[var(--color-fg-subtle)]" />
             </div>
@@ -301,12 +322,13 @@ function RunsList({
 }
 
 function ReadinessPanel({ row }: { row: BacktestRow }) {
+  const { t } = usePreferences();
   const dimensions = row.readiness?.klineDimensions ?? [];
   return (
     <div className="space-y-4">
       <div>
         <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-[var(--color-fg-subtle)]">
-          Klines
+          {t("backtesting.detail.readiness_klines_heading")}
         </p>
         {dimensions.length > 0 ? (
           <ul className="space-y-2">
@@ -328,12 +350,14 @@ function ReadinessPanel({ row }: { row: BacktestRow }) {
             ))}
           </ul>
         ) : (
-          <p className="text-[12px] text-[var(--color-fg-subtle)]">No kline data reported.</p>
+          <p className="text-[12px] text-[var(--color-fg-subtle)]">
+            {t("backtesting.detail.readiness_no_klines")}
+          </p>
         )}
       </div>
       <div>
         <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-[var(--color-fg-subtle)]">
-          Trades
+          {t("backtesting.detail.readiness_trades_heading")}
         </p>
         {row.tradesCoverage !== null ? (
           <ReadinessBar
@@ -343,7 +367,9 @@ function ReadinessPanel({ row }: { row: BacktestRow }) {
             className="max-w-[260px]"
           />
         ) : (
-          <p className="text-[12px] text-[var(--color-fg-subtle)]">No trade data reported.</p>
+          <p className="text-[12px] text-[var(--color-fg-subtle)]">
+            {t("backtesting.detail.readiness_no_trades")}
+          </p>
         )}
       </div>
       {row.readiness?.details && (

@@ -5,6 +5,7 @@ import * as React from "react";
 import { Combobox, type ComboboxOption } from "@/components/ui/combobox";
 import { SymbolAvatar } from "@/components/shared/symbol-avatar";
 import { useBinanceSymbols } from "@/lib/hooks/use-binance-symbols";
+import { usePreferences } from "@/components/providers/preferences-provider";
 
 interface BinanceSymbolComboboxProps {
   value: string | null;
@@ -15,8 +16,9 @@ interface BinanceSymbolComboboxProps {
 export function BinanceSymbolCombobox({
   value,
   onChange,
-  placeholder = "Search Binance pairs…",
+  placeholder,
 }: BinanceSymbolComboboxProps) {
+  const { t } = usePreferences();
   const [search, setSearch] = React.useState("");
   const { data, isLoading } = useBinanceSymbols(search);
 
@@ -55,9 +57,9 @@ export function BinanceSymbolCombobox({
       }}
       onSearch={setSearch}
       loading={isLoading}
-      placeholder={placeholder}
-      searchPlaceholder="Type to search Binance…"
-      emptyText="No matching pairs."
+      placeholder={placeholder ?? t("configuration.combobox.placeholder")}
+      searchPlaceholder={t("configuration.combobox.search_placeholder")}
+      emptyText={t("configuration.combobox.empty")}
     />
   );
 }

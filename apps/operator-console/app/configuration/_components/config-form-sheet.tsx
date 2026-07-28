@@ -30,6 +30,7 @@ import {
   type ConfigResourceDefinition,
 } from "@/lib/configuration/schemas";
 import { useSaveConfigResource } from "@/lib/hooks/use-config-resource";
+import { usePreferences } from "@/components/providers/preferences-provider";
 import { BinanceSymbolCombobox } from "./binance-symbol-combobox";
 
 interface ConfigFormSheetProps {
@@ -45,6 +46,7 @@ export function ConfigFormSheet({
   onOpenChange,
   initial,
 }: ConfigFormSheetProps) {
+  const { t } = usePreferences();
   const isEdit = Boolean(initial);
   const editingId = isEdit && resource.idField
     ? String((initial as Record<string, unknown>)[resource.idField] ?? "")
@@ -68,9 +70,14 @@ export function ConfigFormSheet({
     const payload = values as Record<string, unknown>;
     const promise = save.mutateAsync({ payload, id: editingId ?? null });
     toast.promise(promise, {
-      loading: isEdit ? "Saving…" : "Creating…",
-      success: isEdit ? "Saved" : "Created",
-      error: (err) => (err instanceof Error ? err.message : "Failed to save"),
+      loading: isEdit
+        ? t("toast.config_save.saving")
+        : t("toast.config_save.creating"),
+      success: isEdit
+        ? t("toast.config_save.saved")
+        : t("toast.config_save.created"),
+      error: (err) =>
+        err instanceof Error ? err.message : t("toast.config_save.error"),
     });
     try {
       await promise;
@@ -85,7 +92,7 @@ export function ConfigFormSheet({
       open={open}
       onOpenChange={onOpenChange}
       size="md"
-      title={`${isEdit ? "Edit" : "Add"} ${resource.label.toLowerCase().replace(/s$/, "")}`}
+      title={`${isEdit ? t("configuration.actions.edit") : t("configuration.actions.add")} ${t(resource.labelSingularKey).toLowerCase()}`}
       footer={
         <div className="flex items-center justify-end gap-2">
           <Button
@@ -95,7 +102,7 @@ export function ConfigFormSheet({
             onClick={() => onOpenChange(false)}
             disabled={save.isPending}
           >
-            Cancel
+            {t("configuration.actions.cancel")}
           </Button>
           <Button
             type="button"
@@ -103,7 +110,11 @@ export function ConfigFormSheet({
             onClick={onSubmit}
             disabled={save.isPending}
           >
-            {save.isPending ? "Saving…" : isEdit ? "Save changes" : "Create"}
+            {save.isPending
+              ? t("configuration.actions.saving")
+              : isEdit
+                ? t("configuration.actions.save")
+                : t("configuration.actions.create")}
           </Button>
         </div>
       }
@@ -121,18 +132,19 @@ export function ConfigFormSheet({
 
 function ConfigFieldRow({ field }: { field: ConfigField }) {
   const form = useFormContext();
+  const { t } = usePreferences();
   const error = getError(form.formState.errors, field.name);
 
   return (
     <div className="space-y-1.5">
       <div className="flex items-center justify-between gap-3">
         <Label htmlFor={field.name} className={cn(error && "text-[var(--color-danger)]")}>
-          {field.label}
+          {t(field.labelKey)}
         </Label>
       </div>
       <FieldControl field={field} />
-      {"description" in field && field.description && (
-        <p className="text-[12px] text-[var(--color-fg-subtle)]">{field.description}</p>
+      {"descriptionKey" in field && field.descriptionKey && (
+        <p className="text-[12px] text-[var(--color-fg-subtle)]">{t(field.descriptionKey)}</p>
       )}
       {error && (
         <p className="text-[12px] font-medium text-[var(--color-danger)]">
@@ -145,6 +157,7 @@ function ConfigFieldRow({ field }: { field: ConfigField }) {
 
 function FieldControl({ field }: { field: ConfigField }) {
   const form = useFormContext();
+  const { t } = usePreferences();
 
   if (field.kind === "boolean") {
     return (
@@ -170,12 +183,12 @@ function FieldControl({ field }: { field: ConfigField }) {
         render={({ field: rhf }) => (
           <Select value={String(rhf.value ?? "")} onValueChange={rhf.onChange}>
             <SelectTrigger id={field.name} className="h-9">
-              <SelectValue placeholder="Select…" />
+              <SelectValue placeholder={t("configuration.actions.select_placeholder")} />
             </SelectTrigger>
             <SelectContent>
               {field.options.map((opt) => (
                 <SelectItem key={opt.value} value={opt.value}>
-                  {opt.label}
+                  {t(opt.labelKey)}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -219,7 +232,7 @@ function FieldControl({ field }: { field: ConfigField }) {
           <AssetLabel asset={asset} size={18} />
         ) : (
           <span className="text-[var(--color-fg-subtle)]">
-            {field.placeholder ?? "Auto-filled from pair"}
+            {field.placeholder ?? t("configuration.actions.autofilled_placeholder")}
           </span>
         )}
       </div>
@@ -301,6 +314,7 @@ function JsonField({
   placeholder?: string;
 }) {
   const form = useFormContext();
+  const { t } = usePreferences();
   const value = form.watch(name);
   const [text, setText] = React.useState(() =>
     JSON.stringify(value ?? {}, null, 2),
@@ -318,7 +332,9 @@ function JsonField({
       form.setValue(name, parsed, { shouldDirty: true, shouldValidate: true });
       setParseError(null);
     } catch (err) {
-      setParseError(err instanceof Error ? err.message : "Invalid JSON");
+      setParseError(
+        err instanceof Error ? err.message : t("configuration.actions.invalid_json"),
+      );
     }
   };
 
@@ -343,38 +359,39 @@ function JsonField({
 
 const THRESHOLDS: {
   key: "minTradeCount" | "minTradesPer1000Candles" | "maxDrawdownPercent" | "maxReversalRatio";
-  label: string;
-  hint: string;
+  labelKey: string;
+  hintKey: string;
   step?: string;
 }[] = [
   {
     key: "minTradeCount",
-    label: "Min trade count",
-    hint: "Minimum trades a backtest must produce.",
+    labelKey: "configuration.thresholds.minTradeCount",
+    hintKey: "configuration.thresholds.minTradeCountHint",
     step: "1",
   },
   {
     key: "minTradesPer1000Candles",
-    label: "Min trades / 1k candles",
-    hint: "Density: trades per 1000 replayed candles.",
+    labelKey: "configuration.thresholds.minTradesPer1000Candles",
+    hintKey: "configuration.thresholds.minTradesPer1000CandlesHint",
     step: "0.1",
   },
   {
     key: "maxDrawdownPercent",
-    label: "Max drawdown %",
-    hint: "Largest peak-to-trough drop allowed (lower is stricter).",
+    labelKey: "configuration.thresholds.maxDrawdownPercent",
+    hintKey: "configuration.thresholds.maxDrawdownPercentHint",
     step: "0.1",
   },
   {
     key: "maxReversalRatio",
-    label: "Max reversal ratio",
-    hint: "Allowed proportion of trades closing on reversal.",
+    labelKey: "configuration.thresholds.maxReversalRatio",
+    hintKey: "configuration.thresholds.maxReversalRatioHint",
     step: "0.01",
   },
 ];
 
 function PromotionThresholdsField({ name }: { name: string }) {
   const form = useFormContext();
+  const { t } = usePreferences();
   return (
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
       {THRESHOLDS.map((threshold) => {
@@ -388,7 +405,7 @@ function PromotionThresholdsField({ name }: { name: string }) {
               htmlFor={fullName}
               className="text-[11px] uppercase tracking-wide text-[var(--color-fg-subtle)]"
             >
-              {threshold.label}
+              {t(threshold.labelKey)}
             </Label>
             <Controller
               control={form.control}
@@ -412,7 +429,7 @@ function PromotionThresholdsField({ name }: { name: string }) {
               )}
             />
             <p className="mt-1.5 text-[11px] text-[var(--color-fg-subtle)]">
-              {threshold.hint}
+              {t(threshold.hintKey)}
             </p>
           </div>
         );

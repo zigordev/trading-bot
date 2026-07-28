@@ -12,42 +12,12 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { usePreferences } from "@/components/providers/preferences-provider";
 
 type Preset = {
   label: string;
   getRange: () => DateRange;
 };
-
-const DEFAULT_PRESETS: Preset[] = [
-  {
-    label: "Last 24h",
-    getRange: () => ({
-      from: new Date(Date.now() - 24 * 60 * 60 * 1000),
-      to: new Date(),
-    }),
-  },
-  {
-    label: "Last 7d",
-    getRange: () => ({
-      from: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
-      to: new Date(),
-    }),
-  },
-  {
-    label: "Last 30d",
-    getRange: () => ({
-      from: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
-      to: new Date(),
-    }),
-  },
-  {
-    label: "Last 90d",
-    getRange: () => ({
-      from: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000),
-      to: new Date(),
-    }),
-  },
-];
 
 const compactDate = new Intl.DateTimeFormat("en-US", {
   month: "short",
@@ -69,13 +39,49 @@ interface DateRangePickerProps {
 export function DateRangePicker({
   value,
   onChange,
-  placeholder = "Pick a range",
-  presets = DEFAULT_PRESETS,
+  placeholder: providedPlaceholder,
+  presets: providedPresets,
   className,
   align = "start",
   disabled,
   numberOfMonths = 2,
 }: DateRangePickerProps) {
+  const { t } = usePreferences();
+  const placeholder = providedPlaceholder ?? t("ui.date_range_picker.placeholder");
+  const defaultPresets = React.useMemo<Preset[]>(
+    () => [
+      {
+        label: t("ui.date_range_picker.preset_24h"),
+        getRange: () => ({
+          from: new Date(Date.now() - 24 * 60 * 60 * 1000),
+          to: new Date(),
+        }),
+      },
+      {
+        label: t("ui.date_range_picker.preset_7d"),
+        getRange: () => ({
+          from: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
+          to: new Date(),
+        }),
+      },
+      {
+        label: t("ui.date_range_picker.preset_30d"),
+        getRange: () => ({
+          from: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
+          to: new Date(),
+        }),
+      },
+      {
+        label: t("ui.date_range_picker.preset_90d"),
+        getRange: () => ({
+          from: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000),
+          to: new Date(),
+        }),
+      },
+    ],
+    [t],
+  );
+  const presets = providedPresets ?? defaultPresets;
   const [open, setOpen] = React.useState(false);
 
   const label = (() => {
@@ -109,7 +115,7 @@ export function DateRangePicker({
               type="button"
               onClick={clear}
               className="rounded-sm p-0.5 text-[var(--color-fg-subtle)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-fg)]"
-              aria-label="Clear date range"
+              aria-label={t("ui.date_range_picker.clear_date_range")}
             >
               <X className="size-3" />
             </button>
@@ -124,7 +130,7 @@ export function DateRangePicker({
         <div className="flex">
           <div className="flex flex-col border-r border-[var(--color-border)] p-2">
             <span className="px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-[var(--color-fg-subtle)]">
-              Quick ranges
+              {t("ui.date_range_picker.quick_ranges")}
             </span>
             {presets.map((preset) => (
               <button
@@ -143,7 +149,7 @@ export function DateRangePicker({
               onClick={() => onChange(undefined)}
               className="mt-2 rounded-[var(--radius-sm)] px-2 py-1.5 text-left text-[13px] text-[var(--color-fg-subtle)] hover:bg-[var(--color-surface-2)]"
             >
-              Clear
+              {t("ui.date_range_picker.clear")}
             </button>
           </div>
           <Calendar

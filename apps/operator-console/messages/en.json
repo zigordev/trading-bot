@@ -1,0 +1,517 @@
+{
+  "nav": {
+    "overview": "Overview",
+    "backtesting": "Backtesting",
+    "execution": "Execution",
+    "execution_paper": "Paper",
+    "execution_live": "Live",
+    "configuration": "Configuration",
+    "language": "Language",
+    "theme": "Theme"
+  },
+  "theme": {
+    "toggle": "Toggle theme",
+    "light": "Light",
+    "dark": "Dark"
+  },
+  "language": {
+    "english": "English",
+    "spanish": "Spanish"
+  },
+  "shell": {
+    "control_plane": "Control plane",
+    "local": "local"
+  },
+  "configuration": {
+    "resources": {
+      "symbols": "Pairs",
+      "timeframes": "Timeframes",
+      "strategies": "Strategies",
+      "risk-profiles": "Risk profiles",
+      "analysis-settings": "Analysis settings",
+      "execution-settings": "Execution settings"
+    },
+    "resources_singular": {
+      "symbols": "Pair",
+      "timeframes": "Timeframe",
+      "strategies": "Strategy",
+      "risk-profiles": "Risk profile",
+      "analysis-settings": "Analysis setting",
+      "execution-settings": "Execution setting"
+    },
+    "fields": {
+      "symbols": {
+        "code": "Pair",
+        "baseAsset": "Base asset",
+        "destinationAsset": "Destination asset",
+        "active": "Active"
+      },
+      "timeframes": {
+        "code": "Code",
+        "longerTimeframeCode": "Longer timeframe code",
+        "longerTimeframeMultiplier": "Longer timeframe multiplier",
+        "periodMs": "Period (ms)",
+        "active": "Active"
+      },
+      "strategies": {
+        "name": "Name",
+        "description": "Description",
+        "activated": "Activated",
+        "kind": "Strategy kind",
+        "promotionThresholds": "Promotion thresholds",
+        "promotionThresholdsDescription": "Backtests that meet ALL thresholds are eligible for automatic promotion."
+      },
+      "risk-profiles": {
+        "name": "Name",
+        "description": "Description",
+        "maximumStopLoss": "Maximum stop loss",
+        "minimumStopLoss": "Minimum stop loss",
+        "swingGap": "Swing gap",
+        "rrr": "RRR",
+        "enabled": "Enabled"
+      },
+      "analysis-settings": {
+        "name": "Name",
+        "strategyName": "Strategy",
+        "technicalAnalysisSettings": "Technical analysis settings",
+        "enabled": "Enabled"
+      },
+      "execution-settings": {
+        "name": "Name",
+        "enabled": "Enabled",
+        "mode": "Mode",
+        "modeOptions": {
+          "paper": "Paper",
+          "live": "Live"
+        },
+        "autoPromote": "Auto promote",
+        "maxPromotions": "Max promotions",
+        "replaceOpenPositionPolicy": "Replace open position policy",
+        "policyOptions": {
+          "keep": "Keep existing",
+          "flatten": "Flatten"
+        }
+      }
+    },
+    "thresholds": {
+      "minTradeCount": "Min trade count",
+      "minTradeCountHint": "Minimum trades a backtest must produce.",
+      "minTradesPer1000Candles": "Min trades / 1k candles",
+      "minTradesPer1000CandlesHint": "Density: trades per 1000 replayed candles.",
+      "maxDrawdownPercent": "Max drawdown %",
+      "maxDrawdownPercentHint": "Largest peak-to-trough drop allowed (lower is stricter).",
+      "maxReversalRatio": "Max reversal ratio",
+      "maxReversalRatioHint": "Allowed proportion of trades closing on reversal."
+    },
+    "actions": {
+      "add": "Add",
+      "edit": "Edit",
+      "duplicate": "Duplicate",
+      "delete": "Delete",
+      "more_actions": "More actions",
+      "cancel": "Cancel",
+      "save": "Save changes",
+      "saving": "Saving…",
+      "create": "Create",
+      "yes": "Yes",
+      "no": "No",
+      "select_placeholder": "Select…",
+      "autofilled_placeholder": "Auto-filled from pair",
+      "invalid_json": "Invalid JSON",
+      "search_placeholder": "Search {{resource}}…"
+    },
+    "confirm": {
+      "delete_title": "Delete {{name}}?",
+      "delete_description": "This permanently removes the {{resource}} record from the control plane. The action cannot be undone."
+    },
+    "empty": {
+      "no_records": "No {{resource}} configured yet."
+    },
+    "combobox": {
+      "placeholder": "Search Binance pairs…",
+      "search_placeholder": "Type to search Binance…",
+      "empty": "No matching pairs."
+    }
+  },
+  "backtesting": {
+    "error": {
+      "title": "Failed to load backtests",
+      "description": "One or more endpoints returned an error. Retry, or check the control plane."
+    },
+    "filters": {
+      "status": {
+        "ready": "Ready",
+        "partial": "Partial",
+        "missing": "Missing",
+        "error": "Error",
+        "placeholder": "All statuses",
+        "search_placeholder": "Search statuses…",
+        "trigger_label": "Status"
+      },
+      "chip_search": "search \"{{search}}\"",
+      "chip_timeframe": "tf: {{timeframe}}",
+      "chip_strategy": "strategy: {{strategy}}",
+      "clear_all": "Clear all",
+      "search_placeholder": "Search pair, strategy, timeframe…",
+      "pairs": {
+        "placeholder": "All pairs",
+        "search_placeholder": "Search pairs…",
+        "trigger_label": "Pair"
+      },
+      "timeframe": {
+        "placeholder": "Timeframe",
+        "all": "All timeframes"
+      },
+      "strategy": {
+        "placeholder": "Strategy",
+        "all": "All strategies"
+      },
+      "remove_filter": "Remove filter"
+    },
+    "kpis": {
+      "rows_ready": {
+        "label": "Rows ready ≥ 99%",
+        "hint": "Pair × timeframe × strategy"
+      },
+      "running": {
+        "label": "Running",
+        "hint": "{{queued}} queued"
+      },
+      "last_completed": {
+        "label": "Last completed"
+      },
+      "avg_score": {
+        "label": "Avg score · last {{count}}",
+        "hint": "{{value}} on top run"
+      }
+    },
+    "table": {
+      "column_pair": "Pair",
+      "column_timeframe": "TF",
+      "column_strategy": "Strategy",
+      "column_klines": "Klines",
+      "column_trades": "Trades",
+      "column_progress": "Progress",
+      "column_score": "Score",
+      "kline_coverage_hover_title": "Per-timeframe kline coverage",
+      "more_actions": "More actions",
+      "view_details": "View details",
+      "empty": "No backtests match the current filters."
+    },
+    "detail": {
+      "footer_last_run": "Last run {{time}}",
+      "footer_no_runs": "No completed runs yet",
+      "promote_paper": "Promote to paper",
+      "promote_paper_tooltip": "Promotion endpoint is not wired up yet — automatic promotion runs server-side.",
+      "promote_live": "Promote to live",
+      "promote_live_tooltip": "Live promotion behind a control-plane feature flag.",
+      "tab_summary": "Summary",
+      "tab_runs": "Runs",
+      "tab_thresholds": "Thresholds",
+      "tab_readiness": "Readiness",
+      "latest_run_highlights": "Latest run highlights",
+      "thresholds_empty": "No completed runs yet to evaluate thresholds.",
+      "thresholds_not_configured_prefix": "No promotion thresholds configured for strategy",
+      "thresholds_not_configured_suffix": ".",
+      "stat_status": "Status",
+      "stat_latest_score": "Latest score",
+      "stat_kline_coverage": "Kline coverage",
+      "stat_job_progress": "Job progress",
+      "stat_total_pnl": "Total PnL",
+      "stat_equity_pnl": "Equity PnL",
+      "stat_drawdown": "Drawdown",
+      "stat_reversal_ratio": "Reversal ratio",
+      "stat_trades": "Trades",
+      "stat_signals": "Signals",
+      "stat_score": "Score",
+      "stat_finished": "Finished",
+      "stat_backtest_duration": "Backtest duration",
+      "stat_data_fetch": "Data fetch",
+      "stat_replay_klines": "Replay klines",
+      "runs_empty": "No recent runs available for this row.",
+      "runs_list_score": "score {{score}}",
+      "runs_list_summary_one": "PnL {{pnl}} · {{count}} trade",
+      "runs_list_summary_other": "PnL {{pnl}} · {{count}} trades",
+      "readiness_klines_heading": "Klines",
+      "readiness_no_klines": "No kline data reported.",
+      "readiness_trades_heading": "Trades",
+      "readiness_no_trades": "No trade data reported.",
+      "run_sheet_title": "Backtest run",
+      "trade_outcomes_heading": "Trade outcomes",
+      "tag_stop_loss": "Stop loss",
+      "tag_take_profit": "Take profit",
+      "tag_reversal": "Reversal",
+      "tag_window_end": "Window end",
+      "timing_heading": "Timing",
+      "identifiers_heading": "Identifiers",
+      "identifier_backtest_id": "Backtest ID",
+      "identifier_analysis_setting": "Analysis setting"
+    },
+    "heatmap": {
+      "day_sun": "Sun",
+      "day_mon": "Mon",
+      "day_tue": "Tue",
+      "day_wed": "Wed",
+      "day_thu": "Thu",
+      "day_fri": "Fri",
+      "day_sat": "Sat",
+      "heading": "Entry timeslot heatmap",
+      "legend_negative": "Negative",
+      "legend_thin": "Thin",
+      "legend_favorable": "Favorable",
+      "empty": "No timeslot analysis available for this run.",
+      "tooltip_with_trades": "{{label}}\nTrades: {{tradeCount}}\nWin rate: {{winRate}}%\nExpectancy: {{expectancy}}\nAverage PnL: {{avgPnl}}",
+      "tooltip_no_trades": "{{label}}\nNo trades"
+    }
+  },
+  "execution": {
+    "kpis": {
+      "realized_pnl_label": "Realized PnL (filtered)",
+      "trades_count_one": "{{count}} trade",
+      "trades_count_other": "{{count}} trades",
+      "open_positions_label": "Open positions",
+      "recent_trades_label": "Recent trades · {{hours}}h",
+      "win_rate_label": "Win rate · last {{count}}"
+    },
+    "actions": {
+      "promotions": "Promotions"
+    },
+    "errors": {
+      "load_trades_title": "Failed to load trades",
+      "load_trades_description": "The control plane returned an error. Retry, or check the server logs."
+    },
+    "filters": {
+      "search_chip": "search \"{{query}}\"",
+      "timeframe_chip": "tf: {{timeframe}}",
+      "strategy_chip": "strategy: {{strategy}}",
+      "side_chip": "side: {{side}}",
+      "opened_range_chip": "opened: range",
+      "clear_all": "Clear all",
+      "search_placeholder": "Search pair, strategy, order ID…",
+      "pair_placeholder": "Pair",
+      "all_pairs": "All pairs",
+      "timeframe_placeholder": "Timeframe",
+      "all_timeframes": "All TF",
+      "strategy_placeholder": "Strategy",
+      "all_strategies": "All strategies",
+      "side_placeholder": "Side",
+      "any_side": "Any side",
+      "all_statuses_placeholder": "All statuses",
+      "search_statuses_placeholder": "Search statuses…",
+      "status_trigger_label": "Status",
+      "opened_range_placeholder": "Opened range",
+      "remove_filter_aria": "Remove filter"
+    },
+    "trades_table": {
+      "pair_header": "Pair",
+      "side_header": "Side",
+      "status_header": "Status",
+      "strategy_header": "Strategy",
+      "opened_header": "Opened",
+      "closed_header": "Closed",
+      "entry_header": "Entry",
+      "exit_header": "Exit",
+      "pnl_percent_header": "PnL %",
+      "open_details_aria": "Open trade details",
+      "empty_state": "No trades match the current filters."
+    },
+    "trade_detail": {
+      "section_performance": "Performance",
+      "section_prices": "Prices",
+      "section_timing": "Timing",
+      "section_references": "References",
+      "realized_pnl_percent": "Realized PnL %",
+      "realized_pnl_usd": "Realized PnL $",
+      "fees": "Fees",
+      "notional": "Notional",
+      "quantity": "Quantity",
+      "duration": "Duration",
+      "entry": "Entry",
+      "exit": "Exit",
+      "stop_loss": "Stop loss",
+      "take_profit": "Take profit",
+      "opened": "Opened",
+      "closed": "Closed",
+      "close_reason": "Close reason",
+      "execution_settings": "Execution settings",
+      "trade_id": "Trade ID",
+      "external_order_id": "External order ID",
+      "position_id": "Position ID",
+      "analysis_setting": "Analysis setting",
+      "source_backtest": "Source backtest",
+      "risk_profile": "Risk profile"
+    },
+    "promotions": {
+      "title": "Promotions",
+      "back_to_trades": "Back to trades",
+      "filter_active": "Active",
+      "filter_all_history": "All history",
+      "pair_header": "Pair",
+      "strategy_header": "Strategy",
+      "mode_header": "Mode",
+      "status_header": "Status",
+      "status_active": "Active",
+      "status_superseded": "Superseded",
+      "execution_settings_header": "Execution settings",
+      "risk_profile_header": "Risk profile",
+      "selection_header": "Selection",
+      "promoted_header": "Promoted",
+      "open_details_aria": "Open promotion details",
+      "error_title": "Failed to load promotions",
+      "error_description": "The execution summary endpoint returned an error.",
+      "empty_state": "No promotions yet.",
+      "detail_title_fallback": "Promotion",
+      "selection_value": "Selection value",
+      "promoted_at": "Promoted at",
+      "execution_settings": "Execution settings",
+      "risk_profile": "Risk profile",
+      "identifiers_section": "Identifiers",
+      "promotion_id": "Promotion ID",
+      "analysis_setting": "Analysis setting",
+      "source_backtest": "Source backtest"
+    }
+  },
+  "overview": {
+    "kpi": {
+      "realized_pnl": "Realized PnL",
+      "trades_24h": "{{count}} trades · 24h",
+      "open_positions": "Open positions",
+      "closed_today": "{{count}} closed today",
+      "active_promotions": "Active promotions",
+      "data_readiness": "Data readiness",
+      "pair_timeframe": "{{count}} pair×timeframe"
+    },
+    "health_status": {
+      "healthy": "Healthy",
+      "degraded": "Degraded",
+      "down": "Offline",
+      "unknown": "Unknown"
+    },
+    "system_health": {
+      "title": "System health",
+      "realtime_channel": "Realtime channel",
+      "realtime_hint": "/ws/ops · {{status}}",
+      "control_plane": "Control plane",
+      "control_plane_hint": "/v1/ops/* responding",
+      "backtest_queue": "Backtest queue",
+      "queue_depth_one": "{{count}} job pending",
+      "queue_depth_other": "{{count}} jobs pending"
+    },
+    "top_performers": {
+      "title": "Top performers",
+      "description": "Highest-scoring runs from the last batch",
+      "empty": "No completed runs yet."
+    },
+    "activity_feed": {
+      "title": "Activity",
+      "description": "Live operations stream",
+      "empty_title": "Listening for events",
+      "empty_description": "Activity from /ws/ops will appear here as it happens.",
+      "type_backtests": "Backtests",
+      "type_execution": "Execution",
+      "type_data": "Data",
+      "type_config": "Config",
+      "summary_refresh": "summary refresh",
+      "readiness_refresh": "readiness refresh"
+    },
+    "equity_curve": {
+      "title": "Equity curve",
+      "description": "Cumulative realized PnL over recent trades",
+      "failed_to_load": "Failed to load",
+      "empty": "No closed trades yet",
+      "tooltip_label": "Equity"
+    }
+  },
+  "toast": {
+    "config_delete": {
+      "loading": "Deleting…",
+      "success": "Deleted",
+      "error": "Failed to delete"
+    },
+    "config_save": {
+      "saving": "Saving…",
+      "creating": "Creating…",
+      "saved": "Saved",
+      "created": "Created",
+      "error": "Failed to save"
+    }
+  },
+  "shared": {
+    "error_state": {
+      "default_title": "Something went wrong",
+      "retry": "Retry"
+    },
+    "ws_status_dot": {
+      "connected": "Connected",
+      "disconnected": "Disconnected",
+      "connecting": "Connecting"
+    },
+    "metric_gate": {
+      "pass": "pass",
+      "fail": "fail",
+      "na": "n/a",
+      "target_prefix": "target"
+    },
+    "readiness_bar": {
+      "ready": "Ready",
+      "partial": "Partial",
+      "missing": "Missing",
+      "error": "Error"
+    },
+    "copy_button": {
+      "copy": "Copy",
+      "copied": "Copied"
+    },
+    "close": "Close"
+  },
+  "data_table": {
+    "no_results": "No results.",
+    "no_rows": "No rows",
+    "pagination_range": "{{start}}–{{end}} of {{total}}",
+    "rows": "Rows",
+    "search_placeholder": "Search…",
+    "columns": "Columns",
+    "toggle_columns": "Toggle columns"
+  },
+  "ui": {
+    "combobox": {
+      "placeholder": "Select…",
+      "search_placeholder": "Search…",
+      "empty_text": "No results.",
+      "clear_selection": "Clear selection",
+      "loading": "Loading…"
+    },
+    "multi_select": {
+      "placeholder": "Select…",
+      "empty_text": "No results.",
+      "search_placeholder": "Search…",
+      "clear_selection": "Clear selection"
+    },
+    "date_range_picker": {
+      "placeholder": "Pick a range",
+      "preset_24h": "Last 24h",
+      "preset_7d": "Last 7d",
+      "preset_30d": "Last 30d",
+      "preset_90d": "Last 90d",
+      "quick_ranges": "Quick ranges",
+      "clear": "Clear",
+      "clear_date_range": "Clear date range"
+    }
+  },
+  "status": {
+    "trade_status": {
+      "open": "Open",
+      "closed": "Closed",
+      "cancelled": "Cancelled",
+      "rejected": "Rejected"
+    },
+    "trade_side": {
+      "long": "Long",
+      "short": "Short"
+    },
+    "trade_mode": {
+      "live": "Live",
+      "paper": "Paper"
+    }
+  }
+}

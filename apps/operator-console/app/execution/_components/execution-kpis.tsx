@@ -7,6 +7,7 @@ import { formatPercent, formatUsd } from "@/lib/format";
 import type { ExecutionTrade } from "@/lib/api";
 import { useExecutionSummary } from "@/lib/hooks/use-execution-summary";
 import { KpiTile } from "@/components/shared/kpi-tile";
+import { usePreferences } from "@/components/providers/preferences-provider";
 
 function pickRecentTrades(trades: ExecutionTrade[], mode: "paper" | "live"): ExecutionTrade[] {
   return trades.filter((trade) => trade.mode === mode);
@@ -27,6 +28,7 @@ interface ExecutionKpisProps {
 }
 
 export function ExecutionKpis({ mode, realizedPnl, filteredCount, loading }: ExecutionKpisProps) {
+  const { t } = usePreferences();
   const summary = useExecutionSummary();
   const recent = pickRecentTrades(summary.data?.recentTrades ?? [], mode);
   const win = winRate(recent.slice(0, 50));
@@ -36,30 +38,35 @@ export function ExecutionKpis({ mode, realizedPnl, filteredCount, loading }: Exe
   return (
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
       <KpiTile
-        label="Realized PnL (filtered)"
+        label={t("execution.kpis.realized_pnl_label")}
         value={formatUsd(realizedPnl, { signed: true })}
         tone={
           realizedPnl === null ? "default" : realizedPnl >= 0 ? "success" : "danger"
         }
         loading={loading}
-        hint={`${filteredCount.toLocaleString()} trades`}
+        hint={t(
+          filteredCount === 1
+            ? "execution.kpis.trades_count_one"
+            : "execution.kpis.trades_count_other",
+          { count: filteredCount.toLocaleString() },
+        )}
         icon={<Coins className="size-4" />}
       />
       <KpiTile
-        label="Open positions"
+        label={t("execution.kpis.open_positions_label")}
         value={open.toLocaleString()}
         loading={summary.isLoading}
         icon={<Activity className="size-4" />}
         tone={open > 0 ? "accent" : "default"}
       />
       <KpiTile
-        label="Recent trades · 24h"
+        label={t("execution.kpis.recent_trades_label", { hours: 24 })}
         value={recent24.toLocaleString()}
         loading={summary.isLoading}
         icon={<Repeat className="size-4" />}
       />
       <KpiTile
-        label="Win rate · last 50"
+        label={t("execution.kpis.win_rate_label", { count: 50 })}
         value={win === null ? "—" : formatPercent(win, { digits: 1 })}
         loading={summary.isLoading}
         icon={<Target className="size-4" />}
