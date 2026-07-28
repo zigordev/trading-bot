@@ -1,121 +1,65 @@
 @import "tailwindcss";
 @plugin "tailwindcss-animate";
 
-/* Shared navigation component library (design-system v0.1.2), copy-pasted in.
-   Defines --ds-* custom properties independent of the --color-* tokens in
-   the @theme block below — no naming conflict. */
+/* Shared design system, copy-pasted in. Defines the --ds-* custom
+   properties that the @theme block below aliases: one source of truth for
+   colour, radius and shadow, in both light and dark. */
 @import "../design-system/styles.css";
 @import "../design-system/themes/operator-console.css";
 
 @theme {
-  --color-bg: oklch(99% 0 0);
-  --color-surface: oklch(100% 0 0);
-  --color-surface-2: oklch(98.5% 0.004 264);
-  --color-surface-3: oklch(96.5% 0.006 264);
-  --color-border: oklch(92% 0.006 264);
-  --color-border-strong: oklch(86% 0.008 264);
+  /* Colour is aliased to the design system rather than restated. These were
+     96 hand-copied declarations that had to be edited in two places for
+     every change — light values here, dark values in a second block below,
+     both mirroring design-system/themes/operator-console.css exactly. The
+     dark block is gone entirely now: --ds-color-* already switches on
+     [data-mode="dark"], so these aliases follow it for free. */
+  --color-bg: var(--ds-color-bg);
+  --color-surface: var(--ds-color-surface);
+  --color-surface-2: var(--ds-color-surface-2);
+  --color-surface-3: var(--ds-color-surface-3);
+  --color-border: var(--ds-color-border);
+  --color-border-strong: var(--ds-color-border-strong);
+  --color-fg: var(--ds-color-fg);
+  --color-fg-muted: var(--ds-color-fg-muted);
+  --color-fg-subtle: var(--ds-color-fg-subtle);
+  --color-fg-faint: var(--ds-color-fg-faint);
+  --color-accent: var(--ds-color-accent);
+  --color-accent-hover: var(--ds-color-accent-hover);
+  --color-accent-fg: var(--ds-color-accent-fg);
+  --color-accent-soft: var(--ds-color-accent-soft);
+  --color-success: var(--ds-color-success);
+  --color-success-fg: var(--ds-color-success-fg);
+  --color-success-bg: var(--ds-color-success-bg);
+  --color-success-border: var(--ds-color-success-border);
+  --color-warning: var(--ds-color-warning);
+  --color-warning-fg: var(--ds-color-warning-fg);
+  --color-warning-bg: var(--ds-color-warning-bg);
+  --color-warning-border: var(--ds-color-warning-border);
+  --color-danger: var(--ds-color-danger);
+  --color-danger-fg: var(--ds-color-danger-fg);
+  --color-danger-bg: var(--ds-color-danger-bg);
+  --color-danger-border: var(--ds-color-danger-border);
+  --color-info: var(--ds-color-info);
+  --color-info-fg: var(--ds-color-info-fg);
+  --color-info-bg: var(--ds-color-info-bg);
+  --color-info-border: var(--ds-color-info-border);
 
-  --color-fg: oklch(15% 0.01 264);
-  --color-fg-muted: oklch(44% 0.01 264);
-  --color-fg-subtle: oklch(60% 0.01 264);
-  --color-fg-faint: oklch(72% 0.008 264);
-
-  --color-accent: oklch(50% 0.16 258);
-  --color-accent-hover: oklch(46% 0.17 258);
-  --color-accent-fg: oklch(99% 0 0);
-  --color-accent-soft: oklch(96% 0.03 258);
-
-  --color-success: oklch(58% 0.14 155);
-  --color-success-fg: oklch(30% 0.08 155);
-  --color-success-bg: oklch(96% 0.04 155);
-  --color-success-border: oklch(85% 0.08 155);
-
-  --color-warning: oklch(66% 0.15 75);
-  --color-warning-fg: oklch(38% 0.1 75);
-  --color-warning-bg: oklch(97% 0.04 85);
-  --color-warning-border: oklch(85% 0.1 75);
-
-  --color-danger: oklch(55% 0.19 25);
-  --color-danger-fg: oklch(38% 0.15 25);
-  --color-danger-bg: oklch(96% 0.04 25);
-  --color-danger-border: oklch(85% 0.1 25);
-
-  --color-info: oklch(55% 0.14 240);
-  --color-info-fg: oklch(36% 0.1 240);
-  --color-info-bg: oklch(96% 0.03 240);
-  --color-info-border: oklch(85% 0.07 240);
-
-  --radius-sm: 6px;
-  --radius-md: 10px;
-  --radius-lg: 14px;
-  --radius-xl: 20px;
-
+  --radius-sm: var(--ds-radius-sm);
+  --radius-md: var(--ds-radius-md);
+  --radius-lg: var(--ds-radius-lg);
+  --radius-xl: var(--ds-radius-xl);
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system,
     "Segoe UI", Roboto, sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo,
     monospace;
-
-  --shadow-xs: 0 1px 1px oklch(15% 0.01 264 / 0.04);
-  --shadow-sm: 0 1px 2px oklch(15% 0.01 264 / 0.06),
-    0 1px 3px oklch(15% 0.01 264 / 0.04);
-  --shadow-md: 0 4px 6px oklch(15% 0.01 264 / 0.05),
-    0 2px 4px oklch(15% 0.01 264 / 0.04);
-  --shadow-lg: 0 10px 24px oklch(15% 0.01 264 / 0.08),
-    0 4px 8px oklch(15% 0.01 264 / 0.04);
-  --shadow-xl: 0 24px 48px oklch(15% 0.01 264 / 0.1),
-    0 8px 16px oklch(15% 0.01 264 / 0.05);
-
+  --shadow-xs: var(--ds-shadow-xs);
+  --shadow-sm: var(--ds-shadow-sm);
+  --shadow-md: var(--ds-shadow-md);
+  --shadow-lg: var(--ds-shadow-lg);
+  --shadow-xl: var(--ds-shadow-xl);
   --animate-collapsible-down: collapsible-down 180ms ease-out;
   --animate-collapsible-up: collapsible-up 180ms ease-out;
-}
-
-/* Dark mode override. Deliberately unlayered (not inside @theme/@layer) —
-   @theme's output lives in a cascade layer, and an unlayered normal-priority
-   declaration always beats a layered one regardless of source order or
-   selector specificity, so this overrides @theme's registration without
-   needing !important. Only --color-* tokens vary by mode; radius/font/
-   shadow stay the same in both. Semantic (success/warning/danger/info)
-   values are copied verbatim from design-system/tokens/colors.css's own
-   dark block since this app's light values already match it byte-for-byte. */
-:root[data-mode="dark"] {
-  color-scheme: dark;
-
-  --color-bg: oklch(16% 0.008 264);
-  --color-surface: oklch(20% 0.008 264);
-  --color-surface-2: oklch(24% 0.008 264);
-  --color-surface-3: oklch(28% 0.008 264);
-  --color-border: oklch(32% 0.01 264);
-  --color-border-strong: oklch(40% 0.012 264);
-
-  --color-fg: oklch(96% 0.004 264);
-  --color-fg-muted: oklch(74% 0.008 264);
-  --color-fg-subtle: oklch(62% 0.008 264);
-  --color-fg-faint: oklch(50% 0.008 264);
-
-  --color-accent: oklch(68% 0.15 258);
-  --color-accent-hover: oklch(74% 0.14 258);
-  --color-accent-fg: oklch(14% 0.01 258);
-  --color-accent-soft: oklch(30% 0.06 258);
-
-  --color-success: oklch(70% 0.15 155);
-  --color-success-fg: oklch(88% 0.08 155);
-  --color-success-bg: oklch(28% 0.05 155);
-  --color-success-border: oklch(40% 0.08 155);
-
-  --color-warning: oklch(74% 0.14 75);
-  --color-warning-fg: oklch(90% 0.06 85);
-  --color-warning-bg: oklch(30% 0.05 75);
-  --color-warning-border: oklch(42% 0.08 75);
-
-  --color-danger: oklch(68% 0.18 25);
-  --color-danger-fg: oklch(90% 0.06 25);
-  --color-danger-bg: oklch(30% 0.06 25);
-  --color-danger-border: oklch(42% 0.09 25);
-
-  --color-info: oklch(70% 0.13 240);
-  --color-info-fg: oklch(90% 0.05 240);
-  --color-info-bg: oklch(28% 0.05 240);
-  --color-info-border: oklch(40% 0.07 240);
 }
 
 @layer base {
