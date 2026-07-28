@@ -3,14 +3,9 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import {
-  LayoutDashboard,
-  LineChart,
-  History,
-  Settings,
-} from "lucide-react";
 
 import { AppShell as DsAppShell } from "@/design-system/components/navigation/AppShell.jsx";
+import { Icon } from "@/design-system/components/icons/Icon.jsx";
 import { Logo } from "@/design-system/components/navigation/Logo.jsx";
 import type { AppShellNavItem } from "@/design-system/components/navigation/AppShell";
 import { WsStatusDot } from "@/components/shared/ws-status-dot";
@@ -32,12 +27,12 @@ import { configResources } from "@/lib/configuration/schemas";
  */
 function getNavItems(t: Translate): AppShellNavItem[] {
   return [
-    { href: "/", label: t("nav.overview"), icon: <LayoutDashboard className="size-4" aria-hidden /> },
-    { href: "/backtesting", label: t("nav.backtesting"), icon: <History className="size-4" aria-hidden /> },
+    { href: "/", label: t("nav.overview"), icon: <Icon name="layout-dashboard" className="size-4" /> },
+    { href: "/backtesting", label: t("nav.backtesting"), icon: <Icon name="history" className="size-4" /> },
     {
       href: "/execution",
       label: t("nav.execution"),
-      icon: <LineChart className="size-4" aria-hidden />,
+      icon: <Icon name="chart-line" className="size-4" />,
       children: [
         { href: "/execution/paper", label: t("nav.execution_paper") },
         { href: "/execution/live", label: t("nav.execution_live") },
@@ -46,7 +41,7 @@ function getNavItems(t: Translate): AppShellNavItem[] {
     {
       href: "/configuration",
       label: t("nav.configuration"),
-      icon: <Settings className="size-4" aria-hidden />,
+      icon: <Icon name="settings" className="size-4" />,
       children: Object.values(configResources).map((resource) => ({
         href: `/configuration/${resource.key}`,
         label: t(resource.labelKey),
@@ -66,7 +61,7 @@ function Brand() {
     // viewport edge). `tagline` is a no-op below "lg" but left in place in
     // case a future Logo revision or taller header makes it safe to show.
     <Logo
-      mark={<LineChart className="size-4" aria-hidden />}
+      mark={<Icon name="chart-line" className="size-4" />}
       wordmark="Trading Bot"
       tagline="Operator Console"
       shape="circle"

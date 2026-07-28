@@ -2,9 +2,10 @@
 
 import { usePreferences } from "@/components/providers/preferences-provider";
 import { Button } from "@/design-system/components/core/Button.jsx";
+import { Icon } from "@/design-system/components/icons/Icon.jsx";
 import { Menu, MenuItem } from "@/design-system/components/overlay/Menu.jsx";
 
-const ICON_STYLE: React.CSSProperties = { fontSize: 16, lineHeight: 1 };
+const ICON_STYLE: React.CSSProperties = { lineHeight: 1 };
 
 export function ThemeButton() {
   const { theme, setTheme, t } = usePreferences();
@@ -19,7 +20,7 @@ export function ThemeButton() {
       type="button"
       variant="ghost"
     >
-      {theme === "dark" ? "☀" : "☾"}
+      <Icon name={theme === "dark" ? "sun" : "moon"} />
     </Button>
   );
 }
@@ -38,7 +39,7 @@ export function LanguageButton() {
           type="button"
           variant="ghost"
         >
-          🌐
+          <Icon name="globe" />
         </Button>
       }
     >
