@@ -16,7 +16,7 @@ injectOnce('ds-topbar', `
 `);
 
 export function Topbar({
-  brand, title, description, meta, actions, utilities, tabs, subBar,
+  brand, scope, title, description, meta, actions, utilities, tabs, mode, subBar,
   hideBrandOnDesktop = true, className = '', style,
 }) {
   const hasHeaderText = Boolean(title || description || meta);
@@ -29,6 +29,8 @@ export function Topbar({
             {brand}
           </div>
         ) : null}
+
+        {scope ? <div style={{ flexShrink: 1, minWidth: 0, maxWidth: 220 }}>{scope}</div> : null}
 
         {hasHeaderText ? (
           <div className="ds-topbar-header-text" style={{ display: 'grid', gap: 2, minWidth: 0, flex: '1 1 auto' }}>
@@ -52,6 +54,7 @@ export function Topbar({
           <div className="ds-topbar-tabs">{tabs}</div>
         ) : (!hasHeaderText ? <div style={{ flex: '1 1 auto' }} /> : null)}
 
+        {mode ? <div style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>{mode}</div> : null}
         {actions ? <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--ds-space-2)', flexShrink: 0 }}>{actions}</div> : null}
         {utilities ? <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--ds-space-1)', flexShrink: 0 }}>{utilities}</div> : null}
       </div>

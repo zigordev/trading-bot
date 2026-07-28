@@ -10,6 +10,8 @@ export interface SidebarNavItem {
 
 export interface SidebarProps {
   brand: React.ReactNode;
+  /** Scope selector above the nav list — typically a `ScopeSwitcher`. */
+  scope?: React.ReactNode;
   items: SidebarNavItem[];
   activeHref: string;
   /** Pinned to the bottom of the rail — e.g. a user menu or status block. */

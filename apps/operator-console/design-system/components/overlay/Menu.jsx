@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 
-export function Menu({ trigger, children, align = 'end', className = '', style }) {
+export function Menu({ trigger, children, align = 'end', block = false, className = '', style }) {
   const [open, setOpen] = useState(false);
   const anchorRef = useRef(null);
   const panelRef = useRef(null);
@@ -24,8 +24,8 @@ export function Menu({ trigger, children, align = 'end', className = '', style }
   }, [open]);
 
   return (
-    <div className={`ds-menu ${className}`.trim()} style={{ position: 'relative', display: 'inline-flex', ...style }}>
-      <span ref={anchorRef} onClick={() => setOpen((v) => !v)} style={{ display: 'inline-flex' }}>
+    <div className={`ds-menu ${className}`.trim()} style={{ position: 'relative', display: block ? 'block' : 'inline-flex', ...style }}>
+      <span ref={anchorRef} onClick={() => setOpen((v) => !v)} style={{ display: block ? 'block' : 'inline-flex' }}>
         {trigger}
       </span>
       {open ? (
@@ -34,7 +34,11 @@ export function Menu({ trigger, children, align = 'end', className = '', style }
           role="menu"
           className="ds-menu-panel"
           style={{
-            position: 'absolute', top: 'calc(100% + 8px)', [align === 'start' ? 'left' : 'right']: 0,
+            position: 'absolute', top: 'calc(100% + 8px)',
+            // `block` stretches the panel to the trigger's width (a sidebar
+            // scope switcher looks wrong with a narrow panel under a wide
+            // button); otherwise it hugs its content off the chosen edge.
+            ...(block ? { left: 0, right: 0 } : { [align === 'start' ? 'left' : 'right']: 0 }),
             minWidth: 180, zIndex: 1000, padding: 6, display: 'grid', gap: 2,
             background: 'var(--ds-color-surface)', border: '1px solid var(--ds-color-border)',
             borderRadius: 'var(--ds-radius-md)', boxShadow: 'var(--ds-shadow-lg)',

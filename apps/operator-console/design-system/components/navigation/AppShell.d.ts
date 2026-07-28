@@ -20,11 +20,17 @@ export interface AppShellTopbarSlots {
   actions?: React.ReactNode;
   utilities?: React.ReactNode;
   tabs?: React.ReactNode;
+  /** Mode switch for the current screen — typically a `SegmentedControl`. */
+  mode?: React.ReactNode;
   subBar?: React.ReactNode;
 }
 
 export interface AppShellProps {
   brand: React.ReactNode;
+  /** Scope selector — rendered at the top of Sidebar on desktop, and into
+   * Topbar below the nav breakpoint (where Sidebar is hidden). Typically a
+   * `ScopeSwitcher`. */
+  scope?: React.ReactNode;
   sidebarItems: AppShellNavItem[];
   /** Derived automatically (first 5 sidebarItems with an icon) if omitted. */
   bottomNavItems?: AppShellBottomNavItem[];

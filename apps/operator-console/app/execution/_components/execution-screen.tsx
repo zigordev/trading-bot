@@ -7,7 +7,8 @@ import type { DateRange } from "react-day-picker";
 import type { SortingState } from "@tanstack/react-table";
 
 import { useTopbarSlot } from "@/components/layout/topbar-slot-context";
-import { usePreferences } from "@/components/providers/preferences-provider";
+import { usePreferences, type Translate } from "@/components/providers/preferences-provider";
+import { SegmentedControl } from "@/design-system/components/navigation/SegmentedControl.jsx";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { ErrorState } from "@/components/shared/error-state";
@@ -40,35 +41,22 @@ interface ExecutionScreenProps {
   mode: "paper" | "live";
 }
 
-const EXECUTION_MODE_TABS: { mode: "paper" | "live"; href: string; label: string }[] = [
-  { mode: "paper", href: "/execution/paper", label: "Paper" },
-  { mode: "live", href: "/execution/live", label: "Live" },
-];
-
-/** Contextual sub-nav for the Execution routes, rendered into Topbar.tabs.
- * Mirrors Sidebar's Execution > Paper/Live children so the switch is also
- * reachable below the lg breakpoint, where Sidebar is hidden and BottomNav
- * only surfaces the 4 top-level destinations. Wrapped in `ds-hide-desktop`
- * so it doesn't duplicate Sidebar's own Paper/Live nesting on desktop —
- * mobile-only fallback, not a second nav. */
-function ExecutionModeTabs({ mode }: { mode: "paper" | "live" }) {
+/** Paper vs Live is a mode: same screen, same columns, different dataset —
+ * so it belongs in the Topbar's `mode` slot, not the Sidebar. Both halves
+ * are real links, keeping the mode deep-linkable and shareable. Live is
+ * marked `danger` so the whole control repaints: "am I looking at real
+ * money?" should never require reading the URL to answer. */
+function ExecutionModeToggle({ mode, t }: { mode: "paper" | "live"; t: Translate }) {
   return (
-    <div className="ds-hide-desktop flex items-center gap-2">
-      {EXECUTION_MODE_TABS.map((tab) => (
-        <Link
-          key={tab.href}
-          href={tab.href}
-          className={cn(
-            "whitespace-nowrap rounded-[var(--ds-radius-md)] px-3 py-1.5 text-[12px] font-medium transition-colors",
-            mode === tab.mode
-              ? "bg-[var(--ds-color-accent-soft)] text-[var(--ds-color-accent)]"
-              : "text-[var(--ds-color-fg-muted)] hover:bg-[var(--ds-color-surface-2)]",
-          )}
-        >
-          {tab.label}
-        </Link>
-      ))}
-    </div>
+    <SegmentedControl
+      ariaLabel={t("nav.execution")}
+      linkComponent={Link}
+      value={mode}
+      options={[
+        { value: "paper", label: t("nav.execution_paper"), href: "/execution/paper" },
+        { value: "live", label: t("nav.execution_live"), href: "/execution/live", tone: "danger" },
+      ]}
+    />
   );
 }
 
@@ -249,7 +237,7 @@ function ExecutionScreenInner({ mode }: ExecutionScreenProps) {
           </Link>
         </Button>
       ),
-      tabs: <ExecutionModeTabs mode={mode} />,
+      mode: <ExecutionModeToggle mode={mode} t={t} />,
     });
     return () => setTopbarSlot(null);
   }, [mode, setTopbarSlot, t]);

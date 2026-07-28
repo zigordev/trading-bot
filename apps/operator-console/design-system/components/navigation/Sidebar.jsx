@@ -58,7 +58,7 @@ function SidebarItem({ item, activeHref, linkComponent }) {
   );
 }
 
-export function Sidebar({ brand, items, activeHref, footer, linkComponent = 'a', className = '', style }) {
+export function Sidebar({ brand, scope, items, activeHref, footer, linkComponent = 'a', className = '', style }) {
   return (
     <aside
       className={`ds-sidebar ${className}`.trim()}
@@ -71,6 +71,11 @@ export function Sidebar({ brand, items, activeHref, footer, linkComponent = 'a',
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, height: 56, padding: '0 20px', borderBottom: '1px solid var(--ds-color-border)' }}>
         {brand}
       </div>
+      {scope ? (
+        <div style={{ padding: '12px 12px 0' }}>
+          {scope}
+        </div>
+      ) : null}
       <nav style={{ flex: 1, overflowY: 'auto', padding: '16px 12px', display: 'grid', gap: 4, alignContent: 'start' }}>
         {items.map((item) => (
           <SidebarItem key={item.href} item={item} activeHref={activeHref} linkComponent={linkComponent} />

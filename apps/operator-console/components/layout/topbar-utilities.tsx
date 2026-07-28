@@ -2,6 +2,7 @@
 
 import { usePreferences } from "@/components/providers/preferences-provider";
 import { Button } from "@/design-system/components/core/Button.jsx";
+import { Flag } from "@/design-system/components/icons/Flag.jsx";
 import { Icon } from "@/design-system/components/icons/Icon.jsx";
 import { Menu, MenuItem } from "@/design-system/components/overlay/Menu.jsx";
 
@@ -46,10 +47,10 @@ export function LanguageButton() {
       {({ close }: { close: () => void }) => (
         <>
           <MenuItem onClick={() => { close(); setLanguage("en"); }}>
-            🇬🇧 {t("language.english")}
+            <Flag code="gb" /> {t("language.english")}
           </MenuItem>
           <MenuItem onClick={() => { close(); setLanguage("es"); }}>
-            🇪🇸 {t("language.spanish")}
+            <Flag code="es" /> {t("language.spanish")}
           </MenuItem>
         </>
       )}

@@ -20,6 +20,7 @@ function toBottomNavItems(sidebarItems, max = 5) {
 
 export function AppShell({
   brand,
+  scope,
   sidebarItems,
   bottomNavItems,
   activeHref,
@@ -36,10 +37,18 @@ export function AppShell({
   return (
     <div className={`ds-app-shell ${className}`.trim()} style={{ display: 'flex', minHeight: '100vh', background: 'var(--ds-color-bg)', ...style }}>
       {hasSidebar ? (
-        <Sidebar brand={brand} items={sidebarItems} activeHref={activeHref} footer={sidebarFooter} linkComponent={linkComponent} />
+        <Sidebar brand={brand} scope={scope} items={sidebarItems} activeHref={activeHref} footer={sidebarFooter} linkComponent={linkComponent} />
       ) : null}
       <div style={{ display: 'flex', flexDirection: 'column', flex: '1 1 auto', minWidth: 0 }}>
-        <Topbar brand={brand} hideBrandOnDesktop={hasSidebar} {...topbar} />
+        {/* Scope lives at the top of the Sidebar, but the Sidebar is hidden
+            below the nav breakpoint — so it also renders into the Topbar on
+            mobile, otherwise switching team/pool becomes impossible there. */}
+        <Topbar
+          brand={brand}
+          hideBrandOnDesktop={hasSidebar}
+          {...topbar}
+          scope={scope && hasSidebar ? <div className="ds-hide-desktop" style={{ minWidth: 0 }}>{scope}</div> : topbar.scope}
+        />
         <main
           className={`ds-app-shell-main ${bottomItems.length ? 'ds-app-shell-main--with-bottom-nav' : ''}`.trim()}
           style={{ flex: '1 1 auto', paddingTop: 'var(--ds-space-6)', paddingRight: 'var(--ds-space-6)', paddingLeft: 'var(--ds-space-6)' }}
