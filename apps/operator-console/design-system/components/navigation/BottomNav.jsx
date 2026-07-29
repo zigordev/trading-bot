@@ -21,7 +21,11 @@ export function BottomNav({ items, activeHref, linkComponent = 'a', className = 
       style={{ gridTemplateColumns: `repeat(${items.length}, 1fr)`, ...style }}
     >
       {items.map((item) => {
-        const active = item.href === activeHref || (item.href !== '/' && activeHref.startsWith(`${item.href}/`));
+        // Same rule as Sidebar: prefix-match so a section stays lit inside
+        // itself, unless `exact` says this is a list route whose detail pages
+        // live underneath it.
+        const active = item.href === activeHref
+          || (!item.exact && item.href !== '/' && activeHref.startsWith(`${item.href}/`));
         return (
           <Link
             key={item.href}

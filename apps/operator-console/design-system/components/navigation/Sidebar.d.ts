@@ -2,6 +2,9 @@ import * as React from 'react';
 
 export interface SidebarNavItem {
   href: string;
+  /** Match this path exactly. For a list route whose detail pages live
+   *  beneath it, so it does not stay lit once you are inside one. */
+  exact?: boolean;
   label: React.ReactNode;
   icon?: React.ReactNode;
   /** One level of sub-destinations, e.g. Execution → Paper/Live. */
