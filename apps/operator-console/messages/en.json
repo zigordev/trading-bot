@@ -471,7 +471,9 @@
     "rows": "Rows",
     "search_placeholder": "Search…",
     "columns": "Columns",
-    "toggle_columns": "Toggle columns"
+    "toggle_columns": "Toggle columns",
+    "previous_page": "Previous page",
+    "next_page": "Next page"
   },
   "ui": {
     "combobox": {
