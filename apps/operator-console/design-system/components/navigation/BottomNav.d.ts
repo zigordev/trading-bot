@@ -2,6 +2,8 @@ import * as React from 'react';
 
 export interface BottomNavItem {
   href: string;
+  /** Match this path exactly — see Sidebar. */
+  exact?: boolean;
   label: React.ReactNode;
   /** Required, unlike Sidebar — bottom nav is always icon + label. */
   icon: React.ReactNode;

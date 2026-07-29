@@ -8,12 +8,19 @@ injectOnce('ds-sidebar', `
 .ds-sidebar-child:hover:not(.ds-sidebar-child-active){background:var(--ds-color-surface-2);color:var(--ds-color-fg);}
 `);
 
-function isActive(href, activeHref) {
-  return href === activeHref || (href !== '/' && activeHref.startsWith(`${href}/`));
+/** A section stays lit while you are inside it, which is why this matches on
+ * prefix. `exact` turns that off for a list route whose own detail pages sit
+ * underneath it — /pools should not stay lit while you are in /pools/123,
+ * where a more specific item is already active. `/` is always exact, since
+ * every path is under it. */
+function isActive(href, activeHref, exact) {
+  if (href === activeHref) return true;
+  if (exact || href === '/') return false;
+  return activeHref.startsWith(`${href}/`);
 }
 
 function SidebarItem({ item, activeHref, linkComponent }) {
-  const active = isActive(item.href, activeHref);
+  const active = isActive(item.href, activeHref, item.exact);
   const hasChildren = item.children && item.children.length > 0;
   const showChildren = hasChildren && active;
   const Link = linkComponent;
