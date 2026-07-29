@@ -471,7 +471,9 @@
     "rows": "Filas",
     "search_placeholder": "Buscar…",
     "columns": "Columnas",
-    "toggle_columns": "Mostrar/ocultar columnas"
+    "toggle_columns": "Mostrar/ocultar columnas",
+    "previous_page": "Página anterior",
+    "next_page": "Página siguiente"
   },
   "ui": {
     "combobox": {

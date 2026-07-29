@@ -15,12 +15,16 @@ import {
   type Table as TanstackTable,
   type VisibilityState,
 } from "@tanstack/react-table";
-import { ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight } from "lucide-react";
-
 import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { usePreferences } from "@/components/providers/preferences-provider";
+// design-system, copied in — see apps/operator-console/design-system/.
+import {
+  Table as DsTable,
+  TableSortHeader,
+  TablePager,
+  TableEmpty,
+} from "../../design-system/components/data-display/Table.jsx";
 
 declare module "@tanstack/react-table" {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -153,20 +157,18 @@ export function DataTable<TData>({
   });
 
 return (
-    <div className={cn("flex flex-col gap-3", className)}>
-      {toolbar}
-      <div className="overflow-hidden rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)]">
-        <div className="overflow-x-auto">
-          <table
-            className={cn(
-              "w-full border-collapse text-[13px]",
-              "num",
-              tableClassName,
-            )}
-          >
-            <thead className="bg-[var(--color-surface-2)] text-[var(--color-fg-muted)]">
+    <div className={className}>
+      {/* Filters and pagination belong to the table, so they live in its
+          frame — the caption and footer slots — rather than floating above
+          and below it. */}
+      <DsTable
+        className={cn("num", tableClassName)}
+        caption={toolbar}
+        footer={footer ?? <DataTablePagination table={table} />}
+      >
+            <thead>
               {table.getHeaderGroups().map((headerGroup) => (
-                <tr key={headerGroup.id} className="border-b border-[var(--color-border)]">
+                <tr key={headerGroup.id}>
                   {headerGroup.headers.map((header) => {
                     const meta = header.column.columnDef.meta;
                     const align = meta?.align ?? "left";
@@ -176,7 +178,6 @@ return (
                       <th
                         key={header.id}
                         className={cn(
-                          "h-9 select-none px-3 text-[11px] font-semibold uppercase tracking-wide",
                           align === "right" && "text-right",
                           align === "center" && "text-center",
                           meta?.sticky === "left" &&
@@ -187,33 +188,19 @@ return (
                         style={{ width: header.getSize() === 150 ? undefined : header.getSize() }}
                       >
                         {header.isPlaceholder ? null : (
-                          <button
-                            type="button"
-                            disabled={!canSort}
-                            onClick={canSort ? header.column.getToggleSortingHandler() : undefined}
-                            className={cn(
-                              "inline-flex items-center gap-1.5",
-                              align === "right" && "ml-auto",
-                              align === "center" && "mx-auto",
-                              canSort && "hover:text-[var(--color-fg)]",
-                            )}
+                          <TableSortHeader
+                            direction={sorted === false ? null : sorted}
+                            onSort={
+                              canSort
+                                ? () => header.column.toggleSorting(undefined)
+                                : undefined
+                            }
                           >
                             {flexRender(
                               header.column.columnDef.header,
                               header.getContext(),
                             )}
-                            {canSort && (
-                              <span className="text-[var(--color-fg-subtle)]">
-                                {sorted === "asc" ? (
-                                  <ArrowUp className="size-3" />
-                                ) : sorted === "desc" ? (
-                                  <ArrowDown className="size-3" />
-                                ) : (
-                                  <ArrowUpDown className="size-3 opacity-50" />
-                                )}
-                              </span>
-                            )}
-                          </button>
+                          </TableSortHeader>
                         )}
                       </th>
                     );
@@ -225,36 +212,25 @@ return (
               {isLoading ? (
                 Array.from({ length: loadingRows }).map((_, rowIdx) => (
                   <tr
-                    key={`loading-${rowIdx}`}
-                    className="border-b border-[var(--color-border)]"
-                  >
+                    key={`loading-${rowIdx}`}>
                     {table.getVisibleLeafColumns().map((column, colIdx) => (
                       <td
-                        key={`loading-${rowIdx}-${colIdx}`}
-                        className="h-9 px-3 align-middle"
-                      >
+                        key={`loading-${rowIdx}-${colIdx}`}>
                         <Skeleton className="h-3 w-3/4" />
                       </td>
                     ))}
                   </tr>
                 ))
               ) : table.getRowModel().rows.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan={table.getVisibleLeafColumns().length}
-                    className="px-3 py-12 text-center text-[var(--color-fg-subtle)]"
-                  >
-                    {empty ?? t("data_table.no_results")}
-                  </td>
-                </tr>
+                <TableEmpty colSpan={table.getVisibleLeafColumns().length}>
+                  {empty ?? t("data_table.no_results")}
+                </TableEmpty>
               ) : (
                 table.getRowModel().rows.map((row) => (
                   <tr
                     key={rowKey ? rowKey(row.original) : row.id}
                     className={cn(
-                      "border-b border-[var(--color-border)] transition-colors",
-                      onRowClick &&
-                        "cursor-pointer hover:bg-[var(--color-surface-2)]",
+                      onRowClick && "cursor-pointer",
                       rowClassName?.(row.original),
                     )}
                     onClick={onRowClick ? () => onRowClick(row.original) : undefined}
@@ -267,7 +243,6 @@ return (
                         <td
                           key={cell.id}
                           className={cn(
-                            "h-9 px-3 align-middle",
                             align === "right" && "text-right",
                             align === "center" && "text-center",
                             meta?.sticky === "left" &&
@@ -284,10 +259,7 @@ return (
                 ))
               )}
             </tbody>
-          </table>
-        </div>
-      </div>
-      {footer ?? <DataTablePagination table={table} />}
+      </DsTable>
     </div>
   );
 }
@@ -308,55 +280,26 @@ export function DataTablePagination<TData>({
   const end = Math.min(totalRows, (pageIndex + 1) * pageSize);
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 px-1 text-[12px] text-[var(--color-fg-subtle)]">
-      <div className="num">
-        {totalRows > 0
+    <TablePager
+      summary={
+        totalRows > 0
           ? t("data_table.pagination_range", {
               start: start.toLocaleString(),
               end: end.toLocaleString(),
               total: totalRows.toLocaleString(),
             })
-          : t("data_table.no_rows")}
-      </div>
-      <div className="flex items-center gap-3">
-        <label className="flex items-center gap-2">
-          <span>{t("data_table.rows")}</span>
-          <select
-            value={pageSize}
-            onChange={(event) => table.setPageSize(Number(event.target.value))}
-            className="h-7 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 text-[12px]"
-          >
-            {pageSizeOptions.map((size) => (
-              <option key={size} value={size}>
-                {size}
-              </option>
-            ))}
-          </select>
-        </label>
-        <div className="flex items-center gap-1">
-          <Button
-            type="button"
-            variant="outline"
-            size="icon-sm"
-            onClick={() => table.previousPage()}
-            disabled={!table.getCanPreviousPage()}
-          >
-            <ChevronLeft />
-          </Button>
-          <span className="num min-w-[64px] text-center">
-            {pageIndex + 1} / {Math.max(1, table.getPageCount())}
-          </span>
-          <Button
-            type="button"
-            variant="outline"
-            size="icon-sm"
-            onClick={() => table.nextPage()}
-            disabled={!table.getCanNextPage()}
-          >
-            <ChevronRight />
-          </Button>
-        </div>
-      </div>
-    </div>
+          : t("data_table.no_rows")
+      }
+      rowsLabel={t("data_table.rows")}
+      // TanStack counts pages from 0; TablePager from 1.
+      page={pageIndex + 1}
+      pageCount={table.getPageCount()}
+      onPageChange={(next) => table.setPageIndex(next - 1)}
+      pageSize={pageSize}
+      pageSizeOptions={pageSizeOptions}
+      onPageSizeChange={(size) => table.setPageSize(size)}
+      prevLabel={t("data_table.previous_page")}
+      nextLabel={t("data_table.next_page")}
+    />
   );
 }
