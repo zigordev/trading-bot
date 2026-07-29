@@ -5,9 +5,20 @@ import { Topbar } from './Topbar.jsx';
 import { BottomNav } from './BottomNav.jsx';
 
 injectOnce('ds-app-shell', `
-.ds-app-shell-main { padding-bottom: var(--ds-space-6); }
+.ds-app-shell-main { flex: 1 1 auto; min-width: 0; }
+/* The content frame. Every screen in every app sits in this box, so the
+   gutter is defined once here — an app that pads again inside it ends up
+   visibly narrower than its siblings for no stated reason. */
+.ds-app-shell-content {
+  width: 100%;
+  margin-inline: auto;
+  padding: var(--ds-space-6) var(--ds-space-6) var(--ds-space-6);
+}
+@media (max-width: 640px) {
+  .ds-app-shell-content { padding: var(--ds-space-4) var(--ds-space-4) var(--ds-space-4); }
+}
 @media (max-width: 1024px) {
-  .ds-app-shell-main--with-bottom-nav { padding-bottom: calc(var(--ds-space-16) + var(--ds-space-6)); }
+  .ds-app-shell-main--with-bottom-nav .ds-app-shell-content { padding-bottom: calc(var(--ds-space-16) + var(--ds-space-6)); }
 }
 `);
 
@@ -27,6 +38,7 @@ export function AppShell({
   sidebarFooter,
   topbar = {},
   hasSidebar = true,
+  contentMaxWidth,
   linkComponent = 'a',
   children,
   className = '',
@@ -49,11 +61,10 @@ export function AppShell({
           {...topbar}
           scope={scope && hasSidebar ? <div className="ds-hide-desktop" style={{ minWidth: 0 }}>{scope}</div> : topbar.scope}
         />
-        <main
-          className={`ds-app-shell-main ${bottomItems.length ? 'ds-app-shell-main--with-bottom-nav' : ''}`.trim()}
-          style={{ flex: '1 1 auto', paddingTop: 'var(--ds-space-6)', paddingRight: 'var(--ds-space-6)', paddingLeft: 'var(--ds-space-6)' }}
-        >
-          {children}
+        <main className={`ds-app-shell-main ${bottomItems.length ? 'ds-app-shell-main--with-bottom-nav' : ''}`.trim()}>
+          <div className="ds-app-shell-content" style={contentMaxWidth ? { maxWidth: contentMaxWidth } : undefined}>
+            {children}
+          </div>
         </main>
       </div>
       {bottomItems.length ? <BottomNav items={bottomItems} activeHref={activeHref} linkComponent={linkComponent} /> : null}
