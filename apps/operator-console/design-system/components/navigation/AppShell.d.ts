@@ -40,6 +40,11 @@ export interface AppShellProps {
   topbar?: AppShellTopbarSlots;
   /** Default true. All three products use a sidebar after the nav unification. */
   hasSidebar?: boolean;
+  /** Caps and centres the content frame. Omit to fill the available width.
+   *  The gutter itself is not configurable — it is the same in every app
+   *  on purpose, and an app that pads again inside it just looks narrower
+   *  than its siblings. */
+  contentMaxWidth?: number | string;
   /** Forwarded to Sidebar/BottomNav. Default 'a'. Pass your router's Link
    * (next/link, react-router's Link, etc.) for client-side navigation instead
    * of a full page reload — the framework-agnostic default is a plain anchor. */
