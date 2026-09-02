@@ -1,15 +1,15 @@
-"use client";
+'use client';
 
-import * as React from "react";
-import { Activity, Coins, Repeat, Target } from "lucide-react";
+import * as React from 'react';
+import { Activity, Coins, Repeat, Target } from 'lucide-react';
 
-import { formatPercent, formatUsd } from "@/lib/format";
-import type { ExecutionTrade } from "@/lib/api";
-import { useExecutionSummary } from "@/lib/hooks/use-execution-summary";
-import { KpiTile } from "@/components/shared/kpi-tile";
-import { usePreferences } from "@/components/providers/preferences-provider";
+import { formatPercent, formatUsd } from '@/lib/format';
+import type { ExecutionTrade } from '@/lib/api';
+import { useExecutionSummary } from '@/lib/hooks/use-execution-summary';
+import { KpiTile } from '@/components/shared/kpi-tile';
+import { usePreferences } from '@/components/providers/preferences-provider';
 
-function pickRecentTrades(trades: ExecutionTrade[], mode: "paper" | "live"): ExecutionTrade[] {
+function pickRecentTrades(trades: ExecutionTrade[], mode: 'paper' | 'live'): ExecutionTrade[] {
   return trades.filter((trade) => trade.mode === mode);
 }
 
@@ -21,7 +21,7 @@ function winRate(trades: ExecutionTrade[]): number | null {
 }
 
 interface ExecutionKpisProps {
-  mode: "paper" | "live";
+  mode: 'paper' | 'live';
   realizedPnl: number | null;
   filteredCount: number;
   loading?: boolean;
@@ -38,39 +38,37 @@ export function ExecutionKpis({ mode, realizedPnl, filteredCount, loading }: Exe
   return (
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
       <KpiTile
-        label={t("execution.kpis.realized_pnl_label")}
+        label={t('execution.kpis.realized_pnl_label')}
         value={formatUsd(realizedPnl, { signed: true })}
-        tone={
-          realizedPnl === null ? "default" : realizedPnl >= 0 ? "success" : "danger"
-        }
+        tone={realizedPnl === null ? 'default' : realizedPnl >= 0 ? 'success' : 'danger'}
         loading={loading}
         hint={t(
           filteredCount === 1
-            ? "execution.kpis.trades_count_one"
-            : "execution.kpis.trades_count_other",
-          { count: filteredCount.toLocaleString() },
+            ? 'execution.kpis.trades_count_one'
+            : 'execution.kpis.trades_count_other',
+          { count: filteredCount.toLocaleString() }
         )}
         icon={<Coins className="size-4" />}
       />
       <KpiTile
-        label={t("execution.kpis.open_positions_label")}
+        label={t('execution.kpis.open_positions_label')}
         value={open.toLocaleString()}
         loading={summary.isLoading}
         icon={<Activity className="size-4" />}
-        tone={open > 0 ? "accent" : "default"}
+        tone={open > 0 ? 'accent' : 'default'}
       />
       <KpiTile
-        label={t("execution.kpis.recent_trades_label", { hours: 24 })}
+        label={t('execution.kpis.recent_trades_label', { hours: 24 })}
         value={recent24.toLocaleString()}
         loading={summary.isLoading}
         icon={<Repeat className="size-4" />}
       />
       <KpiTile
-        label={t("execution.kpis.win_rate_label", { count: 50 })}
-        value={win === null ? "—" : formatPercent(win, { digits: 1 })}
+        label={t('execution.kpis.win_rate_label', { count: 50 })}
+        value={win === null ? '—' : formatPercent(win, { digits: 1 })}
         loading={summary.isLoading}
         icon={<Target className="size-4" />}
-        tone={win === null ? "default" : win >= 50 ? "success" : "warning"}
+        tone={win === null ? 'default' : win >= 50 ? 'success' : 'warning'}
       />
     </div>
   );

@@ -19,11 +19,10 @@ const lookup = (tree: MessageTree, key: string): string | undefined => {
 export const translate = (
   language: Language,
   key: string,
-  params: Record<string, string | number> = {},
+  params: Record<string, string | number> = {}
 ) => {
-  const template =
-    lookup(dictionaries[language], key) ?? lookup(dictionaries.en, key) ?? key;
+  const template = lookup(dictionaries[language], key) ?? lookup(dictionaries.en, key) ?? key;
   return template.replace(/\{\{(\w+)\}\}/g, (_, name: string) =>
-    String(params[name] ?? `{{${name}}}`),
+    String(params[name] ?? `{{${name}}}`)
   );
 };

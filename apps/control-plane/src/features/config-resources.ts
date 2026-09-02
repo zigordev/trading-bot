@@ -1,11 +1,11 @@
-import { randomUUID } from "node:crypto";
+import { randomUUID } from 'node:crypto';
 
-import type { Pool, QueryResultRow } from "pg";
+import type { Pool, QueryResultRow } from 'pg';
 
 import {
   type ConfigChangeOperation,
   type ConfigChangeEventPublisher,
-} from "../infrastructure/config-change-events.js";
+} from '../infrastructure/config-change-events.js';
 
 export type SymbolInput = {
   code: string;
@@ -79,10 +79,10 @@ export type AnalysisSettingsRecord = AnalysisSettingsInput & {
 export type ExecutionSettingsInput = {
   name: string;
   enabled: boolean;
-  mode: "paper" | "live";
+  mode: 'paper' | 'live';
   autoPromote: boolean;
   maxPromotions: number;
-  replaceOpenPositionPolicy: "keep" | "flatten";
+  replaceOpenPositionPolicy: 'keep' | 'flatten';
 };
 
 export type ExecutionSettingsRecord = ExecutionSettingsInput & {
@@ -129,7 +129,7 @@ type ResourceDefinition<TInput, TRecord> = {
 };
 
 const isObject = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
+  typeof value === 'object' && value !== null && !Array.isArray(value);
 
 const toIsoString = (value: unknown): string => {
   if (value instanceof Date) {
@@ -144,7 +144,7 @@ const parseJsonObject = (value: unknown): Record<string, unknown> => {
     return value;
   }
 
-  if (typeof value === "string" && value.trim()) {
+  if (typeof value === 'string' && value.trim()) {
     const parsed = JSON.parse(value);
     return isObject(parsed) ? parsed : {};
   }
@@ -153,25 +153,25 @@ const parseJsonObject = (value: unknown): Record<string, unknown> => {
 };
 
 const deriveAssetsFromSymbolCode = (
-  code: string,
+  code: string
 ): { baseAsset: string; destinationAsset: string } | null => {
   const normalized = code.trim().toUpperCase();
   const knownQuoteAssets = [
-    "USDT",
-    "USD1",
-    "FDUSD",
-    "USDC",
-    "BUSD",
-    "TUSD",
-    "DAI",
-    "BTC",
-    "ETH",
-    "BNB",
-    "EUR",
-    "GBP",
-    "AUD",
-    "BRL",
-    "TRY",
+    'USDT',
+    'USD1',
+    'FDUSD',
+    'USDC',
+    'BUSD',
+    'TUSD',
+    'DAI',
+    'BTC',
+    'ETH',
+    'BNB',
+    'EUR',
+    'GBP',
+    'AUD',
+    'BRL',
+    'TRY',
   ];
 
   for (const quoteAsset of knownQuoteAssets) {
@@ -269,7 +269,7 @@ const parseStringArray = (value: unknown): string[] => {
     return value.map((item) => String(item));
   }
 
-  if (typeof value === "string" && value.trim()) {
+  if (typeof value === 'string' && value.trim()) {
     const parsed = JSON.parse(value);
     return Array.isArray(parsed) ? parsed.map((item) => String(item)) : [];
   }
@@ -281,27 +281,22 @@ const mapExecutionSettingsRow = (row: QueryResultRow): ExecutionSettingsRecord =
   id: String(row.id),
   name: String(row.name),
   enabled: Boolean(row.enabled),
-  mode: row.mode === "live" ? "live" : "paper",
+  mode: row.mode === 'live' ? 'live' : 'paper',
   autoPromote: Boolean(row.auto_promote),
   maxPromotions: Number(row.max_promotions),
-  replaceOpenPositionPolicy:
-    row.replace_open_position_policy === "flatten" ? "flatten" : "keep",
+  replaceOpenPositionPolicy: row.replace_open_position_policy === 'flatten' ? 'flatten' : 'keep',
   createdAt: toIsoString(row.created_at),
   updatedAt: toIsoString(row.updated_at),
 });
 
-const mapResolvedAnalysisSettingsRow = (
-  row: QueryResultRow,
-): ResolvedAnalysisSettingsRecord => ({
+const mapResolvedAnalysisSettingsRow = (row: QueryResultRow): ResolvedAnalysisSettingsRecord => ({
   id: String(row.analysis_id),
   name: String(row.analysis_name),
   symbolCode: String(row.analysis_symbol_code),
   timeframeCode: String(row.analysis_timeframe_code),
   strategyName: String(row.analysis_strategy_name),
   riskProfileName: String(row.analysis_risk_profile_name),
-  technicalAnalysisSettings: parseJsonObject(
-    row.analysis_technical_analysis_settings,
-  ),
+  technicalAnalysisSettings: parseJsonObject(row.analysis_technical_analysis_settings),
   enabled: Boolean(row.analysis_enabled),
   createdAt: toIsoString(row.analysis_created_at),
   updatedAt: toIsoString(row.analysis_updated_at),
@@ -355,7 +350,7 @@ class PostgresCrudStore<TInput, TRecord> implements CrudStore<TInput, TRecord> {
   constructor(
     pool: Pool,
     definition: ResourceDefinition<TInput, TRecord>,
-    eventPublisher: ConfigChangeEventPublisher,
+    eventPublisher: ConfigChangeEventPublisher
   ) {
     this.#pool = pool;
     this.#definition = definition;
@@ -364,9 +359,9 @@ class PostgresCrudStore<TInput, TRecord> implements CrudStore<TInput, TRecord> {
 
   async list(): Promise<TRecord[]> {
     const result = await this.#pool.query(
-      `SELECT ${this.#definition.selectColumns.join(", ")}
+      `SELECT ${this.#definition.selectColumns.join(', ')}
          FROM ${this.#definition.tableName}
-        ORDER BY ${this.#definition.listOrderBy}`,
+        ORDER BY ${this.#definition.listOrderBy}`
     );
 
     return result.rows.map((row) => this.#definition.toRecord(row));
@@ -377,41 +372,31 @@ class PostgresCrudStore<TInput, TRecord> implements CrudStore<TInput, TRecord> {
     const id = randomUUID();
     const timestamp = new Date();
     let record: TRecord | null = null;
-    const columns = [
-      "id",
-      ...this.#definition.insertColumns,
-      "created_at",
-      "updated_at",
-    ];
-    const params = [
-      id,
-      ...this.#definition.toInsertValues(input),
-      timestamp,
-      timestamp,
-    ];
-    const placeholders = columns.map((_, index) => `$${index + 1}`).join(", ");
+    const columns = ['id', ...this.#definition.insertColumns, 'created_at', 'updated_at'];
+    const params = [id, ...this.#definition.toInsertValues(input), timestamp, timestamp];
+    const placeholders = columns.map((_, index) => `$${index + 1}`).join(', ');
 
     try {
-      await client.query("BEGIN");
+      await client.query('BEGIN');
       const result = await client.query(
-        `INSERT INTO ${this.#definition.tableName} (${columns.join(", ")})
+        `INSERT INTO ${this.#definition.tableName} (${columns.join(', ')})
          VALUES (${placeholders})
-         RETURNING ${this.#definition.selectColumns.join(", ")}`,
-        params,
+         RETURNING ${this.#definition.selectColumns.join(', ')}`,
+        params
       );
       record = this.#definition.toRecord(result.rows[0]);
-      await client.query("COMMIT");
+      await client.query('COMMIT');
     } catch (error) {
-      await client.query("ROLLBACK");
+      await client.query('ROLLBACK');
       throw error;
     } finally {
       client.release();
     }
 
-    await this.#publishConfigChangeEvent("created", record);
+    await this.#publishConfigChangeEvent('created', record);
     if (record === null) {
       throw new Error(
-        `Config resource ${this.#definition.resourceType} was not created successfully`,
+        `Config resource ${this.#definition.resourceType} was not created successfully`
       );
     }
     return record;
@@ -422,39 +407,35 @@ class PostgresCrudStore<TInput, TRecord> implements CrudStore<TInput, TRecord> {
     const timestamp = new Date();
     let record: TRecord | null = null;
     const assignments = this.#definition.insertColumns.map(
-      (column, index) => `${column} = $${index + 1}`,
+      (column, index) => `${column} = $${index + 1}`
     );
-    const params = [
-      ...this.#definition.toInsertValues(input),
-      timestamp,
-      id,
-    ];
+    const params = [...this.#definition.toInsertValues(input), timestamp, id];
 
     try {
-      await client.query("BEGIN");
+      await client.query('BEGIN');
       const result = await client.query(
         `UPDATE ${this.#definition.tableName}
-            SET ${assignments.join(", ")}, updated_at = $${params.length - 1}
+            SET ${assignments.join(', ')}, updated_at = $${params.length - 1}
           WHERE id = $${params.length}
-        RETURNING ${this.#definition.selectColumns.join(", ")}`,
-        params,
+        RETURNING ${this.#definition.selectColumns.join(', ')}`,
+        params
       );
 
       if (result.rowCount === 0) {
-        await client.query("ROLLBACK");
+        await client.query('ROLLBACK');
         return null;
       }
 
       record = this.#definition.toRecord(result.rows[0]);
-      await client.query("COMMIT");
+      await client.query('COMMIT');
     } catch (error) {
-      await client.query("ROLLBACK");
+      await client.query('ROLLBACK');
       throw error;
     } finally {
       client.release();
     }
 
-    await this.#publishConfigChangeEvent("updated", record);
+    await this.#publishConfigChangeEvent('updated', record);
     return record;
   }
 
@@ -463,29 +444,29 @@ class PostgresCrudStore<TInput, TRecord> implements CrudStore<TInput, TRecord> {
     let record: TRecord | null = null;
 
     try {
-      await client.query("BEGIN");
+      await client.query('BEGIN');
       const result = await client.query(
         `DELETE FROM ${this.#definition.tableName}
           WHERE id = $1
-      RETURNING ${this.#definition.selectColumns.join(", ")}`,
-        [id],
+      RETURNING ${this.#definition.selectColumns.join(', ')}`,
+        [id]
       );
 
       if ((result.rowCount ?? 0) === 0) {
-        await client.query("ROLLBACK");
+        await client.query('ROLLBACK');
         return false;
       }
 
       record = this.#definition.toRecord(result.rows[0]);
-      await client.query("COMMIT");
+      await client.query('COMMIT');
     } catch (error) {
-      await client.query("ROLLBACK");
+      await client.query('ROLLBACK');
       throw error;
     } finally {
       client.release();
     }
 
-    await this.#publishConfigChangeEvent("deleted", record);
+    await this.#publishConfigChangeEvent('deleted', record);
     return true;
   }
 
@@ -499,19 +480,19 @@ class PostgresCrudStore<TInput, TRecord> implements CrudStore<TInput, TRecord> {
 
   async #publishConfigChangeEvent(
     operation: ConfigChangeOperation,
-    record: TRecord | null,
+    record: TRecord | null
   ): Promise<void> {
     const resourceId =
-      typeof record === "object" &&
+      typeof record === 'object' &&
       record !== null &&
-      "id" in record &&
-      typeof record.id === "string"
+      'id' in record &&
+      typeof record.id === 'string'
         ? record.id
-        : "";
+        : '';
 
     if (!resourceId) {
       throw new Error(
-        `Config resource ${this.#definition.resourceType} is missing an id for event publication`,
+        `Config resource ${this.#definition.resourceType} is missing an id for event publication`
       );
     }
 
@@ -525,8 +506,8 @@ class PostgresCrudStore<TInput, TRecord> implements CrudStore<TInput, TRecord> {
 }
 
 const symbolDefinition: ResourceDefinition<SymbolInput, SymbolRecord> = {
-  tableName: "symbols",
-  resourceType: "symbols",
+  tableName: 'symbols',
+  resourceType: 'symbols',
   createTableSql: `
     CREATE TABLE IF NOT EXISTS symbols (
       id TEXT PRIMARY KEY,
@@ -538,26 +519,26 @@ const symbolDefinition: ResourceDefinition<SymbolInput, SymbolRecord> = {
       updated_at TIMESTAMPTZ NOT NULL
     );
   `,
-  listOrderBy: "code ASC",
+  listOrderBy: 'code ASC',
   selectColumns: [
-    "id",
-    "code",
-    "active",
-    "base_asset",
-    "destination_asset",
-    "created_at",
-    "updated_at",
+    'id',
+    'code',
+    'active',
+    'base_asset',
+    'destination_asset',
+    'created_at',
+    'updated_at',
   ],
-  insertColumns: ["code", "active", "base_asset", "destination_asset"],
-  uniqueFieldName: "code",
+  insertColumns: ['code', 'active', 'base_asset', 'destination_asset'],
+  uniqueFieldName: 'code',
   uniqueFieldValue: (input) => input.code,
   toInsertValues: (input) => [input.code, input.active, input.baseAsset, input.destinationAsset],
   toRecord: mapSymbolRow,
 };
 
 const timeframeDefinition: ResourceDefinition<TimeframeInput, TimeframeRecord> = {
-  tableName: "timeframes",
-  resourceType: "timeframes",
+  tableName: 'timeframes',
+  resourceType: 'timeframes',
   createTableSql: `
     CREATE TABLE IF NOT EXISTS timeframes (
       id TEXT PRIMARY KEY,
@@ -574,25 +555,25 @@ const timeframeDefinition: ResourceDefinition<TimeframeInput, TimeframeRecord> =
         CHECK (period_ms > 0)
     );
   `,
-  listOrderBy: "code ASC",
+  listOrderBy: 'code ASC',
   selectColumns: [
-    "id",
-    "code",
-    "longer_timeframe_code",
-    "longer_timeframe_multiplier",
-    "period_ms",
-    "active",
-    "created_at",
-    "updated_at",
+    'id',
+    'code',
+    'longer_timeframe_code',
+    'longer_timeframe_multiplier',
+    'period_ms',
+    'active',
+    'created_at',
+    'updated_at',
   ],
   insertColumns: [
-    "code",
-    "longer_timeframe_code",
-    "longer_timeframe_multiplier",
-    "period_ms",
-    "active",
+    'code',
+    'longer_timeframe_code',
+    'longer_timeframe_multiplier',
+    'period_ms',
+    'active',
   ],
-  uniqueFieldName: "code",
+  uniqueFieldName: 'code',
   uniqueFieldValue: (input) => input.code,
   toInsertValues: (input) => [
     input.code,
@@ -605,8 +586,8 @@ const timeframeDefinition: ResourceDefinition<TimeframeInput, TimeframeRecord> =
 };
 
 const strategyDefinition: ResourceDefinition<StrategyInput, StrategyRecord> = {
-  tableName: "strategies",
-  resourceType: "strategies",
+  tableName: 'strategies',
+  resourceType: 'strategies',
   createTableSql: `
     CREATE TABLE IF NOT EXISTS strategies (
       id TEXT PRIMARY KEY,
@@ -618,18 +599,18 @@ const strategyDefinition: ResourceDefinition<StrategyInput, StrategyRecord> = {
       updated_at TIMESTAMPTZ NOT NULL
     );
   `,
-  listOrderBy: "name ASC",
+  listOrderBy: 'name ASC',
   selectColumns: [
-    "id",
-    "name",
-    "description",
-    "activated",
-    "parameters",
-    "created_at",
-    "updated_at",
+    'id',
+    'name',
+    'description',
+    'activated',
+    'parameters',
+    'created_at',
+    'updated_at',
   ],
-  insertColumns: ["name", "description", "activated", "parameters"],
-  uniqueFieldName: "name",
+  insertColumns: ['name', 'description', 'activated', 'parameters'],
+  uniqueFieldName: 'name',
   uniqueFieldValue: (input) => input.name,
   toInsertValues: (input) => [
     input.name,
@@ -640,11 +621,10 @@ const strategyDefinition: ResourceDefinition<StrategyInput, StrategyRecord> = {
   toRecord: mapStrategyRow,
 };
 
-const riskProfileDefinition: ResourceDefinition<RiskProfileInput, RiskProfileRecord> =
-  {
-    tableName: "risk_profiles",
-    resourceType: "risk_profiles",
-    createTableSql: `
+const riskProfileDefinition: ResourceDefinition<RiskProfileInput, RiskProfileRecord> = {
+  tableName: 'risk_profiles',
+  resourceType: 'risk_profiles',
+  createTableSql: `
       CREATE TABLE IF NOT EXISTS risk_profiles (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL UNIQUE,
@@ -666,45 +646,48 @@ const riskProfileDefinition: ResourceDefinition<RiskProfileInput, RiskProfileRec
           CHECK (rrr > 0)
       );
     `,
-    listOrderBy: "name ASC",
-    selectColumns: [
-      "id",
-      "name",
-      "description",
-      "maximum_stop_loss",
-      "minimum_stop_loss",
-      "swing_gap",
-      "rrr",
-      "enabled",
-      "created_at",
-      "updated_at",
-    ],
-    insertColumns: [
-      "name",
-      "description",
-      "maximum_stop_loss",
-      "minimum_stop_loss",
-      "swing_gap",
-      "rrr",
-      "enabled",
-    ],
-    uniqueFieldName: "name",
-    uniqueFieldValue: (input) => input.name,
-    toInsertValues: (input) => [
-      input.name,
-      input.description,
-      input.maximumStopLoss,
-      input.minimumStopLoss,
-      input.swingGap,
-      input.rrr,
-      input.enabled,
-    ],
-    toRecord: mapRiskProfileRow,
-  };
+  listOrderBy: 'name ASC',
+  selectColumns: [
+    'id',
+    'name',
+    'description',
+    'maximum_stop_loss',
+    'minimum_stop_loss',
+    'swing_gap',
+    'rrr',
+    'enabled',
+    'created_at',
+    'updated_at',
+  ],
+  insertColumns: [
+    'name',
+    'description',
+    'maximum_stop_loss',
+    'minimum_stop_loss',
+    'swing_gap',
+    'rrr',
+    'enabled',
+  ],
+  uniqueFieldName: 'name',
+  uniqueFieldValue: (input) => input.name,
+  toInsertValues: (input) => [
+    input.name,
+    input.description,
+    input.maximumStopLoss,
+    input.minimumStopLoss,
+    input.swingGap,
+    input.rrr,
+    input.enabled,
+  ],
+  toRecord: mapRiskProfileRow,
+};
 
-const analysisSettingsDefinition: ResourceDefinition<AnalysisSettingsInput, AnalysisSettingsRecord> = {
-  tableName: "analysis_settings",
-  resourceType: "analysis_settings",
+const analysisSettingsDefinition: ResourceDefinition<
+  AnalysisSettingsInput,
+  AnalysisSettingsRecord
+> = {
+  tableName: 'analysis_settings',
+  resourceType: 'analysis_settings',
   createTableSql: `
     CREATE TABLE IF NOT EXISTS analysis_settings (
       id TEXT PRIMARY KEY,
@@ -719,26 +702,19 @@ const analysisSettingsDefinition: ResourceDefinition<AnalysisSettingsInput, Anal
       updated_at TIMESTAMPTZ NOT NULL
     );
   `,
-  listOrderBy: "name ASC, strategy_name ASC",
+  listOrderBy: 'name ASC, strategy_name ASC',
   selectColumns: [
-    "id",
-    "name",
-    "strategy_name",
-    "technical_analysis_settings",
-    "enabled",
-    "created_at",
-    "updated_at",
+    'id',
+    'name',
+    'strategy_name',
+    'technical_analysis_settings',
+    'enabled',
+    'created_at',
+    'updated_at',
   ],
-  insertColumns: [
-    "name",
-    "strategy_name",
-    "technical_analysis_settings",
-    "enabled",
-  ],
-  uniqueFieldName:
-    "name",
-  uniqueFieldValue: (input) =>
-    input.name,
+  insertColumns: ['name', 'strategy_name', 'technical_analysis_settings', 'enabled'],
+  uniqueFieldName: 'name',
+  uniqueFieldValue: (input) => input.name,
   toInsertValues: (input) => [
     input.name,
     input.strategyName,
@@ -752,8 +728,8 @@ const executionSettingsDefinition: ResourceDefinition<
   ExecutionSettingsInput,
   ExecutionSettingsRecord
 > = {
-  tableName: "execution_settings",
-  resourceType: "execution_settings",
+  tableName: 'execution_settings',
+  resourceType: 'execution_settings',
   createTableSql: `
     CREATE TABLE IF NOT EXISTS execution_settings (
       id TEXT PRIMARY KEY,
@@ -777,30 +753,30 @@ const executionSettingsDefinition: ResourceDefinition<
         CHECK (replace_open_position_policy IN ('keep', 'flatten'))
     );
   `,
-  listOrderBy: "name ASC",
+  listOrderBy: 'name ASC',
   selectColumns: [
-    "id",
-    "name",
-    "enabled",
-    "mode",
-    "auto_promote",
-    "max_promotions",
-    "selection_metric",
-    "allowed_symbols_json",
-    "allowed_timeframes_json",
-    "replace_open_position_policy",
-    "created_at",
-    "updated_at",
+    'id',
+    'name',
+    'enabled',
+    'mode',
+    'auto_promote',
+    'max_promotions',
+    'selection_metric',
+    'allowed_symbols_json',
+    'allowed_timeframes_json',
+    'replace_open_position_policy',
+    'created_at',
+    'updated_at',
   ],
   insertColumns: [
-    "name",
-    "enabled",
-    "mode",
-    "auto_promote",
-    "max_promotions",
-    "replace_open_position_policy",
+    'name',
+    'enabled',
+    'mode',
+    'auto_promote',
+    'max_promotions',
+    'replace_open_position_policy',
   ],
-  uniqueFieldName: "name",
+  uniqueFieldName: 'name',
   uniqueFieldValue: (input) => input.name,
   toInsertValues: (input) => [
     input.name,
@@ -841,12 +817,8 @@ export const ensureControlPlaneSchema = async (pool: Pool): Promise<void> => {
   await pool.query(symbolDefinition.createTableSql);
   await pool.query(timeframeDefinition.createTableSql);
 
-  await pool.query(
-    "ALTER TABLE symbols ADD COLUMN IF NOT EXISTS base_asset TEXT",
-  );
-  await pool.query(
-    "ALTER TABLE symbols ADD COLUMN IF NOT EXISTS destination_asset TEXT",
-  );
+  await pool.query('ALTER TABLE symbols ADD COLUMN IF NOT EXISTS base_asset TEXT');
+  await pool.query('ALTER TABLE symbols ADD COLUMN IF NOT EXISTS destination_asset TEXT');
 
   const symbolsMissingAssets = await pool.query<{
     id: string;
@@ -855,7 +827,7 @@ export const ensureControlPlaneSchema = async (pool: Pool): Promise<void> => {
     `SELECT id, code
        FROM symbols
       WHERE base_asset IS NULL
-         OR destination_asset IS NULL`,
+         OR destination_asset IS NULL`
   );
 
   for (const symbol of symbolsMissingAssets.rows) {
@@ -863,7 +835,7 @@ export const ensureControlPlaneSchema = async (pool: Pool): Promise<void> => {
 
     if (!derivedAssets) {
       throw new Error(
-        `Unable to derive base/destination assets for existing symbol code "${symbol.code}"`,
+        `Unable to derive base/destination assets for existing symbol code "${symbol.code}"`
       );
     }
 
@@ -872,14 +844,12 @@ export const ensureControlPlaneSchema = async (pool: Pool): Promise<void> => {
           SET base_asset = COALESCE(base_asset, $1),
               destination_asset = COALESCE(destination_asset, $2)
         WHERE id = $3`,
-      [derivedAssets.baseAsset, derivedAssets.destinationAsset, symbol.id],
+      [derivedAssets.baseAsset, derivedAssets.destinationAsset, symbol.id]
     );
   }
 
-  await pool.query("ALTER TABLE symbols ALTER COLUMN base_asset SET NOT NULL");
-  await pool.query(
-    "ALTER TABLE symbols ALTER COLUMN destination_asset SET NOT NULL",
-  );
+  await pool.query('ALTER TABLE symbols ALTER COLUMN base_asset SET NOT NULL');
+  await pool.query('ALTER TABLE symbols ALTER COLUMN destination_asset SET NOT NULL');
 
   await pool.query(`
     DO $$
@@ -931,24 +901,22 @@ export const ensureControlPlaneSchema = async (pool: Pool): Promise<void> => {
   }
   await pool.query(analysisSettingsDefinition.createTableSql);
   await pool.query(
-    "ALTER TABLE execution_settings ADD COLUMN IF NOT EXISTS max_promotions INTEGER NOT NULL DEFAULT 1",
+    'ALTER TABLE execution_settings ADD COLUMN IF NOT EXISTS max_promotions INTEGER NOT NULL DEFAULT 1'
   );
-  await pool.query(
-    "ALTER TABLE execution_settings DROP COLUMN IF EXISTS min_trade_count",
-  );
+  await pool.query('ALTER TABLE execution_settings DROP COLUMN IF EXISTS min_trade_count');
 
-  await pool.query("DROP TABLE IF EXISTS config_change_outbox");
+  await pool.query('DROP TABLE IF EXISTS config_change_outbox');
 
   // Existing local DBs may already have timeframes without period_ms. Backfill from the
   // business code so timeframe period metadata lives with the timeframe itself.
-  await pool.query("ALTER TABLE timeframes ADD COLUMN IF NOT EXISTS period_ms INTEGER");
+  await pool.query('ALTER TABLE timeframes ADD COLUMN IF NOT EXISTS period_ms INTEGER');
   const timeframesMissingPeriod = await pool.query<{
     id: string;
     code: string;
   }>(
     `SELECT id, code
        FROM timeframes
-      WHERE period_ms IS NULL`,
+      WHERE period_ms IS NULL`
   );
 
   for (const timeframe of timeframesMissingPeriod.rows) {
@@ -956,7 +924,7 @@ export const ensureControlPlaneSchema = async (pool: Pool): Promise<void> => {
 
     if (derivedPeriodMs === null) {
       throw new Error(
-        `Unable to derive timeframe period for existing timeframe code "${timeframe.code}"`,
+        `Unable to derive timeframe period for existing timeframe code "${timeframe.code}"`
       );
     }
 
@@ -964,7 +932,7 @@ export const ensureControlPlaneSchema = async (pool: Pool): Promise<void> => {
       `UPDATE timeframes
           SET period_ms = $1
         WHERE id = $2`,
-      [derivedPeriodMs, timeframe.id],
+      [derivedPeriodMs, timeframe.id]
     );
   }
 
@@ -983,7 +951,7 @@ export const ensureControlPlaneSchema = async (pool: Pool): Promise<void> => {
     END
     $$;
   `);
-  await pool.query("ALTER TABLE timeframes ALTER COLUMN period_ms SET NOT NULL");
+  await pool.query('ALTER TABLE timeframes ALTER COLUMN period_ms SET NOT NULL');
 
   const legacyAnalysisSettingsExists = await pool.query<{ exists: boolean }>(`
     SELECT EXISTS (
@@ -1024,7 +992,7 @@ export const ensureControlPlaneSchema = async (pool: Pool): Promise<void> => {
       const fastPeriod = technicalSettings.fastPeriod;
       const slowPeriod = technicalSettings.slowPeriod;
       const generatedName =
-        typeof fastPeriod === "number" && typeof slowPeriod === "number"
+        typeof fastPeriod === 'number' && typeof slowPeriod === 'number'
           ? `${row.strategy_name}-${fastPeriod}-${slowPeriod}`
           : `${row.strategy_name}-${index + 1}`;
 
@@ -1050,42 +1018,29 @@ export const ensureControlPlaneSchema = async (pool: Pool): Promise<void> => {
           row.enabled,
           toIsoString(row.created_at),
           toIsoString(row.updated_at),
-        ],
+        ]
       );
     }
 
-    await pool.query("DROP TABLE analysis_settings_legacy");
+    await pool.query('DROP TABLE analysis_settings_legacy');
   }
 
   // Cleanup from the earlier experimental secret-reference slice. Binance credentials
   // now come directly from OpenBao app config rather than through DB indirection.
-  await pool.query("DROP TABLE IF EXISTS exchange_secret_references");
-  await pool.query("ALTER TABLE analysis_settings DROP COLUMN IF EXISTS trading_defaults_name");
-  await pool.query("DROP TABLE IF EXISTS trading_defaults");
-  await pool.query("ALTER TABLE symbols DROP COLUMN IF EXISTS origin_asset_needed_funds");
-  await pool.query(
-    "ALTER TABLE symbols DROP COLUMN IF EXISTS destination_asset_needed_funds",
-  );
+  await pool.query('DROP TABLE IF EXISTS exchange_secret_references');
+  await pool.query('ALTER TABLE analysis_settings DROP COLUMN IF EXISTS trading_defaults_name');
+  await pool.query('DROP TABLE IF EXISTS trading_defaults');
+  await pool.query('ALTER TABLE symbols DROP COLUMN IF EXISTS origin_asset_needed_funds');
+  await pool.query('ALTER TABLE symbols DROP COLUMN IF EXISTS destination_asset_needed_funds');
 };
 
-export const createConfigStores = (
-  pool: Pool,
-  eventPublisher: ConfigChangeEventPublisher,
-) => ({
+export const createConfigStores = (pool: Pool, eventPublisher: ConfigChangeEventPublisher) => ({
   symbols: new PostgresCrudStore(pool, symbolDefinition, eventPublisher),
   timeframes: new PostgresCrudStore(pool, timeframeDefinition, eventPublisher),
   strategies: new PostgresCrudStore(pool, strategyDefinition, eventPublisher),
   riskProfiles: new PostgresCrudStore(pool, riskProfileDefinition, eventPublisher),
-  analysisSettings: new PostgresCrudStore(
-    pool,
-    analysisSettingsDefinition,
-    eventPublisher,
-  ),
-  executionSettings: new PostgresCrudStore(
-    pool,
-    executionSettingsDefinition,
-    eventPublisher,
-  ),
+  analysisSettings: new PostgresCrudStore(pool, analysisSettingsDefinition, eventPublisher),
+  executionSettings: new PostgresCrudStore(pool, executionSettingsDefinition, eventPublisher),
 });
 
 export type ConfigStores = ReturnType<typeof createConfigStores>;
@@ -1096,312 +1051,285 @@ export type ConfigStore<TInput, TRecord> = CrudStore<TInput, TRecord> & {
 };
 
 export const symbolBodySchema = {
-  type: "object",
+  type: 'object',
   additionalProperties: false,
   properties: {
-    code: { type: "string", minLength: 1 },
-    active: { type: "boolean" },
-    baseAsset: { type: "string", minLength: 1 },
-    destinationAsset: { type: "string", minLength: 1 },
+    code: { type: 'string', minLength: 1 },
+    active: { type: 'boolean' },
+    baseAsset: { type: 'string', minLength: 1 },
+    destinationAsset: { type: 'string', minLength: 1 },
   },
-  required: ["code", "active", "baseAsset", "destinationAsset"],
+  required: ['code', 'active', 'baseAsset', 'destinationAsset'],
 } as const;
 
 export const symbolRecordSchema = {
-  type: "object",
+  type: 'object',
   properties: {
-    id: { type: "string" },
-    code: { type: "string" },
-    active: { type: "boolean" },
-    baseAsset: { type: "string" },
-    destinationAsset: { type: "string" },
-    createdAt: { type: "string", format: "date-time" },
-    updatedAt: { type: "string", format: "date-time" },
+    id: { type: 'string' },
+    code: { type: 'string' },
+    active: { type: 'boolean' },
+    baseAsset: { type: 'string' },
+    destinationAsset: { type: 'string' },
+    createdAt: { type: 'string', format: 'date-time' },
+    updatedAt: { type: 'string', format: 'date-time' },
   },
-  required: [
-    "id",
-    "code",
-    "active",
-    "baseAsset",
-    "destinationAsset",
-    "createdAt",
-    "updatedAt",
-  ],
+  required: ['id', 'code', 'active', 'baseAsset', 'destinationAsset', 'createdAt', 'updatedAt'],
 } as const;
 
 export const timeframeBodySchema = {
-  type: "object",
+  type: 'object',
   additionalProperties: false,
   properties: {
-    code: { type: "string", minLength: 1 },
-    longerTimeframeCode: { type: "string", minLength: 1 },
-    longerTimeframeMultiplier: { type: "integer", minimum: 1 },
-    periodMs: { type: "integer", minimum: 1 },
-    active: { type: "boolean" },
+    code: { type: 'string', minLength: 1 },
+    longerTimeframeCode: { type: 'string', minLength: 1 },
+    longerTimeframeMultiplier: { type: 'integer', minimum: 1 },
+    periodMs: { type: 'integer', minimum: 1 },
+    active: { type: 'boolean' },
   },
-  required: [
-    "code",
-    "longerTimeframeCode",
-    "longerTimeframeMultiplier",
-    "periodMs",
-    "active",
-  ],
+  required: ['code', 'longerTimeframeCode', 'longerTimeframeMultiplier', 'periodMs', 'active'],
 } as const;
 
 export const timeframeRecordSchema = {
-  type: "object",
+  type: 'object',
   properties: {
-    id: { type: "string" },
-    code: { type: "string" },
-    longerTimeframeCode: { type: "string" },
-    longerTimeframeMultiplier: { type: "integer" },
-    periodMs: { type: "integer" },
-    active: { type: "boolean" },
-    createdAt: { type: "string", format: "date-time" },
-    updatedAt: { type: "string", format: "date-time" },
+    id: { type: 'string' },
+    code: { type: 'string' },
+    longerTimeframeCode: { type: 'string' },
+    longerTimeframeMultiplier: { type: 'integer' },
+    periodMs: { type: 'integer' },
+    active: { type: 'boolean' },
+    createdAt: { type: 'string', format: 'date-time' },
+    updatedAt: { type: 'string', format: 'date-time' },
   },
   required: [
-    "id",
-    "code",
-    "longerTimeframeCode",
-    "longerTimeframeMultiplier",
-    "periodMs",
-    "active",
-    "createdAt",
-    "updatedAt",
+    'id',
+    'code',
+    'longerTimeframeCode',
+    'longerTimeframeMultiplier',
+    'periodMs',
+    'active',
+    'createdAt',
+    'updatedAt',
   ],
 } as const;
 
 export const strategyBodySchema = {
-  type: "object",
+  type: 'object',
   additionalProperties: false,
   properties: {
-    name: { type: "string", minLength: 1 },
-    description: { type: "string", minLength: 1 },
-    activated: { type: "boolean" },
+    name: { type: 'string', minLength: 1 },
+    description: { type: 'string', minLength: 1 },
+    activated: { type: 'boolean' },
     parameters: {
-      type: "object",
+      type: 'object',
       additionalProperties: true,
     },
   },
-  required: ["name", "description", "activated"],
+  required: ['name', 'description', 'activated'],
 } as const;
 
 export const strategyRecordSchema = {
-  type: "object",
+  type: 'object',
   properties: {
-    id: { type: "string" },
-    name: { type: "string" },
-    description: { type: "string" },
-    activated: { type: "boolean" },
+    id: { type: 'string' },
+    name: { type: 'string' },
+    description: { type: 'string' },
+    activated: { type: 'boolean' },
     parameters: {
-      type: "object",
+      type: 'object',
       additionalProperties: true,
     },
-    createdAt: { type: "string", format: "date-time" },
-    updatedAt: { type: "string", format: "date-time" },
+    createdAt: { type: 'string', format: 'date-time' },
+    updatedAt: { type: 'string', format: 'date-time' },
   },
-  required: [
-    "id",
-    "name",
-    "description",
-    "activated",
-    "parameters",
-    "createdAt",
-    "updatedAt",
-  ],
+  required: ['id', 'name', 'description', 'activated', 'parameters', 'createdAt', 'updatedAt'],
 } as const;
 
 export const riskProfileBodySchema = {
-  type: "object",
+  type: 'object',
   additionalProperties: false,
   properties: {
-    name: { type: "string", minLength: 1 },
-    description: { type: "string", minLength: 1 },
-    maximumStopLoss: { type: "number", exclusiveMinimum: 0 },
-    minimumStopLoss: { type: "number", exclusiveMinimum: 0 },
-    swingGap: { type: "number", minimum: 0 },
-    rrr: { type: "number", exclusiveMinimum: 0 },
-    enabled: { type: "boolean" },
+    name: { type: 'string', minLength: 1 },
+    description: { type: 'string', minLength: 1 },
+    maximumStopLoss: { type: 'number', exclusiveMinimum: 0 },
+    minimumStopLoss: { type: 'number', exclusiveMinimum: 0 },
+    swingGap: { type: 'number', minimum: 0 },
+    rrr: { type: 'number', exclusiveMinimum: 0 },
+    enabled: { type: 'boolean' },
   },
   required: [
-    "name",
-    "description",
-    "maximumStopLoss",
-    "minimumStopLoss",
-    "swingGap",
-    "rrr",
-    "enabled",
+    'name',
+    'description',
+    'maximumStopLoss',
+    'minimumStopLoss',
+    'swingGap',
+    'rrr',
+    'enabled',
   ],
 } as const;
 
 export const riskProfileRecordSchema = {
-  type: "object",
+  type: 'object',
   properties: {
-    id: { type: "string" },
-    name: { type: "string" },
-    description: { type: "string" },
-    maximumStopLoss: { type: "number" },
-    minimumStopLoss: { type: "number" },
-    swingGap: { type: "number" },
-    rrr: { type: "number" },
-    enabled: { type: "boolean" },
-    createdAt: { type: "string", format: "date-time" },
-    updatedAt: { type: "string", format: "date-time" },
+    id: { type: 'string' },
+    name: { type: 'string' },
+    description: { type: 'string' },
+    maximumStopLoss: { type: 'number' },
+    minimumStopLoss: { type: 'number' },
+    swingGap: { type: 'number' },
+    rrr: { type: 'number' },
+    enabled: { type: 'boolean' },
+    createdAt: { type: 'string', format: 'date-time' },
+    updatedAt: { type: 'string', format: 'date-time' },
   },
   required: [
-    "id",
-    "name",
-    "description",
-    "maximumStopLoss",
-    "minimumStopLoss",
-    "swingGap",
-    "rrr",
-    "enabled",
-    "createdAt",
-    "updatedAt",
+    'id',
+    'name',
+    'description',
+    'maximumStopLoss',
+    'minimumStopLoss',
+    'swingGap',
+    'rrr',
+    'enabled',
+    'createdAt',
+    'updatedAt',
   ],
 } as const;
 
 export const analysisSettingsBodySchema = {
-  type: "object",
+  type: 'object',
   additionalProperties: false,
   properties: {
-    name: { type: "string", minLength: 1 },
-    strategyName: { type: "string", minLength: 1 },
+    name: { type: 'string', minLength: 1 },
+    strategyName: { type: 'string', minLength: 1 },
     technicalAnalysisSettings: {
-      type: "object",
+      type: 'object',
       additionalProperties: true,
     },
-    enabled: { type: "boolean" },
+    enabled: { type: 'boolean' },
   },
-  required: [
-    "name",
-    "strategyName",
-    "technicalAnalysisSettings",
-    "enabled",
-  ],
+  required: ['name', 'strategyName', 'technicalAnalysisSettings', 'enabled'],
 } as const;
 
 export const analysisSettingsRecordSchema = {
-  type: "object",
+  type: 'object',
   properties: {
-    id: { type: "string" },
-    name: { type: "string" },
-    strategyName: { type: "string" },
+    id: { type: 'string' },
+    name: { type: 'string' },
+    strategyName: { type: 'string' },
     technicalAnalysisSettings: {
-      type: "object",
+      type: 'object',
       additionalProperties: true,
     },
-    enabled: { type: "boolean" },
-    createdAt: { type: "string", format: "date-time" },
-    updatedAt: { type: "string", format: "date-time" },
+    enabled: { type: 'boolean' },
+    createdAt: { type: 'string', format: 'date-time' },
+    updatedAt: { type: 'string', format: 'date-time' },
   },
   required: [
-    "id",
-    "name",
-    "strategyName",
-    "technicalAnalysisSettings",
-    "enabled",
-    "createdAt",
-    "updatedAt",
+    'id',
+    'name',
+    'strategyName',
+    'technicalAnalysisSettings',
+    'enabled',
+    'createdAt',
+    'updatedAt',
   ],
 } as const;
 
 export const executionSettingsBodySchema = {
-  type: "object",
+  type: 'object',
   additionalProperties: false,
   properties: {
-    name: { type: "string", minLength: 1 },
-    enabled: { type: "boolean" },
-    mode: { type: "string", enum: ["paper", "live"] },
-    autoPromote: { type: "boolean" },
-    maxPromotions: { type: "integer", minimum: 1 },
+    name: { type: 'string', minLength: 1 },
+    enabled: { type: 'boolean' },
+    mode: { type: 'string', enum: ['paper', 'live'] },
+    autoPromote: { type: 'boolean' },
+    maxPromotions: { type: 'integer', minimum: 1 },
     replaceOpenPositionPolicy: {
-      type: "string",
-      enum: ["keep", "flatten"],
+      type: 'string',
+      enum: ['keep', 'flatten'],
     },
   },
   required: [
-    "name",
-    "enabled",
-    "mode",
-    "autoPromote",
-    "maxPromotions",
-    "replaceOpenPositionPolicy",
+    'name',
+    'enabled',
+    'mode',
+    'autoPromote',
+    'maxPromotions',
+    'replaceOpenPositionPolicy',
   ],
 } as const;
 
 export const executionSettingsRecordSchema = {
-  type: "object",
+  type: 'object',
   properties: {
-    id: { type: "string" },
-    name: { type: "string" },
-    enabled: { type: "boolean" },
-    mode: { type: "string", enum: ["paper", "live"] },
-    autoPromote: { type: "boolean" },
-    maxPromotions: { type: "integer" },
+    id: { type: 'string' },
+    name: { type: 'string' },
+    enabled: { type: 'boolean' },
+    mode: { type: 'string', enum: ['paper', 'live'] },
+    autoPromote: { type: 'boolean' },
+    maxPromotions: { type: 'integer' },
     replaceOpenPositionPolicy: {
-      type: "string",
-      enum: ["keep", "flatten"],
+      type: 'string',
+      enum: ['keep', 'flatten'],
     },
-    createdAt: { type: "string", format: "date-time" },
-    updatedAt: { type: "string", format: "date-time" },
+    createdAt: { type: 'string', format: 'date-time' },
+    updatedAt: { type: 'string', format: 'date-time' },
   },
   required: [
-    "id",
-    "name",
-    "enabled",
-    "mode",
-    "autoPromote",
-    "maxPromotions",
-    "replaceOpenPositionPolicy",
-    "createdAt",
-    "updatedAt",
+    'id',
+    'name',
+    'enabled',
+    'mode',
+    'autoPromote',
+    'maxPromotions',
+    'replaceOpenPositionPolicy',
+    'createdAt',
+    'updatedAt',
   ],
 } as const;
 
 export const resolvedAnalysisSettingsRecordSchema = {
-  type: "object",
+  type: 'object',
   properties: {
-    id: { type: "string" },
-    name: { type: "string" },
-    symbolCode: { type: "string" },
-    timeframeCode: { type: "string" },
-    strategyName: { type: "string" },
-    riskProfileName: { type: "string" },
+    id: { type: 'string' },
+    name: { type: 'string' },
+    symbolCode: { type: 'string' },
+    timeframeCode: { type: 'string' },
+    strategyName: { type: 'string' },
+    riskProfileName: { type: 'string' },
     technicalAnalysisSettings: {
-      type: "object",
+      type: 'object',
       additionalProperties: true,
     },
-    enabled: { type: "boolean" },
-    createdAt: { type: "string", format: "date-time" },
-    updatedAt: { type: "string", format: "date-time" },
+    enabled: { type: 'boolean' },
+    createdAt: { type: 'string', format: 'date-time' },
+    updatedAt: { type: 'string', format: 'date-time' },
     symbol: symbolRecordSchema,
     timeframe: timeframeRecordSchema,
     strategy: strategyRecordSchema,
     riskProfile: riskProfileRecordSchema,
   },
   required: [
-    "id",
-    "name",
-    "symbolCode",
-    "timeframeCode",
-    "strategyName",
-    "riskProfileName",
-    "technicalAnalysisSettings",
-    "enabled",
-    "createdAt",
-    "updatedAt",
-    "symbol",
-    "timeframe",
-    "strategy",
-    "riskProfile",
+    'id',
+    'name',
+    'symbolCode',
+    'timeframeCode',
+    'strategyName',
+    'riskProfileName',
+    'technicalAnalysisSettings',
+    'enabled',
+    'createdAt',
+    'updatedAt',
+    'symbol',
+    'timeframe',
+    'strategy',
+    'riskProfile',
   ],
 } as const;
 
 export const listResolvedAnalysisSettings = async (
-  pool: Pool,
+  pool: Pool
 ): Promise<ResolvedAnalysisSettingsRecord[]> => {
   const result = await pool.query(`
     SELECT

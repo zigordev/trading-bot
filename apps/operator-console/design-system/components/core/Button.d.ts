@@ -1,7 +1,6 @@
 import * as React from 'react';
 
-export interface ButtonProps
-  extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   /** Visual treatment. `danger` for destructive actions. */
   variant?: 'primary' | 'secondary' | 'outline' | 'ghost' | 'danger';
   /** `icon` is a square button — pair with a single glyph child. */

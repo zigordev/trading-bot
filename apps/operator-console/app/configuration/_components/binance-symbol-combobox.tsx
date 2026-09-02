@@ -1,11 +1,11 @@
-"use client";
+'use client';
 
-import * as React from "react";
+import * as React from 'react';
 
-import { Combobox, type ComboboxOption } from "@/components/ui/combobox";
-import { SymbolAvatar } from "@/components/shared/symbol-avatar";
-import { useBinanceSymbols } from "@/lib/hooks/use-binance-symbols";
-import { usePreferences } from "@/components/providers/preferences-provider";
+import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
+import { SymbolAvatar } from '@/components/shared/symbol-avatar';
+import { useBinanceSymbols } from '@/lib/hooks/use-binance-symbols';
+import { usePreferences } from '@/components/providers/preferences-provider';
 
 interface BinanceSymbolComboboxProps {
   value: string | null;
@@ -19,7 +19,7 @@ export function BinanceSymbolCombobox({
   placeholder,
 }: BinanceSymbolComboboxProps) {
   const { t } = usePreferences();
-  const [search, setSearch] = React.useState("");
+  const [search, setSearch] = React.useState('');
   const { data, isLoading } = useBinanceSymbols(search);
 
   const baseList = React.useMemo(() => data ?? [], [data]);
@@ -30,11 +30,7 @@ export function BinanceSymbolCombobox({
       label: item.symbol,
       description: `${item.baseAsset} → ${item.destinationAsset}`,
       icon: (
-        <SymbolAvatar
-          baseAsset={item.baseAsset}
-          quoteAsset={item.destinationAsset}
-          size={16}
-        />
+        <SymbolAvatar baseAsset={item.baseAsset} quoteAsset={item.destinationAsset} size={16} />
       ),
     }));
     if (value && !next.some((opt) => opt.value === value)) {
@@ -57,9 +53,9 @@ export function BinanceSymbolCombobox({
       }}
       onSearch={setSearch}
       loading={isLoading}
-      placeholder={placeholder ?? t("configuration.combobox.placeholder")}
-      searchPlaceholder={t("configuration.combobox.search_placeholder")}
-      emptyText={t("configuration.combobox.empty")}
+      placeholder={placeholder ?? t('configuration.combobox.placeholder')}
+      searchPlaceholder={t('configuration.combobox.search_placeholder')}
+      emptyText={t('configuration.combobox.empty')}
     />
   );
 }

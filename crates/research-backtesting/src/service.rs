@@ -3155,6 +3155,9 @@ mod tests {
         let buckets = calculate_timeslot_analysis(&trades);
 
         assert_eq!(buckets.len(), 168);
+        // `day * 24 + hour` indexes the 168-hour week, so `1 * 24` is Monday.
+        // Collapsing it to `24` is what clippy suggests and loses the meaning.
+        #[allow(clippy::identity_op)]
         let monday_14 = &buckets[(1 * 24) + 14];
         assert_eq!(monday_14.trade_count, 5);
         assert_eq!(monday_14.winning_trade_count, 3);

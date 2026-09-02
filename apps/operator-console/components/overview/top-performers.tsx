@@ -1,15 +1,15 @@
-"use client";
+'use client';
 
-import * as React from "react";
+import * as React from 'react';
 
-import { useBacktestsSummary } from "@/lib/hooks/use-backtests-summary";
-import { formatPercent } from "@/lib/format";
-import { SectionCard } from "@/components/layout/section-card";
-import { Skeleton } from "@/components/ui/skeleton";
-import { ScoreCell } from "@/components/shared/score-cell";
-import { SymbolAvatar } from "@/components/shared/symbol-avatar";
-import { splitSymbol } from "@/lib/backtesting/derive-rows";
-import { usePreferences } from "@/components/providers/preferences-provider";
+import { useBacktestsSummary } from '@/lib/hooks/use-backtests-summary';
+import { formatPercent } from '@/lib/format';
+import { SectionCard } from '@/components/layout/section-card';
+import { Skeleton } from '@/components/ui/skeleton';
+import { ScoreCell } from '@/components/shared/score-cell';
+import { SymbolAvatar } from '@/components/shared/symbol-avatar';
+import { splitSymbol } from '@/lib/backtesting/derive-rows';
+import { usePreferences } from '@/components/providers/preferences-provider';
 
 export function TopPerformers() {
   const { t } = usePreferences();
@@ -23,8 +23,8 @@ export function TopPerformers() {
 
   return (
     <SectionCard
-      title={t("overview.top_performers.title")}
-      description={t("overview.top_performers.description")}
+      title={t('overview.top_performers.title')}
+      description={t('overview.top_performers.description')}
       padding="default"
       bodyClassName="p-0"
     >
@@ -36,7 +36,7 @@ export function TopPerformers() {
         </div>
       ) : isError || top.length === 0 ? (
         <p className="px-4 py-8 text-center text-[12px] text-[var(--color-fg-subtle)]">
-          {t("overview.top_performers.empty")}
+          {t('overview.top_performers.empty')}
         </p>
       ) : (
         <ul className="divide-y divide-[var(--color-border)]">

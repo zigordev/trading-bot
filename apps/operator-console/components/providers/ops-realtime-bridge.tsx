@@ -1,27 +1,27 @@
-"use client";
+'use client';
 
-import { createContext, useContext, useEffect, useRef, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { createContext, useContext, useEffect, useRef, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 
-import { OPS_WS_URL } from "@/lib/api";
+import { OPS_WS_URL } from '@/lib/api';
 import {
   emitOpsRealtimeEvent,
   parseOpsRealtimeEvent,
   subscribeOpsRealtimeEvent,
-} from "@/lib/ops-events";
+} from '@/lib/ops-events';
 
-export type WsStatus = "connecting" | "open" | "closed";
+export type WsStatus = 'connecting' | 'open' | 'closed';
 
 const RECONNECT_DELAY_MS = 2_000;
 
-const WsStatusContext = createContext<WsStatus>("connecting");
+const WsStatusContext = createContext<WsStatus>('connecting');
 
 export function useWsStatus() {
   return useContext(WsStatusContext);
 }
 
 export function OpsRealtimeBridge({ children }: { children?: React.ReactNode }) {
-  const [status, setStatus] = useState<WsStatus>("connecting");
+  const [status, setStatus] = useState<WsStatus>('connecting');
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const queryClient = useQueryClient();
 
@@ -31,15 +31,15 @@ export function OpsRealtimeBridge({ children }: { children?: React.ReactNode }) 
 
     const connect = () => {
       if (cancelled) return;
-      setStatus("connecting");
+      setStatus('connecting');
       socket = new WebSocket(OPS_WS_URL);
 
       socket.onopen = () => {
-        if (!cancelled) setStatus("open");
+        if (!cancelled) setStatus('open');
       };
 
       socket.onmessage = (event) => {
-        const parsed = parseOpsRealtimeEvent(String(event.data ?? ""));
+        const parsed = parseOpsRealtimeEvent(String(event.data ?? ''));
         if (parsed) {
           emitOpsRealtimeEvent(parsed);
         }
@@ -47,7 +47,7 @@ export function OpsRealtimeBridge({ children }: { children?: React.ReactNode }) 
 
       socket.onclose = () => {
         if (cancelled) return;
-        setStatus("closed");
+        setStatus('closed');
         timerRef.current = setTimeout(connect, RECONNECT_DELAY_MS);
       };
 
@@ -71,34 +71,32 @@ export function OpsRealtimeBridge({ children }: { children?: React.ReactNode }) 
   useEffect(() => {
     return subscribeOpsRealtimeEvent((event) => {
       switch (event.type) {
-        case "ops.backtests.updated":
+        case 'ops.backtests.updated':
           queryClient.invalidateQueries({
-            queryKey: ["ops", "backtests"],
+            queryKey: ['ops', 'backtests'],
           });
           break;
-        case "ops.execution.updated":
+        case 'ops.execution.updated':
           queryClient.invalidateQueries({
-            queryKey: ["ops", "execution"],
+            queryKey: ['ops', 'execution'],
           });
           break;
-        case "ops.data-readiness.updated":
+        case 'ops.data-readiness.updated':
           queryClient.invalidateQueries({
-            queryKey: ["ops", "data-readiness"],
+            queryKey: ['ops', 'data-readiness'],
           });
           break;
-        case "config.resource.updated":
+        case 'config.resource.updated':
           queryClient.invalidateQueries({
-            queryKey: ["config", event.payload.resource],
+            queryKey: ['config', event.payload.resource],
           });
           queryClient.invalidateQueries({
-            queryKey: ["runtime", "analysis-settings"],
+            queryKey: ['runtime', 'analysis-settings'],
           });
           break;
       }
     });
   }, [queryClient]);
 
-  return (
-    <WsStatusContext.Provider value={status}>{children}</WsStatusContext.Provider>
-  );
+  return <WsStatusContext.Provider value={status}>{children}</WsStatusContext.Provider>;
 }

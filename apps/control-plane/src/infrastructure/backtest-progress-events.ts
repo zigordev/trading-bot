@@ -1,27 +1,24 @@
-import type { FastifyBaseLogger } from "fastify";
-import { Kafka, logLevel, type Consumer } from "kafkajs";
-import type { Pool } from "pg";
+import type { FastifyBaseLogger } from 'fastify';
+import { Kafka, logLevel, type Consumer } from 'kafkajs';
+import type { Pool } from 'pg';
 
-import type { AppConfig } from "../config.js";
+import type { AppConfig } from '../config.js';
 import {
   upsertBacktestBatchFromProgressEvent,
   upsertBacktestJobFromProgressEvent,
-} from "../features/ops.js";
-import { publishOpsEvent } from "./ops-events.js";
+} from '../features/ops.js';
+import { publishOpsEvent } from './ops-events.js';
 
-type KafkaAdmin = Pick<
-  ReturnType<Kafka["admin"]>,
-  "connect" | "disconnect" | "createTopics"
->;
+type KafkaAdmin = Pick<ReturnType<Kafka['admin']>, 'connect' | 'disconnect' | 'createTopics'>;
 
 type ConsumerDependencies = {
-  consumer?: Pick<Consumer, "connect" | "disconnect" | "subscribe" | "run" | "stop">;
+  consumer?: Pick<Consumer, 'connect' | 'disconnect' | 'subscribe' | 'run' | 'stop'>;
   admin?: KafkaAdmin;
 };
 
 export type BacktestProgressEventEnvelope = {
   eventId: string;
-  eventType: "trading-bot.research-backtesting.backtest-progress.v1";
+  eventType: 'trading-bot.research-backtesting.backtest-progress.v1';
   source: string;
   occurredAt: string;
   data: {
@@ -38,7 +35,7 @@ export type BacktestProgressEventEnvelope = {
 
 export type BacktestBatchProgressEventEnvelope = {
   eventId: string;
-  eventType: "trading-bot.research-backtesting.backtest-batch-progress.v1";
+  eventType: 'trading-bot.research-backtesting.backtest-batch-progress.v1';
   source: string;
   occurredAt: string;
   data: {
@@ -60,24 +57,24 @@ export type BacktestProgressConsumer = {
   stop(): Promise<void>;
 };
 
-const jobEventType = "trading-bot.research-backtesting.backtest-progress.v1";
-const batchEventType = "trading-bot.research-backtesting.backtest-batch-progress.v1";
+const jobEventType = 'trading-bot.research-backtesting.backtest-progress.v1';
+const batchEventType = 'trading-bot.research-backtesting.backtest-batch-progress.v1';
 
 const parseEnvelope = (
-  value: string,
+  value: string
 ): BacktestProgressEventEnvelope | BacktestBatchProgressEventEnvelope | null => {
   const parsed = JSON.parse(value) as Record<string, unknown>;
   if (
     (parsed.eventType !== jobEventType && parsed.eventType !== batchEventType) ||
-    typeof parsed.eventId !== "string" ||
-    typeof parsed.source !== "string" ||
-    typeof parsed.occurredAt !== "string"
+    typeof parsed.eventId !== 'string' ||
+    typeof parsed.source !== 'string' ||
+    typeof parsed.occurredAt !== 'string'
   ) {
     return null;
   }
 
   const data =
-    typeof parsed.data === "object" && parsed.data !== null && !Array.isArray(parsed.data)
+    typeof parsed.data === 'object' && parsed.data !== null && !Array.isArray(parsed.data)
       ? (parsed.data as Record<string, unknown>)
       : null;
   if (!data) {
@@ -86,13 +83,13 @@ const parseEnvelope = (
 
   if (parsed.eventType === jobEventType) {
     if (
-      typeof data.controlPlaneJobId !== "string" ||
-      typeof data.analysisSettingId !== "string" ||
-      typeof data.riskProfileName !== "string" ||
-      typeof data.symbol !== "string" ||
-      typeof data.timeframeCode !== "string" ||
-      typeof data.strategyName !== "string" ||
-      typeof data.stage !== "string"
+      typeof data.controlPlaneJobId !== 'string' ||
+      typeof data.analysisSettingId !== 'string' ||
+      typeof data.riskProfileName !== 'string' ||
+      typeof data.symbol !== 'string' ||
+      typeof data.timeframeCode !== 'string' ||
+      typeof data.strategyName !== 'string' ||
+      typeof data.stage !== 'string'
     ) {
       return null;
     }
@@ -116,10 +113,10 @@ const parseEnvelope = (
   }
 
   if (
-    typeof data.batchId !== "string" ||
-    typeof data.symbol !== "string" ||
-    typeof data.timeframeCode !== "string" ||
-    typeof data.stage !== "string"
+    typeof data.batchId !== 'string' ||
+    typeof data.symbol !== 'string' ||
+    typeof data.timeframeCode !== 'string' ||
+    typeof data.stage !== 'string'
   ) {
     return null;
   }
@@ -148,12 +145,12 @@ export const createBacktestProgressConsumer = (
   config: AppConfig,
   logger: FastifyBaseLogger,
   pool: Pool,
-  dependencies: ConsumerDependencies = {},
+  dependencies: ConsumerDependencies = {}
 ): BacktestProgressConsumer => {
   const kafka = new Kafka({
     clientId: `${config.serviceName}-backtest-progress-consumer`,
     brokers: config.kafkaBootstrapServers
-      .split(",")
+      .split(',')
       .map((broker) => broker.trim())
       .filter(Boolean),
     logLevel: logLevel.NOTHING,
@@ -200,7 +197,7 @@ export const createBacktestProgressConsumer = (
       });
       await consumer.run({
         eachMessage: async ({ message }) => {
-          const rawValue = message.value?.toString("utf8");
+          const rawValue = message.value?.toString('utf8');
           if (!rawValue) {
             return;
           }
@@ -223,7 +220,7 @@ export const createBacktestProgressConsumer = (
                 progressPercent: envelope.data.progressPercent,
               });
               publishOpsEvent({
-                type: "ops.backtests.updated",
+                type: 'ops.backtests.updated',
                 payload: {
                   symbols: [envelope.data.symbol],
                   timeframeCodes: [envelope.data.timeframeCode],
@@ -243,7 +240,7 @@ export const createBacktestProgressConsumer = (
                 runningCount: envelope.data.runningCount,
               });
               publishOpsEvent({
-                type: "ops.backtests.updated",
+                type: 'ops.backtests.updated',
                 payload: {
                   symbols: [envelope.data.symbol],
                   timeframeCodes: [envelope.data.timeframeCode],
@@ -251,10 +248,7 @@ export const createBacktestProgressConsumer = (
               });
             }
           } catch (error) {
-            logger.error(
-              { err: error, rawValue },
-              "Failed to project backtest-progress event",
-            );
+            logger.error({ err: error, rawValue }, 'Failed to project backtest-progress event');
           }
         },
       });
@@ -264,7 +258,7 @@ export const createBacktestProgressConsumer = (
           groupId: config.backtestProgressEventsConsumerGroupId,
           topic: config.backtestProgressEventsTopic,
         },
-        "Backtest progress consumer started",
+        'Backtest progress consumer started'
       );
     },
     stop: async () => {

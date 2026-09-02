@@ -1,10 +1,10 @@
-"use client";
+'use client';
 
-import { useQuery } from "@tanstack/react-query";
+import { useQuery } from '@tanstack/react-query';
 
-import { getRuntimeAnalyses } from "@/lib/api";
+import { getRuntimeAnalyses } from '@/lib/api';
 
-export const runtimeAnalysesKey = ["runtime", "analysis-settings"] as const;
+export const runtimeAnalysesKey = ['runtime', 'analysis-settings'] as const;
 
 export function useRuntimeAnalyses() {
   return useQuery({

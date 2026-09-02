@@ -118,8 +118,8 @@ Current fill model:
 
 - generate signals from closed timeframe klines using the shared `emaCross` evaluator
 - open a position at the first executable event at or after the signal timestamp
-    - ask for long entry
-    - bid for short entry
+  - ask for long entry
+  - bid for short entry
   - fall back to aggregate trades if no quote arrives first
 - size the position from `trading_defaults.defaultPositionNotionalUsd`
 - derive stop-loss distance from `risk_profile.swingGap`, clamped between
@@ -151,7 +151,6 @@ It is not yet enough for:
 ## Historical Retention Requirements
 
 For the currently implemented quote-aware backtest, required historian retention is:
-
 
 In the current code:
 

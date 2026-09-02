@@ -327,7 +327,6 @@ curl -fsS http://localhost:3030/v1/subscriptions | jq
 curl -fsS http://localhost:3030/v1/status | jq
 ```
 
-
 ```bash
 curl -fsS "http://localhost:3030/v1/klines/BTCUSDT/1m?limit=5" | jq
 curl -fsS "http://localhost:3030/v1/trades/BTCUSDT?limit=5" | jq

@@ -1,14 +1,14 @@
-"use client";
+'use client';
 
-import * as React from "react";
+import * as React from 'react';
 
-import { ErrorState } from "@/components/shared/error-state";
-import { usePreferences } from "@/components/providers/preferences-provider";
-import { useBacktestsSummary } from "@/lib/hooks/use-backtests-summary";
-import { useDataReadiness } from "@/lib/hooks/use-data-readiness";
-import { useStrategies } from "@/lib/hooks/use-strategies";
-import { deriveBacktestRows } from "@/lib/backtesting/derive-rows";
-import { thresholdsFromStrategyRecords } from "@/lib/backtesting/derive-thresholds";
+import { ErrorState } from '@/components/shared/error-state';
+import { usePreferences } from '@/components/providers/preferences-provider';
+import { useBacktestsSummary } from '@/lib/hooks/use-backtests-summary';
+import { useDataReadiness } from '@/lib/hooks/use-data-readiness';
+import { useStrategies } from '@/lib/hooks/use-strategies';
+import { deriveBacktestRows } from '@/lib/backtesting/derive-rows';
+import { thresholdsFromStrategyRecords } from '@/lib/backtesting/derive-thresholds';
 import {
   parseAsArrayOf,
   parseAsString,
@@ -16,16 +16,16 @@ import {
   useEnumState,
   useSelectedRow,
   useStringFilter,
-} from "@/lib/url-state";
-import type { BacktestRow } from "@/lib/backtesting/types";
-import type { RecentBacktestRun } from "@/lib/api";
-import { useQueryState } from "nuqs";
+} from '@/lib/url-state';
+import type { BacktestRow } from '@/lib/backtesting/types';
+import type { RecentBacktestRun } from '@/lib/api';
+import { useQueryState } from 'nuqs';
 
-import { BacktestingFilters } from "./_components/backtesting-filters";
-import { BacktestingKpis } from "./_components/backtesting-kpis";
-import { BacktestingTable } from "./_components/backtesting-table";
-import { BacktestingDetailSheet } from "./_components/backtesting-detail-sheet";
-import { RunDetailSheet } from "./_components/run-detail-sheet";
+import { BacktestingFilters } from './_components/backtesting-filters';
+import { BacktestingKpis } from './_components/backtesting-kpis';
+import { BacktestingTable } from './_components/backtesting-table';
+import { BacktestingDetailSheet } from './_components/backtesting-detail-sheet';
+import { RunDetailSheet } from './_components/run-detail-sheet';
 
 export default function BacktestingPage() {
   return (
@@ -43,60 +43,58 @@ function BacktestingPageInner() {
 
   const rows = React.useMemo(
     () => deriveBacktestRows({ summary: summary.data, readiness: readiness.data }),
-    [summary.data, readiness.data],
+    [summary.data, readiness.data]
   );
   const thresholdsByStrategy = React.useMemo(
     () => thresholdsFromStrategyRecords(strategies.data),
-    [strategies.data],
+    [strategies.data]
   );
 
   const symbols = React.useMemo(
     () => Array.from(new Set(rows.map((r) => r.symbol))).sort(),
-    [rows],
+    [rows]
   );
   const timeframes = React.useMemo(
     () => Array.from(new Set(rows.map((r) => r.timeframeCode))).sort(),
-    [rows],
+    [rows]
   );
   const strategyNames = React.useMemo(
     () => Array.from(new Set(rows.map((r) => r.strategyName))).sort(),
-    [rows],
+    [rows]
   );
 
-  const [search, setSearch] = useStringFilter("q", "");
-  const [selectedSymbols, setSelectedSymbols] = useArrayFilter("sym");
+  const [search, setSearch] = useStringFilter('q', '');
+  const [selectedSymbols, setSelectedSymbols] = useArrayFilter('sym');
   const [selectedTimeframe, setSelectedTimeframe] = useEnumState(
-    "tf",
-    ["all", ...timeframes] as const,
-    "all",
+    'tf',
+    ['all', ...timeframes] as const,
+    'all'
   );
   const [selectedStrategy, setSelectedStrategy] = useEnumState(
-    "strategy",
-    ["all", ...strategyNames] as const,
-    "all",
+    'strategy',
+    ['all', ...strategyNames] as const,
+    'all'
   );
   const [selectedStatuses, setSelectedStatuses] = useQueryState(
-    "status",
+    'status',
     parseAsArrayOf(parseAsString).withDefault([]).withOptions({
-      history: "replace",
+      history: 'replace',
       shallow: true,
-    }),
+    })
   );
   const [selectedRowId, setSelectedRowId] = useSelectedRow();
   const [selectedRunId, setSelectedRunId] = useQueryState(
-    "run",
-    parseAsString.withDefault("").withOptions({
-      history: "push",
+    'run',
+    parseAsString.withDefault('').withOptions({
+      history: 'push',
       shallow: true,
-    }),
+    })
   );
 
   const [sorting, setSorting] = React.useState<
-    React.ComponentProps<typeof BacktestingTable>["sorting"]
-  >([{ id: "score", desc: true }]);
-  const [columnVisibility, setColumnVisibility] = React.useState<
-    Record<string, boolean>
-  >({});
+    React.ComponentProps<typeof BacktestingTable>['sorting']
+  >([{ id: 'score', desc: true }]);
+  const [columnVisibility, setColumnVisibility] = React.useState<Record<string, boolean>>({});
 
   const filteredRows = React.useMemo(() => {
     const lowerSearch = search.trim().toLowerCase();
@@ -108,8 +106,8 @@ function BacktestingPageInner() {
         if (!haystack.includes(lowerSearch)) return false;
       }
       if (symbolSet.size > 0 && !symbolSet.has(row.symbol)) return false;
-      if (selectedTimeframe !== "all" && row.timeframeCode !== selectedTimeframe) return false;
-      if (selectedStrategy !== "all" && row.strategyName !== selectedStrategy) return false;
+      if (selectedTimeframe !== 'all' && row.timeframeCode !== selectedTimeframe) return false;
+      if (selectedStrategy !== 'all' && row.strategyName !== selectedStrategy) return false;
       if (statusSet.size > 0 && !statusSet.has(row.status)) return false;
       return true;
     });
@@ -117,7 +115,7 @@ function BacktestingPageInner() {
 
   const selectedRow = React.useMemo(
     () => rows.find((row) => row.id === selectedRowId) ?? null,
-    [rows, selectedRowId],
+    [rows, selectedRowId]
   );
 
   const recentRunsForSelected = React.useMemo<RecentBacktestRun[]>(() => {
@@ -127,7 +125,7 @@ function BacktestingPageInner() {
         (run) =>
           run.symbol === selectedRow.symbol &&
           run.timeframeCode === selectedRow.timeframeCode &&
-          run.strategyName === selectedRow.strategyName,
+          run.strategyName === selectedRow.strategyName
       ) ?? []
     );
   }, [summary.data, selectedRow]);
@@ -142,15 +140,15 @@ function BacktestingPageInner() {
   const hasActiveFilters =
     !!search ||
     selectedSymbols.length > 0 ||
-    selectedTimeframe !== "all" ||
-    selectedStrategy !== "all" ||
+    selectedTimeframe !== 'all' ||
+    selectedStrategy !== 'all' ||
     selectedStatuses.length > 0;
 
   const handleClearAll = () => {
-    setSearch("");
+    setSearch('');
     setSelectedSymbols([]);
-    setSelectedTimeframe("all");
-    setSelectedStrategy("all");
+    setSelectedTimeframe('all');
+    setSelectedStrategy('all');
     setSelectedStatuses([]);
   };
 
@@ -167,14 +165,14 @@ function BacktestingPageInner() {
           selectedTimeframe={selectedTimeframe}
           onTimeframeChange={(value) =>
             setSelectedTimeframe(
-              value as React.ComponentProps<typeof BacktestingFilters>["selectedTimeframe"],
+              value as React.ComponentProps<typeof BacktestingFilters>['selectedTimeframe']
             )
           }
           strategies={strategyNames}
           selectedStrategy={selectedStrategy}
           onStrategyChange={(value) =>
             setSelectedStrategy(
-              value as React.ComponentProps<typeof BacktestingFilters>["selectedStrategy"],
+              value as React.ComponentProps<typeof BacktestingFilters>['selectedStrategy']
             )
           }
           selectedStatuses={selectedStatuses}
@@ -188,8 +186,8 @@ function BacktestingPageInner() {
 
         {hasError ? (
           <ErrorState
-            title={t("backtesting.error.title")}
-            description={t("backtesting.error.description")}
+            title={t('backtesting.error.title')}
+            description={t('backtesting.error.description')}
             onRetry={() => {
               summary.refetch();
               readiness.refetch();
@@ -212,28 +210,23 @@ function BacktestingPageInner() {
         open={Boolean(selectedRow)}
         onOpenChange={(open) => {
           if (!open) {
-            setSelectedRowId("");
-            setSelectedRunId("");
+            setSelectedRowId('');
+            setSelectedRunId('');
           }
         }}
         row={selectedRow}
         recentRuns={recentRunsForSelected}
-        thresholds={
-          selectedRow
-            ? thresholdsByStrategy.get(selectedRow.strategyName)
-            : undefined
-        }
+        thresholds={selectedRow ? thresholdsByStrategy.get(selectedRow.strategyName) : undefined}
         onRunSelect={(run) => setSelectedRunId(run.backtestId)}
       />
 
       <RunDetailSheet
         open={Boolean(selectedRun)}
         onOpenChange={(open) => {
-          if (!open) setSelectedRunId("");
+          if (!open) setSelectedRunId('');
         }}
         run={selectedRun}
       />
     </>
   );
 }
-

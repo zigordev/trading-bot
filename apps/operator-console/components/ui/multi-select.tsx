@@ -1,11 +1,11 @@
-"use client";
+'use client';
 
-import * as React from "react";
-import { Check, ChevronDown, X } from "lucide-react";
+import * as React from 'react';
+import { Check, ChevronDown, X } from 'lucide-react';
 
-import { cn } from "@/lib/utils";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { cn } from '@/lib/utils';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import {
   Command,
   CommandEmpty,
@@ -13,13 +13,9 @@ import {
   CommandInput,
   CommandItem,
   CommandList,
-} from "@/components/ui/command";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import { usePreferences } from "@/components/providers/preferences-provider";
+} from '@/components/ui/command';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { usePreferences } from '@/components/providers/preferences-provider';
 
 export interface MultiSelectOption {
   value: string;
@@ -54,10 +50,9 @@ export function MultiSelect({
   triggerLabel,
 }: MultiSelectProps) {
   const { t } = usePreferences();
-  const placeholder = providedPlaceholder ?? t("ui.multi_select.placeholder");
-  const emptyText = providedEmptyText ?? t("ui.multi_select.empty_text");
-  const searchPlaceholder =
-    providedSearchPlaceholder ?? t("ui.multi_select.search_placeholder");
+  const placeholder = providedPlaceholder ?? t('ui.multi_select.placeholder');
+  const emptyText = providedEmptyText ?? t('ui.multi_select.empty_text');
+  const searchPlaceholder = providedSearchPlaceholder ?? t('ui.multi_select.search_placeholder');
   const [open, setOpen] = React.useState(false);
 
   const toggle = (next: string) => {
@@ -90,17 +85,13 @@ export function MultiSelect({
           aria-expanded={open}
           disabled={disabled}
           className={cn(
-            "h-9 w-full justify-between gap-2 px-3 text-[13px] font-normal",
-            !value.length && "text-[var(--color-fg-subtle)]",
-            className,
+            'h-9 w-full justify-between gap-2 px-3 text-[13px] font-normal',
+            !value.length && 'text-[var(--color-fg-subtle)]',
+            className
           )}
         >
           <div className="flex flex-1 items-center gap-1.5 overflow-hidden">
-            {triggerLabel && (
-              <span className="text-[var(--color-fg-subtle)]">
-                {triggerLabel}:
-              </span>
-            )}
+            {triggerLabel && <span className="text-[var(--color-fg-subtle)]">{triggerLabel}:</span>}
             {value.length === 0 ? (
               <span>{placeholder}</span>
             ) : (
@@ -128,7 +119,7 @@ export function MultiSelect({
                 type="button"
                 onClick={clear}
                 className="rounded-sm p-0.5 text-[var(--color-fg-subtle)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-fg)]"
-                aria-label={t("ui.multi_select.clear_selection")}
+                aria-label={t('ui.multi_select.clear_selection')}
               >
                 <X className="size-3" />
               </button>
@@ -158,10 +149,10 @@ export function MultiSelect({
                   >
                     <div
                       className={cn(
-                        "flex size-4 items-center justify-center rounded-[4px] border",
+                        'flex size-4 items-center justify-center rounded-[4px] border',
                         selected
-                          ? "border-[var(--color-accent)] bg-[var(--color-accent)] text-white"
-                          : "border-[var(--color-border)]",
+                          ? 'border-[var(--color-accent)] bg-[var(--color-accent)] text-white'
+                          : 'border-[var(--color-border)]'
                       )}
                     >
                       {selected && <Check className="size-3" />}

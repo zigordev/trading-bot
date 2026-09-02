@@ -1,12 +1,12 @@
-"use client";
+'use client';
 
-import * as React from "react";
+import * as React from 'react';
 
-import { cn } from "@/lib/utils";
-import { formatPercent } from "@/lib/format";
-import { usePreferences } from "@/components/providers/preferences-provider";
+import { cn } from '@/lib/utils';
+import { formatPercent } from '@/lib/format';
+import { usePreferences } from '@/components/providers/preferences-provider';
 
-export type ReadinessStatus = "ready" | "partial" | "missing" | "error";
+export type ReadinessStatus = 'ready' | 'partial' | 'missing' | 'error';
 
 export interface ReadinessSegment {
   label: string;
@@ -25,17 +25,17 @@ interface ReadinessBarProps {
 }
 
 const STATUS_COLOR: Record<ReadinessStatus, string> = {
-  ready: "bg-[var(--color-success)]",
-  partial: "bg-[var(--color-warning)]",
-  missing: "bg-[var(--color-fg-subtle)]/40",
-  error: "bg-[var(--color-danger)]",
+  ready: 'bg-[var(--color-success)]',
+  partial: 'bg-[var(--color-warning)]',
+  missing: 'bg-[var(--color-fg-subtle)]/40',
+  error: 'bg-[var(--color-danger)]',
 };
 
 const STATUS_TEXT_KEY: Record<ReadinessStatus, string> = {
-  ready: "shared.readiness_bar.ready",
-  partial: "shared.readiness_bar.partial",
-  missing: "shared.readiness_bar.missing",
-  error: "shared.readiness_bar.error",
+  ready: 'shared.readiness_bar.ready',
+  partial: 'shared.readiness_bar.partial',
+  missing: 'shared.readiness_bar.missing',
+  error: 'shared.readiness_bar.error',
 };
 
 export function ReadinessBar({
@@ -49,13 +49,13 @@ export function ReadinessBar({
   const { t } = usePreferences();
   const pct = ratio ?? 0;
   return (
-    <div className={cn("flex min-w-[120px] flex-col gap-1", className)}>
+    <div className={cn('flex min-w-[120px] flex-col gap-1', className)}>
       <div className="flex h-1.5 w-full overflow-hidden rounded-full bg-[var(--color-surface-2)]">
         {segments && segments.length > 0 ? (
           segments.map((seg, idx) => (
             <span
               key={`${seg.label}-${idx}`}
-              className={cn("h-full", STATUS_COLOR[seg.status])}
+              className={cn('h-full', STATUS_COLOR[seg.status])}
               style={{
                 width: `${Math.max(0, Math.min(100, ((seg.ratio ?? 0) * 100) / segments.length))}%`,
               }}
@@ -63,7 +63,7 @@ export function ReadinessBar({
           ))
         ) : (
           <span
-            className={cn("h-full", STATUS_COLOR[status])}
+            className={cn('h-full', STATUS_COLOR[status])}
             style={{ width: `${Math.max(0, Math.min(100, pct * 100))}%` }}
           />
         )}
@@ -75,9 +75,7 @@ export function ReadinessBar({
               ? formatPercent(ratio * 100, { digits: 1 })
               : t(STATUS_TEXT_KEY[status])}
           </span>
-          {typeof rowCount === "number" && (
-            <span className="num">{rowCount.toLocaleString()}</span>
-          )}
+          {typeof rowCount === 'number' && <span className="num">{rowCount.toLocaleString()}</span>}
         </div>
       )}
     </div>

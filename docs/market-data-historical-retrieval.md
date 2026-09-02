@@ -145,8 +145,8 @@ For each active pair:
 6. persist each row and advance cursor (`fromId = last_trade_id + 1`)
 
 Loop bounded by:
-- `HISTORICAL_TRADE_BACKFILL_MAX_BATCHES` (warn when exhausted).
 
+- `HISTORICAL_TRADE_BACKFILL_MAX_BATCHES` (warn when exhausted).
 
 ## 6) Normalization + dedupe guarantees
 
@@ -173,7 +173,6 @@ In `research-backtesting`, `resolve_input` requires:
 
 - at least one replay kline row in window (otherwise fail),
 - at least one aggregate trade in window (otherwise fail with fill-aware warning message).
-
 
 ## 8) Why some backtests may fail in practice
 
@@ -223,6 +222,7 @@ Use these env vars from `crates/market-data/src/config.rs`:
 `HISTORICAL_STORE_COMPACTION_ENABLED=true` runs a background compaction loop that executes:
 
 `OPTIMIZE TABLE ... FINAL` on:
+
 - `market_data_klines`
 - `market_data_trades`
 

@@ -1,11 +1,11 @@
-"use client";
+'use client';
 
-import { useQuery } from "@tanstack/react-query";
+import { useQuery } from '@tanstack/react-query';
 
-import { getDataReadiness, type DataReadinessQuery } from "@/lib/api";
+import { getDataReadiness, type DataReadinessQuery } from '@/lib/api';
 
 export const dataReadinessKey = (q: DataReadinessQuery = {}) =>
-  ["ops", "data-readiness", q] as const;
+  ['ops', 'data-readiness', q] as const;
 
 export function useDataReadiness(query: DataReadinessQuery = {}) {
   return useQuery({

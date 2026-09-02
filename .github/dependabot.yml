@@ -1,0 +1,38 @@
+version: 2
+
+# Grouped and weekly on purpose: a daily stream of single-package PRs is
+# noise that gets ignored, which is the same outcome as having no updates.
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      dev-dependencies:
+        dependency-type: development
+        update-types: [minor, patch]
+      production-patch:
+        dependency-type: production
+        update-types: [patch]
+    commit-message:
+      prefix: chore
+      include: scope
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore
+      include: scope
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: ci
+      include: scope

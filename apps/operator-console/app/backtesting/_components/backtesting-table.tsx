@@ -1,30 +1,26 @@
-"use client";
+'use client';
 
-import * as React from "react";
-import type { ColumnDef, SortingState, VisibilityState } from "@tanstack/react-table";
-import { MoreHorizontal } from "lucide-react";
+import * as React from 'react';
+import type { ColumnDef, SortingState, VisibilityState } from '@tanstack/react-table';
+import { MoreHorizontal } from 'lucide-react';
 
-import { cn } from "@/lib/utils";
-import { formatPercent } from "@/lib/format";
-import { Button } from "@/components/ui/button";
+import { cn } from '@/lib/utils';
+import { formatPercent } from '@/lib/format';
+import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import {
-  HoverCard,
-  HoverCardContent,
-  HoverCardTrigger,
-} from "@/components/ui/hover-card";
-import { DataTable } from "@/components/data-table/data-table";
-import { ProgressCell } from "@/components/shared/progress-cell";
-import { ReadinessBar } from "@/components/shared/readiness-bar";
-import { ScoreCell } from "@/components/shared/score-cell";
-import { SymbolAvatar } from "@/components/shared/symbol-avatar";
-import type { BacktestRow } from "@/lib/backtesting/types";
-import { usePreferences } from "@/components/providers/preferences-provider";
+} from '@/components/ui/dropdown-menu';
+import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card';
+import { DataTable } from '@/components/data-table/data-table';
+import { ProgressCell } from '@/components/shared/progress-cell';
+import { ReadinessBar } from '@/components/shared/readiness-bar';
+import { ScoreCell } from '@/components/shared/score-cell';
+import { SymbolAvatar } from '@/components/shared/symbol-avatar';
+import type { BacktestRow } from '@/lib/backtesting/types';
+import { usePreferences } from '@/components/providers/preferences-provider';
 
 interface BacktestingTableProps {
   rows: BacktestRow[];
@@ -51,10 +47,10 @@ export function BacktestingTable({
   const columns = React.useMemo<ColumnDef<BacktestRow, unknown>[]>(
     () => [
       {
-        id: "symbol",
-        accessorKey: "symbol",
-        header: t("backtesting.table.column_pair"),
-        meta: { sticky: "left" },
+        id: 'symbol',
+        accessorKey: 'symbol',
+        header: t('backtesting.table.column_pair'),
+        meta: { sticky: 'left' },
         cell: ({ row }) => (
           <div className="flex items-center gap-2">
             <SymbolAvatar
@@ -67,15 +63,15 @@ export function BacktestingTable({
         ),
       },
       {
-        id: "timeframe",
-        accessorKey: "timeframeCode",
-        header: t("backtesting.table.column_timeframe"),
-        meta: { align: "right", cellClassName: "font-mono text-[12px]" },
+        id: 'timeframe',
+        accessorKey: 'timeframeCode',
+        header: t('backtesting.table.column_timeframe'),
+        meta: { align: 'right', cellClassName: 'font-mono text-[12px]' },
       },
       {
-        id: "strategy",
-        accessorKey: "strategyName",
-        header: t("backtesting.table.column_strategy"),
+        id: 'strategy',
+        accessorKey: 'strategyName',
+        header: t('backtesting.table.column_strategy'),
         cell: ({ row }) => (
           <span className="text-[12px] text-[var(--color-fg-muted)]">
             {row.original.strategyName}
@@ -83,9 +79,9 @@ export function BacktestingTable({
         ),
       },
       {
-        id: "kline",
+        id: 'kline',
         accessorFn: (row) => row.klineCoverage ?? 0,
-        header: t("backtesting.table.column_klines"),
+        header: t('backtesting.table.column_klines'),
         meta: { hideOnNarrow: true },
         cell: ({ row }) => {
           const coverage = row.original.klineCoverage;
@@ -104,7 +100,7 @@ export function BacktestingTable({
                 </HoverCardTrigger>
                 <HoverCardContent align="start" className="w-72">
                   <p className="mb-2 text-[12px] font-medium text-[var(--color-fg)]">
-                    {t("backtesting.table.kline_coverage_hover_title")}
+                    {t('backtesting.table.kline_coverage_hover_title')}
                   </p>
                   <ul className="space-y-1.5">
                     {row.original.readiness?.klineDimensions?.map((dim) => (
@@ -127,7 +123,7 @@ export function BacktestingTable({
           }
           return (
             <ReadinessBar
-              ratio={typeof coverage === "number" ? coverage / 100 : null}
+              ratio={typeof coverage === 'number' ? coverage / 100 : null}
               status={row.original.status}
               rowCount={row.original.klineRowCount ?? undefined}
             />
@@ -135,9 +131,9 @@ export function BacktestingTable({
         },
       },
       {
-        id: "trades",
+        id: 'trades',
         accessorFn: (row) => row.tradesCoverage ?? 0,
-        header: t("backtesting.table.column_trades"),
+        header: t('backtesting.table.column_trades'),
         meta: { hideOnNarrow: true },
         cell: ({ row }) => {
           const coverage = row.original.tradesCoverage;
@@ -154,9 +150,9 @@ export function BacktestingTable({
         },
       },
       {
-        id: "progress",
+        id: 'progress',
         accessorFn: (row) => row.progress.progressPercent,
-        header: t("backtesting.table.column_progress"),
+        header: t('backtesting.table.column_progress'),
         cell: ({ row }) => (
           <ProgressCell
             total={row.original.progress.total}
@@ -168,19 +164,22 @@ export function BacktestingTable({
         ),
       },
       {
-        id: "score",
+        id: 'score',
         accessorFn: (row) => row.latestRun?.score ?? 0,
-        header: t("backtesting.table.column_score"),
-        meta: { align: "right" },
+        header: t('backtesting.table.column_score'),
+        meta: { align: 'right' },
         cell: ({ row }) => (
-          <ScoreCell value={row.original.latestRun?.score ?? null} history={row.original.scoreHistory} />
+          <ScoreCell
+            value={row.original.latestRun?.score ?? null}
+            history={row.original.scoreHistory}
+          />
         ),
       },
       {
-        id: "actions",
-        header: "",
+        id: 'actions',
+        header: '',
         enableSorting: false,
-        meta: { align: "right" },
+        meta: { align: 'right' },
         cell: ({ row }) => (
           <div className="flex items-center justify-end gap-0.5">
             <DropdownMenu>
@@ -190,18 +189,15 @@ export function BacktestingTable({
                   variant="ghost"
                   size="icon-sm"
                   onClick={(event) => event.stopPropagation()}
-                  aria-label={t("backtesting.table.more_actions")}
+                  aria-label={t('backtesting.table.more_actions')}
                   className="text-[var(--color-fg-subtle)]"
                 >
                   <MoreHorizontal />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent
-                align="end"
-                onClick={(event) => event.stopPropagation()}
-              >
+              <DropdownMenuContent align="end" onClick={(event) => event.stopPropagation()}>
                 <DropdownMenuItem onSelect={() => onRowSelect(row.original)}>
-                  {t("backtesting.table.view_details")}
+                  {t('backtesting.table.view_details')}
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -209,7 +205,7 @@ export function BacktestingTable({
         ),
       },
     ],
-    [onRowSelect, t],
+    [onRowSelect, t]
   );
 
   return (
@@ -219,7 +215,7 @@ export function BacktestingTable({
       rowKey={(row) => row.id}
       isLoading={isLoading}
       onRowClick={onRowSelect}
-      rowClassName={(row) => cn(row.progress.running > 0 && "bg-[var(--color-accent-bg)]/30")}
+      rowClassName={(row) => cn(row.progress.running > 0 && 'bg-[var(--color-accent-bg)]/30')}
       state={{
         sorting,
         onSortingChange,
@@ -227,7 +223,7 @@ export function BacktestingTable({
         onColumnVisibilityChange,
       }}
       toolbar={toolbar}
-      empty={t("backtesting.table.empty")}
+      empty={t('backtesting.table.empty')}
       pageSize={25}
     />
   );

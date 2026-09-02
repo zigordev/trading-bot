@@ -64,7 +64,8 @@ state-of-the-art execution simulator.
 
 What is already good:
 
-  candle closes
+candle closes
+
 - stop-loss and take-profit checks use replayed quote/trade events instead of OHLC inference
 - fee and slippage assumptions are explicit and returned in the backtest response
 - the service refuses fill-aware backtests when aggregate-trade coverage is missing for the

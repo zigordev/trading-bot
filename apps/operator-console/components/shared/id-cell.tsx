@@ -1,15 +1,11 @@
-"use client";
+'use client';
 
-import * as React from "react";
+import * as React from 'react';
 
-import { cn } from "@/lib/utils";
-import { truncateMiddle } from "@/lib/format";
-import { CopyButton } from "@/components/shared/copy-button";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { cn } from '@/lib/utils';
+import { truncateMiddle } from '@/lib/format';
+import { CopyButton } from '@/components/shared/copy-button';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 interface IdCellProps {
   value: string | null | undefined;
@@ -19,21 +15,15 @@ interface IdCellProps {
   hideCopy?: boolean;
 }
 
-export function IdCell({
-  value,
-  head = 6,
-  tail = 4,
-  className,
-  hideCopy = false,
-}: IdCellProps) {
+export function IdCell({ value, head = 6, tail = 4, className, hideCopy = false }: IdCellProps) {
   if (!value) {
     return <span className="text-[var(--color-fg-subtle)]">—</span>;
   }
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1 font-mono text-[12px] text-[var(--color-fg-muted)]",
-        className,
+        'inline-flex items-center gap-1 font-mono text-[12px] text-[var(--color-fg-muted)]',
+        className
       )}
     >
       <Tooltip>

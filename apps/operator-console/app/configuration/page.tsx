@@ -1,6 +1,6 @@
-import { redirect } from "next/navigation";
+import { redirect } from 'next/navigation';
 
-import { configResourceKeys } from "@/lib/configuration/schemas";
+import { configResourceKeys } from '@/lib/configuration/schemas';
 
 export default function ConfigurationIndexPage() {
   redirect(`/configuration/${configResourceKeys[0]}`);

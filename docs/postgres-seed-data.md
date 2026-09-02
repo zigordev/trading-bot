@@ -59,4 +59,3 @@ docker compose \
 This will replay all the `INSERT` statements from `docker/postgres-seed-data.sql` and recreate the exact same data (IDs, names, relations) that you had when you exported the snapshot.
 
 If migrations add new tables/columns later, run the export command again once the system is in the desired state to refresh the seed file.
-

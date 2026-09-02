@@ -1,11 +1,11 @@
-import { randomUUID } from "node:crypto";
+import { randomUUID } from 'node:crypto';
 
 type OpsSocket = {
   readonly OPEN: number;
   readonly readyState: number;
   send(payload: string): void;
   close(): void;
-  on(event: "close", listener: () => void): void;
+  on(event: 'close', listener: () => void): void;
 };
 
 type BaseOpsEvent<TType extends string, TPayload> = {
@@ -17,28 +17,28 @@ type BaseOpsEvent<TType extends string, TPayload> = {
 
 export type OpsWebsocketEvent =
   | BaseOpsEvent<
-      "config.resource.updated",
+      'config.resource.updated',
       {
         resource:
-          | "symbols"
-          | "timeframes"
-          | "strategies"
-          | "risk-profiles"
-          | "analysis-settings"
-          | "execution-settings";
-        operation: "created" | "updated" | "deleted";
+          | 'symbols'
+          | 'timeframes'
+          | 'strategies'
+          | 'risk-profiles'
+          | 'analysis-settings'
+          | 'execution-settings';
+        operation: 'created' | 'updated' | 'deleted';
         id?: string;
       }
     >
   | BaseOpsEvent<
-      "ops.backtests.updated",
+      'ops.backtests.updated',
       {
         symbols: string[];
         timeframeCodes: string[];
       }
     >
   | BaseOpsEvent<
-      "ops.data-readiness.updated",
+      'ops.data-readiness.updated',
       {
         symbols: string[];
         timeframeCodes: string[];
@@ -46,7 +46,7 @@ export type OpsWebsocketEvent =
       }
     >
   | BaseOpsEvent<
-      "ops.execution.updated",
+      'ops.execution.updated',
       {
         symbols: string[];
         timeframeCodes: string[];
@@ -57,7 +57,7 @@ const sockets = new Set<OpsSocket>();
 
 export const addOpsSocket = (socket: OpsSocket): void => {
   sockets.add(socket);
-  socket.on("close", () => {
+  socket.on('close', () => {
     sockets.delete(socket);
   });
 };
@@ -69,9 +69,7 @@ export const closeOpsSockets = (): void => {
   sockets.clear();
 };
 
-export const publishOpsEvent = (
-  event: Omit<OpsWebsocketEvent, "eventId" | "occurredAt">,
-): void => {
+export const publishOpsEvent = (event: Omit<OpsWebsocketEvent, 'eventId' | 'occurredAt'>): void => {
   const message = {
     eventId: randomUUID(),
     occurredAt: new Date().toISOString(),

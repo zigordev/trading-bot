@@ -2,23 +2,23 @@ export type OpsRealtimeEvent =
   | {
       eventId: string;
       occurredAt: string;
-      type: "config.resource.updated";
+      type: 'config.resource.updated';
       payload: {
         resource:
-          | "symbols"
-          | "timeframes"
-          | "strategies"
-          | "risk-profiles"
-          | "analysis-settings"
-          | "execution-settings";
-        operation: "created" | "updated" | "deleted";
+          | 'symbols'
+          | 'timeframes'
+          | 'strategies'
+          | 'risk-profiles'
+          | 'analysis-settings'
+          | 'execution-settings';
+        operation: 'created' | 'updated' | 'deleted';
         id?: string;
       };
     }
   | {
       eventId: string;
       occurredAt: string;
-      type: "ops.backtests.updated";
+      type: 'ops.backtests.updated';
       payload: {
         symbols: string[];
         timeframeCodes: string[];
@@ -27,7 +27,7 @@ export type OpsRealtimeEvent =
   | {
       eventId: string;
       occurredAt: string;
-      type: "ops.data-readiness.updated";
+      type: 'ops.data-readiness.updated';
       payload: {
         symbols: string[];
         timeframeCodes: string[];
@@ -37,7 +37,7 @@ export type OpsRealtimeEvent =
   | {
       eventId: string;
       occurredAt: string;
-      type: "ops.execution.updated";
+      type: 'ops.execution.updated';
       payload: {
         symbols: string[];
         timeframeCodes: string[];
@@ -56,11 +56,9 @@ export const subscribeOpsRealtimeEvent = (listener: Listener): (() => void) => {
 };
 
 const isStringArray = (value: unknown): value is string[] =>
-  Array.isArray(value) && value.every((item) => typeof item === "string");
+  Array.isArray(value) && value.every((item) => typeof item === 'string');
 
-export const parseOpsRealtimeEvent = (
-  raw: string,
-): OpsRealtimeEvent | null => {
+export const parseOpsRealtimeEvent = (raw: string): OpsRealtimeEvent | null => {
   let parsed: Record<string, unknown>;
   try {
     parsed = JSON.parse(raw) as Record<string, unknown>;
@@ -68,57 +66,46 @@ export const parseOpsRealtimeEvent = (
     return null;
   }
 
-  if (
-    typeof parsed.eventId !== "string" ||
-    typeof parsed.occurredAt !== "string"
-  ) {
+  if (typeof parsed.eventId !== 'string' || typeof parsed.occurredAt !== 'string') {
     return null;
   }
 
   const payload =
-    typeof parsed.payload === "object" &&
-    parsed.payload !== null &&
-    !Array.isArray(parsed.payload)
+    typeof parsed.payload === 'object' && parsed.payload !== null && !Array.isArray(parsed.payload)
       ? (parsed.payload as Record<string, unknown>)
       : null;
   if (!payload) {
     return null;
   }
 
-  if (parsed.type === "config.resource.updated") {
+  if (parsed.type === 'config.resource.updated') {
     if (
-      (payload.resource === "symbols" ||
-        payload.resource === "timeframes" ||
-        payload.resource === "strategies" ||
-        payload.resource === "risk-profiles" ||
-        payload.resource === "analysis-settings" ||
-        payload.resource === "execution-settings") &&
-      (payload.operation === "created" ||
-        payload.operation === "updated" ||
-        payload.operation === "deleted")
+      (payload.resource === 'symbols' ||
+        payload.resource === 'timeframes' ||
+        payload.resource === 'strategies' ||
+        payload.resource === 'risk-profiles' ||
+        payload.resource === 'analysis-settings' ||
+        payload.resource === 'execution-settings') &&
+      (payload.operation === 'created' ||
+        payload.operation === 'updated' ||
+        payload.operation === 'deleted')
     ) {
       return {
         eventId: parsed.eventId,
         occurredAt: parsed.occurredAt,
-        type: "config.resource.updated",
+        type: 'config.resource.updated',
         payload: {
           resource: payload.resource,
           operation: payload.operation,
-          id: typeof payload.id === "string" ? payload.id : undefined,
+          id: typeof payload.id === 'string' ? payload.id : undefined,
         },
       };
     }
     return null;
   }
 
-  if (
-    parsed.type === "ops.backtests.updated" ||
-    parsed.type === "ops.execution.updated"
-  ) {
-    if (
-      !isStringArray(payload.symbols) ||
-      !isStringArray(payload.timeframeCodes)
-    ) {
+  if (parsed.type === 'ops.backtests.updated' || parsed.type === 'ops.execution.updated') {
+    if (!isStringArray(payload.symbols) || !isStringArray(payload.timeframeCodes)) {
       return null;
     }
     return {
@@ -132,7 +119,7 @@ export const parseOpsRealtimeEvent = (
     };
   }
 
-  if (parsed.type === "ops.data-readiness.updated") {
+  if (parsed.type === 'ops.data-readiness.updated') {
     if (
       !isStringArray(payload.symbols) ||
       !isStringArray(payload.timeframeCodes) ||

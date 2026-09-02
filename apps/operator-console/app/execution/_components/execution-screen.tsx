@@ -1,44 +1,44 @@
-"use client";
+'use client';
 
-import * as React from "react";
-import Link from "next/link";
-import { ExternalLink } from "lucide-react";
-import type { DateRange } from "react-day-picker";
-import type { SortingState } from "@tanstack/react-table";
+import * as React from 'react';
+import Link from 'next/link';
+import { ExternalLink } from 'lucide-react';
+import type { DateRange } from 'react-day-picker';
+import type { SortingState } from '@tanstack/react-table';
 
-import { useTopbarSlot } from "@/components/layout/topbar-slot-context";
-import { usePreferences, type Translate } from "@/components/providers/preferences-provider";
-import { SegmentedControl } from "@/design-system/components/navigation/SegmentedControl.jsx";
-import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
-import { ErrorState } from "@/components/shared/error-state";
-import { useExecutionTrades } from "@/lib/hooks/use-execution-trades";
-import { useExecutionSummary } from "@/lib/hooks/use-execution-summary";
+import { useTopbarSlot } from '@/components/layout/topbar-slot-context';
+import { usePreferences, type Translate } from '@/components/providers/preferences-provider';
+import { SegmentedControl } from '@/design-system/components/navigation/SegmentedControl.jsx';
+import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
+import { ErrorState } from '@/components/shared/error-state';
+import { useExecutionTrades } from '@/lib/hooks/use-execution-trades';
+import { useExecutionSummary } from '@/lib/hooks/use-execution-summary';
 import {
   parseAsArrayOf,
   parseAsInteger,
   parseAsString,
   useEnumState,
   useStringFilter,
-} from "@/lib/url-state";
-import { useQueryState } from "nuqs";
-import type { ExecutionTrade, ExecutionTradesQuery } from "@/lib/api";
+} from '@/lib/url-state';
+import { useQueryState } from 'nuqs';
+import type { ExecutionTrade, ExecutionTradesQuery } from '@/lib/api';
 
-import { ExecutionFilters } from "./execution-filters";
-import { ExecutionKpis } from "./execution-kpis";
-import { ExecutionTradesTable } from "./execution-trades-table";
-import { TradeDetailSheet } from "./trade-detail-sheet";
+import { ExecutionFilters } from './execution-filters';
+import { ExecutionKpis } from './execution-kpis';
+import { ExecutionTradesTable } from './execution-trades-table';
+import { TradeDetailSheet } from './trade-detail-sheet';
 
-const SORT_FIELDS = new Set<ExecutionTradesQuery["sortBy"]>([
-  "openedAt",
-  "closedAt",
-  "realizedPnlPercent",
-  "symbolCode",
-  "notionalUsd",
+const SORT_FIELDS = new Set<ExecutionTradesQuery['sortBy']>([
+  'openedAt',
+  'closedAt',
+  'realizedPnlPercent',
+  'symbolCode',
+  'notionalUsd',
 ]);
 
 interface ExecutionScreenProps {
-  mode: "paper" | "live";
+  mode: 'paper' | 'live';
 }
 
 /** Paper vs Live is a mode: same screen, same columns, different dataset —
@@ -46,15 +46,15 @@ interface ExecutionScreenProps {
  * are real links, keeping the mode deep-linkable and shareable. Live is
  * marked `danger` so the whole control repaints: "am I looking at real
  * money?" should never require reading the URL to answer. */
-function ExecutionModeToggle({ mode, t }: { mode: "paper" | "live"; t: Translate }) {
+function ExecutionModeToggle({ mode, t }: { mode: 'paper' | 'live'; t: Translate }) {
   return (
     <SegmentedControl
-      ariaLabel={t("nav.execution")}
+      ariaLabel={t('nav.execution')}
       linkComponent={Link}
       value={mode}
       options={[
-        { value: "paper", label: t("nav.execution_paper"), href: "/execution/paper" },
-        { value: "live", label: t("nav.execution_live"), href: "/execution/live", tone: "danger" },
+        { value: 'paper', label: t('nav.execution_paper'), href: '/execution/paper' },
+        { value: 'live', label: t('nav.execution_live'), href: '/execution/live', tone: 'danger' },
       ]}
     />
   );
@@ -71,49 +71,47 @@ export function ExecutionScreen({ mode }: ExecutionScreenProps) {
 function ExecutionScreenInner({ mode }: ExecutionScreenProps) {
   const { setTopbarSlot } = useTopbarSlot();
   const { t } = usePreferences();
-  const [search, setSearch] = useStringFilter("q", "");
-  const [selectedSymbol, setSelectedSymbol] = useStringFilter("sym", "all");
-  const [selectedTimeframe, setSelectedTimeframe] = useStringFilter("tf", "all");
-  const [selectedStrategy, setSelectedStrategy] = useStringFilter("strategy", "all");
+  const [search, setSearch] = useStringFilter('q', '');
+  const [selectedSymbol, setSelectedSymbol] = useStringFilter('sym', 'all');
+  const [selectedTimeframe, setSelectedTimeframe] = useStringFilter('tf', 'all');
+  const [selectedStrategy, setSelectedStrategy] = useStringFilter('strategy', 'all');
   const [selectedSide, setSelectedSide] = useEnumState(
-    "side",
-    ["all", "long", "short"] as const,
-    "all",
+    'side',
+    ['all', 'long', 'short'] as const,
+    'all'
   );
   const [selectedStatuses, setSelectedStatuses] = useQueryState(
-    "status",
+    'status',
     parseAsArrayOf(parseAsString).withDefault([]).withOptions({
-      history: "replace",
+      history: 'replace',
       shallow: true,
-    }),
+    })
   );
-  const [openedFrom, setOpenedFrom] = useStringFilter("from", "");
-  const [openedTo, setOpenedTo] = useStringFilter("to", "");
+  const [openedFrom, setOpenedFrom] = useStringFilter('from', '');
+  const [openedTo, setOpenedTo] = useStringFilter('to', '');
   const [pageIndex, setPageIndex] = useQueryState(
-    "page",
+    'page',
     parseAsInteger.withDefault(0).withOptions({
-      history: "replace",
+      history: 'replace',
       shallow: true,
-    }),
+    })
   );
   const [pageSize, setPageSize] = useQueryState(
-    "size",
+    'size',
     parseAsInteger.withDefault(25).withOptions({
-      history: "replace",
+      history: 'replace',
       shallow: true,
-    }),
+    })
   );
   const [selectedTradeId, setSelectedTradeId] = useQueryState(
-    "trade",
-    parseAsString.withDefault("").withOptions({
-      history: "push",
+    'trade',
+    parseAsString.withDefault('').withOptions({
+      history: 'push',
       shallow: true,
-    }),
+    })
   );
 
-  const [sorting, setSorting] = React.useState<SortingState>([
-    { id: "openedAt", desc: true },
-  ]);
+  const [sorting, setSorting] = React.useState<SortingState>([{ id: 'openedAt', desc: true }]);
 
   const dateRange = React.useMemo<DateRange | undefined>(() => {
     if (!openedFrom && !openedTo) return undefined;
@@ -124,17 +122,17 @@ function ExecutionScreenInner({ mode }: ExecutionScreenProps) {
   }, [openedFrom, openedTo]);
 
   const handleDateRangeChange = (next: DateRange | undefined) => {
-    setOpenedFrom(next?.from ? next.from.toISOString() : "");
-    setOpenedTo(next?.to ? next.to.toISOString() : "");
+    setOpenedFrom(next?.from ? next.from.toISOString() : '');
+    setOpenedTo(next?.to ? next.to.toISOString() : '');
     setPageIndex(0);
   };
 
   const querySortBy = sorting[0]?.id;
   const sortBy =
-    querySortBy && SORT_FIELDS.has(querySortBy as ExecutionTradesQuery["sortBy"])
-      ? (querySortBy as ExecutionTradesQuery["sortBy"])
-      : "openedAt";
-  const sortDirection = sorting[0]?.desc === false ? "asc" : "desc";
+    querySortBy && SORT_FIELDS.has(querySortBy as ExecutionTradesQuery['sortBy'])
+      ? (querySortBy as ExecutionTradesQuery['sortBy'])
+      : 'openedAt';
+  const sortDirection = sorting[0]?.desc === false ? 'asc' : 'desc';
 
   const query: ExecutionTradesQuery = {
     mode,
@@ -143,14 +141,12 @@ function ExecutionScreenInner({ mode }: ExecutionScreenProps) {
     sortBy,
     sortDirection,
     search: search || undefined,
-    symbolCode: selectedSymbol !== "all" ? selectedSymbol : undefined,
-    timeframeCode: selectedTimeframe !== "all" ? selectedTimeframe : undefined,
-    strategyName: selectedStrategy !== "all" ? selectedStrategy : undefined,
-    side: selectedSide !== "all" ? selectedSide : undefined,
+    symbolCode: selectedSymbol !== 'all' ? selectedSymbol : undefined,
+    timeframeCode: selectedTimeframe !== 'all' ? selectedTimeframe : undefined,
+    strategyName: selectedStrategy !== 'all' ? selectedStrategy : undefined,
+    side: selectedSide !== 'all' ? selectedSide : undefined,
     status:
-      selectedStatuses.length === 1
-        ? (selectedStatuses[0] as ExecutionTrade["status"])
-        : undefined,
+      selectedStatuses.length === 1 ? (selectedStatuses[0] as ExecutionTrade['status']) : undefined,
     openedFrom: openedFrom || undefined,
     openedTo: openedTo || undefined,
   };
@@ -209,19 +205,19 @@ function ExecutionScreenInner({ mode }: ExecutionScreenProps) {
 
   const hasActiveFilters =
     !!search ||
-    selectedSymbol !== "all" ||
-    selectedTimeframe !== "all" ||
-    selectedStrategy !== "all" ||
-    selectedSide !== "all" ||
+    selectedSymbol !== 'all' ||
+    selectedTimeframe !== 'all' ||
+    selectedStrategy !== 'all' ||
+    selectedSide !== 'all' ||
     selectedStatuses.length > 0 ||
     !!dateRange?.from;
 
   const handleClearAll = () => {
-    setSearch("");
-    setSelectedSymbol("all");
-    setSelectedTimeframe("all");
-    setSelectedStrategy("all");
-    setSelectedSide("all");
+    setSearch('');
+    setSelectedSymbol('all');
+    setSelectedTimeframe('all');
+    setSelectedStrategy('all');
+    setSelectedSide('all');
     setSelectedStatuses([]);
     handleDateRangeChange(undefined);
     setPageIndex(0);
@@ -233,7 +229,7 @@ function ExecutionScreenInner({ mode }: ExecutionScreenProps) {
         <Button asChild variant="outline" size="sm" className="gap-1.5">
           <Link href="/execution/promotions">
             <ExternalLink className="size-3.5" />
-            {t("execution.actions.promotions")}
+            {t('execution.actions.promotions')}
           </Link>
         </Button>
       ),
@@ -244,7 +240,6 @@ function ExecutionScreenInner({ mode }: ExecutionScreenProps) {
 
   return (
     <>
-
       <div className="flex flex-col gap-4">
         <ExecutionKpis
           mode={mode}
@@ -296,8 +291,8 @@ function ExecutionScreenInner({ mode }: ExecutionScreenProps) {
 
         {trades.isError ? (
           <ErrorState
-            title={t("execution.errors.load_trades_title")}
-            description={t("execution.errors.load_trades_description")}
+            title={t('execution.errors.load_trades_title')}
+            description={t('execution.errors.load_trades_description')}
             onRetry={() => trades.refetch()}
           />
         ) : (
@@ -321,7 +316,7 @@ function ExecutionScreenInner({ mode }: ExecutionScreenProps) {
       <TradeDetailSheet
         open={Boolean(selectedTrade)}
         onOpenChange={(open) => {
-          if (!open) setSelectedTradeId("");
+          if (!open) setSelectedTradeId('');
         }}
         trade={selectedTrade}
       />

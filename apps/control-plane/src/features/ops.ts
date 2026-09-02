@@ -1,11 +1,7 @@
-import type { Pool, QueryResultRow } from "pg";
-import { listResolvedAnalysisSettings } from "./config-resources.js";
+import type { Pool, QueryResultRow } from 'pg';
+import { listResolvedAnalysisSettings } from './config-resources.js';
 
-export type BacktestJobStatus =
-  | "queued"
-  | "running"
-  | "completed"
-  | "failed";
+export type BacktestJobStatus = 'queued' | 'running' | 'completed' | 'failed';
 
 export type BacktestJobRecord = {
   id: string;
@@ -78,7 +74,7 @@ export type BacktestRunProjectionRecord = {
 
 export type BacktestRunProjectionInput = Omit<
   BacktestRunProjectionRecord,
-  "createdAt" | "updatedAt"
+  'createdAt' | 'updatedAt'
 >;
 
 export type BacktestBatchRecord = {
@@ -97,7 +93,7 @@ export type BacktestBatchRecord = {
 };
 
 export type DataReadinessProjectionRecord = {
-  status: "ready" | "partial" | "missing" | "error";
+  status: 'ready' | 'partial' | 'missing' | 'error';
   symbolCode: string;
   timeframeCode: string;
   strategyName: string;
@@ -117,7 +113,7 @@ export type DataReadinessProjectionRecord = {
 
 export type DataReadinessProjectionInput = Omit<
   DataReadinessProjectionRecord,
-  "createdAt" | "updatedAt"
+  'createdAt' | 'updatedAt'
 >;
 
 export type ExecutionPromotionProjectionRecord = {
@@ -129,10 +125,10 @@ export type ExecutionPromotionProjectionRecord = {
   timeframeCode: string;
   strategyName: string;
   riskProfileName: string;
-  mode: "paper" | "live";
+  mode: 'paper' | 'live';
   selectionMetric: string;
   selectionValue: number;
-  status: "active" | "superseded";
+  status: 'active' | 'superseded';
   promotedAt: string;
   sourceEventId: string | null;
   sourceOccurredAt: string | null;
@@ -142,7 +138,7 @@ export type ExecutionPromotionProjectionRecord = {
 
 export type ExecutionPromotionProjectionInput = Omit<
   ExecutionPromotionProjectionRecord,
-  "createdAt" | "updatedAt"
+  'createdAt' | 'updatedAt'
 >;
 
 export type ExecutionTradeRecord = {
@@ -156,9 +152,9 @@ export type ExecutionTradeRecord = {
   timeframeCode: string;
   strategyName: string;
   riskProfileName: string;
-  mode: "paper" | "live";
-  side: "long" | "short";
-  status: "open" | "closed" | "cancelled" | "rejected";
+  mode: 'paper' | 'live';
+  side: 'long' | 'short';
+  status: 'open' | 'closed' | 'cancelled' | 'rejected';
   closeReason: string | null;
   openedAt: string;
   closedAt: string | null;
@@ -178,29 +174,25 @@ export type ExecutionTradeRecord = {
   updatedAt: string;
 };
 
-export type ExecutionTradeInput = Omit<ExecutionTradeRecord, "createdAt" | "updatedAt">;
+export type ExecutionTradeInput = Omit<ExecutionTradeRecord, 'createdAt' | 'updatedAt'>;
 
 export type ExecutionTradeSortField =
-  | "openedAt"
-  | "closedAt"
-  | "realizedPnlPercent"
-  | "symbolCode"
-  | "notionalUsd";
+  'openedAt' | 'closedAt' | 'realizedPnlPercent' | 'symbolCode' | 'notionalUsd';
 
 export type ExecutionTradeQuery = {
   page: number;
   pageSize: number;
   sortBy: ExecutionTradeSortField;
-  sortDirection: "asc" | "desc";
+  sortDirection: 'asc' | 'desc';
   search?: string;
   symbolCode?: string;
   timeframeCode?: string;
   strategyName?: string;
   openedFrom?: string;
   openedTo?: string;
-  side?: "long" | "short";
-  status?: "open" | "closed" | "cancelled" | "rejected";
-  mode?: "paper" | "live";
+  side?: 'long' | 'short';
+  status?: 'open' | 'closed' | 'cancelled' | 'rejected';
+  mode?: 'paper' | 'live';
 };
 
 export type PaginatedExecutionTrades = {
@@ -213,10 +205,10 @@ export type PaginatedExecutionTrades = {
 
 type ExecutionSettingsSelectionRecord = {
   name: string;
-  mode: "paper" | "live";
+  mode: 'paper' | 'live';
   autoPromote: boolean;
   maxPromotions: number;
-  replaceOpenPositionPolicy: "keep" | "flatten";
+  replaceOpenPositionPolicy: 'keep' | 'flatten';
 };
 
 export type PromotionReconciliationResult = {
@@ -231,13 +223,13 @@ export type StrategyPromotionThresholds = {
   maxReversalRatio: number | null;
 };
 
-const selectionMetricName = "score";
+const selectionMetricName = 'score';
 
 const calculatePromotionSelectionValue = (
   run: Pick<
     BacktestRunProjectionInput,
-    "score" | "equityCurvePnlPercent" | "maxDrawdownPercent" | "reversalRatio"
-  >,
+    'score' | 'equityCurvePnlPercent' | 'maxDrawdownPercent' | 'reversalRatio'
+  >
 ): number =>
   Number.isFinite(run.score)
     ? run.score
@@ -246,8 +238,8 @@ const calculatePromotionSelectionValue = (
 export const hasPositivePromotionSelectionValue = (
   run: Pick<
     BacktestRunProjectionInput,
-    "score" | "equityCurvePnlPercent" | "maxDrawdownPercent" | "reversalRatio"
-  >,
+    'score' | 'equityCurvePnlPercent' | 'maxDrawdownPercent' | 'reversalRatio'
+  >
 ): boolean => calculatePromotionSelectionValue(run) > 0;
 
 const toNonNegativeIntegerOrNull = (value: unknown): number | null => {
@@ -261,11 +253,11 @@ const toNonNegativeNumberOrNull = (value: unknown): number | null => {
 };
 
 export const strategyPromotionThresholdsFromParameters = (
-  parameters: Record<string, unknown> | null | undefined,
+  parameters: Record<string, unknown> | null | undefined
 ): StrategyPromotionThresholds => {
   const thresholdsValue = parameters?.promotionThresholds;
   const thresholds =
-    typeof thresholdsValue === "object" &&
+    typeof thresholdsValue === 'object' &&
     thresholdsValue !== null &&
     !Array.isArray(thresholdsValue)
       ? (thresholdsValue as Record<string, unknown>)
@@ -280,16 +272,15 @@ export const strategyPromotionThresholdsFromParameters = (
 };
 
 const tradesPer1000Candles = (
-  run: Pick<BacktestRunProjectionInput, "tradeCount" | "replayKlineCount">,
-): number =>
-  run.replayKlineCount > 0 ? (run.tradeCount * 1_000) / run.replayKlineCount : 0;
+  run: Pick<BacktestRunProjectionInput, 'tradeCount' | 'replayKlineCount'>
+): number => (run.replayKlineCount > 0 ? (run.tradeCount * 1_000) / run.replayKlineCount : 0);
 
 export const meetsStrategyPromotionThresholds = (
   run: Pick<
     BacktestRunProjectionInput,
-    "tradeCount" | "replayKlineCount" | "maxDrawdownPercent" | "reversalRatio"
+    'tradeCount' | 'replayKlineCount' | 'maxDrawdownPercent' | 'reversalRatio'
   >,
-  parameters: Record<string, unknown> | null | undefined,
+  parameters: Record<string, unknown> | null | undefined
 ): boolean => {
   const thresholds = strategyPromotionThresholdsFromParameters(parameters);
   if (
@@ -320,9 +311,7 @@ export const meetsStrategyPromotionThresholds = (
   return true;
 };
 
-const isZeroReadinessDimension = (
-  value: Record<string, unknown> | null,
-): boolean => {
+const isZeroReadinessDimension = (value: Record<string, unknown> | null): boolean => {
   if (value === null) {
     return false;
   }
@@ -338,12 +327,8 @@ const isZeroReadinessDimension = (
   );
 };
 
-const isEmptyBootstrapLikeDataReadinessProjection = (
-  item: DataReadinessProjectionInput,
-): boolean =>
-  (item.status === "partial"
-    ? item.details === null
-    : item.status === "error") &&
+const isEmptyBootstrapLikeDataReadinessProjection = (item: DataReadinessProjectionInput): boolean =>
+  (item.status === 'partial' ? item.details === null : item.status === 'error') &&
   isZeroReadinessDimension(item.kline) &&
   isZeroReadinessDimension(item.trades);
 
@@ -352,13 +337,13 @@ const parseJsonObject = (value: unknown): Record<string, unknown> | null => {
     return null;
   }
 
-  if (typeof value === "object" && !Array.isArray(value)) {
+  if (typeof value === 'object' && !Array.isArray(value)) {
     return value as Record<string, unknown>;
   }
 
-  if (typeof value === "string" && value.trim()) {
+  if (typeof value === 'string' && value.trim()) {
     const parsed = JSON.parse(value);
-    return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
+    return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
       ? (parsed as Record<string, unknown>)
       : null;
   }
@@ -371,7 +356,7 @@ const parseJsonArray = (value: unknown): unknown[] => {
     return value;
   }
 
-  if (typeof value === "string" && value.trim()) {
+  if (typeof value === 'string' && value.trim()) {
     const parsed = JSON.parse(value);
     return Array.isArray(parsed) ? parsed : [];
   }
@@ -381,8 +366,9 @@ const parseJsonArray = (value: unknown): unknown[] => {
 
 const mapTimeslotAnalysis = (value: unknown): TimeslotAnalysisBucket[] =>
   parseJsonArray(value)
-    .filter((item): item is Record<string, unknown> =>
-      typeof item === "object" && item !== null && !Array.isArray(item),
+    .filter(
+      (item): item is Record<string, unknown> =>
+        typeof item === 'object' && item !== null && !Array.isArray(item)
     )
     .map((item) => ({
       dayOfWeek: Number(item.dayOfWeek ?? 0),
@@ -414,20 +400,17 @@ const mapBacktestJobRow = (row: QueryResultRow): BacktestJobRecord => ({
   id: String(row.id),
   status: String(row.status) as BacktestJobStatus,
   analysisSettingId: String(row.analysis_setting_id),
-  riskProfileName:
-    row.risk_profile_name === null ? null : String(row.risk_profile_name),
+  riskProfileName: row.risk_profile_name === null ? null : String(row.risk_profile_name),
   symbolCode: row.symbol_code === null ? null : String(row.symbol_code),
   timeframeCode: row.timeframe_code === null ? null : String(row.timeframe_code),
   strategyName: row.strategy_name === null ? null : String(row.strategy_name),
   startTime: row.start_time === null ? null : Number(row.start_time),
   endTime: row.end_time === null ? null : Number(row.end_time),
-  warmupCandles:
-    row.warmup_candles === null ? null : Number(row.warmup_candles),
+  warmupCandles: row.warmup_candles === null ? null : Number(row.warmup_candles),
   backtestId: row.backtest_id === null ? null : String(row.backtest_id),
   errorMessage: row.error_message === null ? null : String(row.error_message),
   stage: row.stage === null ? null : String(row.stage),
-  progressPercent:
-    row.progress_percent === null ? null : Number(row.progress_percent),
+  progressPercent: row.progress_percent === null ? null : Number(row.progress_percent),
   createdAt: toIsoString(row.created_at) ?? new Date(0).toISOString(),
   updatedAt: toIsoString(row.updated_at) ?? new Date(0).toISOString(),
   startedAt: toIsoString(row.started_at),
@@ -435,9 +418,7 @@ const mapBacktestJobRow = (row: QueryResultRow): BacktestJobRecord => ({
   result: parseJsonObject(row.result_json),
 });
 
-const mapBacktestRunProjectionRow = (
-  row: QueryResultRow,
-): BacktestRunProjectionRecord => ({
+const mapBacktestRunProjectionRow = (row: QueryResultRow): BacktestRunProjectionRecord => ({
   backtestId: String(row.backtest_id),
   finishedAt: toIsoString(row.finished_at) ?? new Date(0).toISOString(),
   backtestDurationMs: Number(row.backtest_duration_ms),
@@ -465,8 +446,7 @@ const mapBacktestRunProjectionRow = (
   score: Number(row.score ?? 0),
   timeslotAnalysis: mapTimeslotAnalysis(row.timeslot_analysis_json),
   sourceEventId: String(row.source_event_id),
-  sourceOccurredAt:
-    toIsoString(row.source_occurred_at) ?? new Date(0).toISOString(),
+  sourceOccurredAt: toIsoString(row.source_occurred_at) ?? new Date(0).toISOString(),
   createdAt: toIsoString(row.created_at) ?? new Date(0).toISOString(),
   updatedAt: toIsoString(row.updated_at) ?? new Date(0).toISOString(),
 });
@@ -476,7 +456,7 @@ const mapStringArray = (value: unknown): string[] => {
     return value.map((item) => String(item));
   }
 
-  if (typeof value === "string" && value.trim()) {
+  if (typeof value === 'string' && value.trim()) {
     const parsed = JSON.parse(value);
     return Array.isArray(parsed) ? parsed.map((item) => String(item)) : [];
   }
@@ -499,16 +479,14 @@ const mapBacktestBatchRow = (row: QueryResultRow): BacktestBatchRecord => ({
   updatedAt: toIsoString(row.updated_at) ?? new Date(0).toISOString(),
 });
 
-const mapDataReadinessProjectionRow = (
-  row: QueryResultRow,
-): DataReadinessProjectionRecord => ({
+const mapDataReadinessProjectionRow = (row: QueryResultRow): DataReadinessProjectionRecord => ({
   status:
-    row.status === "ready" ||
-    row.status === "partial" ||
-    row.status === "missing" ||
-    row.status === "error"
+    row.status === 'ready' ||
+    row.status === 'partial' ||
+    row.status === 'missing' ||
+    row.status === 'error'
       ? row.status
-      : "error",
+      : 'error',
   symbolCode: String(row.symbol_code),
   timeframeCode: String(row.timeframe_code),
   strategyName: String(row.strategy_name),
@@ -519,38 +497,35 @@ const mapDataReadinessProjectionRow = (
   details: row.details === null ? null : String(row.details),
   kline: parseJsonObject(row.kline_json),
   klineDimensions: Array.isArray(row.kline_dimensions_json)
-    ? row.kline_dimensions_json
-        .filter((value): value is Record<string, unknown> =>
-          typeof value === "object" && value !== null && !Array.isArray(value),
-        )
+    ? row.kline_dimensions_json.filter(
+        (value): value is Record<string, unknown> =>
+          typeof value === 'object' && value !== null && !Array.isArray(value)
+      )
     : null,
   trades: parseJsonObject(row.trades_json),
   sourceEventId: String(row.source_event_id),
-  sourceOccurredAt:
-    toIsoString(row.source_occurred_at) ?? new Date(0).toISOString(),
+  sourceOccurredAt: toIsoString(row.source_occurred_at) ?? new Date(0).toISOString(),
   createdAt: toIsoString(row.created_at) ?? new Date(0).toISOString(),
   updatedAt: toIsoString(row.updated_at) ?? new Date(0).toISOString(),
 });
 
 const mapExecutionPromotionProjectionRow = (
-  row: QueryResultRow,
+  row: QueryResultRow
 ): ExecutionPromotionProjectionRecord => ({
   promotionId: String(row.promotion_id),
   executionSettingsName: String(row.execution_settings_name),
   analysisSettingId: String(row.analysis_setting_id),
-  sourceBacktestId:
-    row.source_backtest_id === null ? null : String(row.source_backtest_id),
+  sourceBacktestId: row.source_backtest_id === null ? null : String(row.source_backtest_id),
   symbolCode: String(row.symbol_code),
   timeframeCode: String(row.timeframe_code),
   strategyName: String(row.strategy_name),
   riskProfileName: String(row.risk_profile_name),
-  mode: row.mode === "live" ? "live" : "paper",
+  mode: row.mode === 'live' ? 'live' : 'paper',
   selectionMetric: String(row.selection_metric),
   selectionValue: Number(row.selection_value),
-  status: row.status === "superseded" ? "superseded" : "active",
+  status: row.status === 'superseded' ? 'superseded' : 'active',
   promotedAt: toIsoString(row.promoted_at) ?? new Date(0).toISOString(),
-  sourceEventId:
-    row.source_event_id === null ? null : String(row.source_event_id),
+  sourceEventId: row.source_event_id === null ? null : String(row.source_event_id),
   sourceOccurredAt: row.source_occurred_at === null ? null : toIsoString(row.source_occurred_at),
   createdAt: toIsoString(row.created_at) ?? new Date(0).toISOString(),
   updatedAt: toIsoString(row.updated_at) ?? new Date(0).toISOString(),
@@ -558,11 +533,9 @@ const mapExecutionPromotionProjectionRow = (
 
 const mapExecutionTradeRow = (row: QueryResultRow): ExecutionTradeRecord => ({
   tradeId: String(row.trade_id),
-  externalOrderId:
-    row.external_order_id === null ? null : String(row.external_order_id),
+  externalOrderId: row.external_order_id === null ? null : String(row.external_order_id),
   positionId: row.position_id === null ? null : String(row.position_id),
-  sourceBacktestId:
-    row.source_backtest_id === null ? null : String(row.source_backtest_id),
+  sourceBacktestId: row.source_backtest_id === null ? null : String(row.source_backtest_id),
   analysisSettingId: String(row.analysis_setting_id),
   executionSettingsName:
     row.execution_settings_name === null ? null : String(row.execution_settings_name),
@@ -570,14 +543,12 @@ const mapExecutionTradeRow = (row: QueryResultRow): ExecutionTradeRecord => ({
   timeframeCode: String(row.timeframe_code),
   strategyName: String(row.strategy_name),
   riskProfileName: String(row.risk_profile_name),
-  mode: row.mode === "live" ? "live" : "paper",
-  side: row.side === "short" ? "short" : "long",
+  mode: row.mode === 'live' ? 'live' : 'paper',
+  side: row.side === 'short' ? 'short' : 'long',
   status:
-    row.status === "closed" ||
-    row.status === "cancelled" ||
-    row.status === "rejected"
+    row.status === 'closed' || row.status === 'cancelled' || row.status === 'rejected'
       ? row.status
-      : "open",
+      : 'open',
   closeReason: row.close_reason === null ? null : String(row.close_reason),
   openedAt: toIsoString(row.opened_at) ?? new Date(0).toISOString(),
   closedAt: row.closed_at === null ? null : toIsoString(row.closed_at),
@@ -586,49 +557,44 @@ const mapExecutionTradeRow = (row: QueryResultRow): ExecutionTradeRecord => ({
   exitPrice: row.exit_price === null ? null : Number(row.exit_price),
   quantity: Number(row.quantity),
   notionalUsd: Number(row.notional_usd),
-  stopLossPrice:
-    row.stop_loss_price === null ? null : Number(row.stop_loss_price),
-  takeProfitPrice:
-    row.take_profit_price === null ? null : Number(row.take_profit_price),
-  realizedPnlPercent:
-    row.realized_pnl_percent === null ? null : Number(row.realized_pnl_percent),
+  stopLossPrice: row.stop_loss_price === null ? null : Number(row.stop_loss_price),
+  takeProfitPrice: row.take_profit_price === null ? null : Number(row.take_profit_price),
+  realizedPnlPercent: row.realized_pnl_percent === null ? null : Number(row.realized_pnl_percent),
   realizedPnlUsd: row.realized_pnl_usd === null ? null : Number(row.realized_pnl_usd),
   feesUsd: Number(row.fees_usd),
-  sourceEventId:
-    row.source_event_id === null ? null : String(row.source_event_id),
+  sourceEventId: row.source_event_id === null ? null : String(row.source_event_id),
   sourceOccurredAt: row.source_occurred_at === null ? null : toIsoString(row.source_occurred_at),
   createdAt: toIsoString(row.created_at) ?? new Date(0).toISOString(),
   updatedAt: toIsoString(row.updated_at) ?? new Date(0).toISOString(),
 });
 
 const mapExecutionSettingsSelectionRow = (
-  row: QueryResultRow,
+  row: QueryResultRow
 ): ExecutionSettingsSelectionRecord => ({
   name: String(row.name),
-  mode: row.mode === "live" ? "live" : "paper",
+  mode: row.mode === 'live' ? 'live' : 'paper',
   autoPromote: Boolean(row.auto_promote),
   maxPromotions: Number(row.max_promotions),
-  replaceOpenPositionPolicy:
-    row.replace_open_position_policy === "keep" ? "keep" : "flatten",
+  replaceOpenPositionPolicy: row.replace_open_position_policy === 'keep' ? 'keep' : 'flatten',
 });
 
 const hasSamePromotionContext = (
   promotion: Pick<
     ExecutionPromotionProjectionRecord,
-    | "executionSettingsName"
-    | "analysisSettingId"
-    | "symbolCode"
-    | "timeframeCode"
-    | "strategyName"
-    | "riskProfileName"
-    | "mode"
+    | 'executionSettingsName'
+    | 'analysisSettingId'
+    | 'symbolCode'
+    | 'timeframeCode'
+    | 'strategyName'
+    | 'riskProfileName'
+    | 'mode'
   >,
   run: Pick<
     BacktestRunProjectionInput,
-    "analysisSettingId" | "symbol" | "timeframeCode" | "strategyName" | "riskProfileName"
+    'analysisSettingId' | 'symbol' | 'timeframeCode' | 'strategyName' | 'riskProfileName'
   >,
   executionSettingsName: string,
-  mode: "paper" | "live",
+  mode: 'paper' | 'live'
 ): boolean =>
   promotion.executionSettingsName === executionSettingsName &&
   promotion.analysisSettingId === run.analysisSettingId &&
@@ -639,13 +605,13 @@ const hasSamePromotionContext = (
   promotion.mode === mode;
 
 const supersedeActivePromotionsForContext = async (
-  queryable: Pick<Pool, "query">,
+  queryable: Pick<Pool, 'query'>,
   context: Pick<
     BacktestRunProjectionInput,
-    "analysisSettingId" | "symbol" | "timeframeCode" | "strategyName" | "riskProfileName"
+    'analysisSettingId' | 'symbol' | 'timeframeCode' | 'strategyName' | 'riskProfileName'
   >,
   executionSettingsName: string,
-  mode: "paper" | "live",
+  mode: 'paper' | 'live'
 ): Promise<boolean> => {
   const result = await queryable.query(
     `
@@ -669,7 +635,7 @@ const supersedeActivePromotionsForContext = async (
       context.strategyName,
       context.riskProfileName,
       mode,
-    ],
+    ]
   );
 
   return Number(result.rowCount ?? 0) > 0;
@@ -942,10 +908,7 @@ export const ensureOpsSchema = async (pool: Pool): Promise<void> => {
   `);
 };
 
-export const listBacktestJobs = async (
-  pool: Pool,
-  limit = 50,
-): Promise<BacktestJobRecord[]> => {
+export const listBacktestJobs = async (pool: Pool, limit = 50): Promise<BacktestJobRecord[]> => {
   const result = await pool.query(
     `
       SELECT
@@ -972,7 +935,7 @@ export const listBacktestJobs = async (
       ORDER BY created_at DESC
       LIMIT $1
     `,
-    [Math.max(1, Math.min(limit, 200))],
+    [Math.max(1, Math.min(limit, 200))]
   );
 
   return result.rows.map(mapBacktestJobRow);
@@ -980,7 +943,7 @@ export const listBacktestJobs = async (
 
 export const listBacktestBatches = async (
   pool: Pool,
-  limit = 100,
+  limit = 100
 ): Promise<BacktestBatchRecord[]> => {
   const result = await pool.query(
     `
@@ -1001,7 +964,7 @@ export const listBacktestBatches = async (
       ORDER BY updated_at DESC
       LIMIT $1
     `,
-    [Math.max(1, Math.min(limit, 500))],
+    [Math.max(1, Math.min(limit, 500))]
   );
 
   return result.rows.map(mapBacktestBatchRow);
@@ -1013,7 +976,7 @@ export const updateBacktestJobProgress = async (
     jobId: string;
     stage: string;
     progressPercent: number;
-  },
+  }
 ): Promise<BacktestJobRecord | null> => {
   const result = await pool.query(
     `
@@ -1044,7 +1007,7 @@ export const updateBacktestJobProgress = async (
         started_at,
         finished_at
     `,
-    [payload.jobId, payload.stage, payload.progressPercent],
+    [payload.jobId, payload.stage, payload.progressPercent]
   );
 
   return result.rowCount === 0 ? null : mapBacktestJobRow(result.rows[0]);
@@ -1061,7 +1024,7 @@ export const upsertBacktestJobFromProgressEvent = async (
     strategyName: string;
     stage: string;
     progressPercent: number;
-  },
+  }
 ): Promise<BacktestJobRecord> => {
   const result = await pool.query(
     `
@@ -1138,7 +1101,7 @@ export const upsertBacktestJobFromProgressEvent = async (
       payload.strategyName,
       payload.stage,
       payload.progressPercent,
-    ],
+    ]
   );
 
   return mapBacktestJobRow(result.rows[0]);
@@ -1157,7 +1120,7 @@ export const upsertBacktestBatchFromProgressEvent = async (
     totalCount: number;
     completedCount: number;
     runningCount: number;
-  },
+  }
 ): Promise<BacktestBatchRecord> => {
   const normalizedProgressPercent = Number.isFinite(payload.progressPercent)
     ? Math.min(100, Math.max(0, payload.progressPercent))
@@ -1223,7 +1186,7 @@ export const upsertBacktestBatchFromProgressEvent = async (
       payload.totalCount,
       payload.completedCount,
       payload.runningCount,
-    ],
+    ]
   );
 
   return mapBacktestBatchRow(result.rows[0]);
@@ -1234,7 +1197,7 @@ export const completeBacktestJobFromProjectionEvent = async (
   payload: {
     jobId: string;
     backtestId: string;
-  },
+  }
 ): Promise<BacktestJobRecord | null> => {
   const result = await pool.query(
     `
@@ -1268,7 +1231,7 @@ export const completeBacktestJobFromProjectionEvent = async (
         started_at,
         finished_at
     `,
-    [payload.jobId, payload.backtestId],
+    [payload.jobId, payload.backtestId]
   );
 
   return result.rowCount === 0 ? null : mapBacktestJobRow(result.rows[0]);
@@ -1276,7 +1239,7 @@ export const completeBacktestJobFromProjectionEvent = async (
 
 export const upsertBacktestRunProjection = async (
   pool: Pool,
-  input: BacktestRunProjectionInput,
+  input: BacktestRunProjectionInput
 ): Promise<BacktestRunProjectionRecord> => {
   const result = await pool.query(
     `
@@ -1431,7 +1394,7 @@ export const upsertBacktestRunProjection = async (
       JSON.stringify(input.timeslotAnalysis ?? []),
       input.sourceEventId,
       input.sourceOccurredAt,
-    ],
+    ]
   );
 
   return mapBacktestRunProjectionRow(result.rows[0]);
@@ -1439,7 +1402,7 @@ export const upsertBacktestRunProjection = async (
 
 export const listBacktestRunProjections = async (
   pool: Pool,
-  limit = 100,
+  limit = 100
 ): Promise<BacktestRunProjectionRecord[]> => {
   const result = await pool.query(
     `
@@ -1478,7 +1441,7 @@ export const listBacktestRunProjections = async (
       ORDER BY finished_at DESC, backtest_id DESC
       LIMIT $1
     `,
-    [Math.max(1, Math.min(limit, 500))],
+    [Math.max(1, Math.min(limit, 500))]
   );
 
   return result.rows.map(mapBacktestRunProjectionRow);
@@ -1486,7 +1449,7 @@ export const listBacktestRunProjections = async (
 
 export const listLatestBacktestRunProjections = async (
   pool: Pool,
-  limit = 500,
+  limit = 500
 ): Promise<BacktestRunProjectionRecord[]> => {
   const result = await pool.query(
     `
@@ -1572,7 +1535,7 @@ export const listLatestBacktestRunProjections = async (
       ORDER BY finished_at DESC, backtest_id DESC
       LIMIT $1
     `,
-    [Math.max(1, Math.min(limit, 2_000))],
+    [Math.max(1, Math.min(limit, 2_000))]
   );
 
   return result.rows.map(mapBacktestRunProjectionRow);
@@ -1580,16 +1543,16 @@ export const listLatestBacktestRunProjections = async (
 
 export const replaceDataReadinessProjections = async (
   pool: Pool,
-  items: DataReadinessProjectionInput[],
+  items: DataReadinessProjectionInput[]
 ): Promise<void> => {
   const client = await pool.connect();
 
   try {
-    await client.query("BEGIN");
+    await client.query('BEGIN');
 
     if (items.length === 0) {
-      await client.query("DELETE FROM ops_data_readiness");
-      await client.query("COMMIT");
+      await client.query('DELETE FROM ops_data_readiness');
+      await client.query('COMMIT');
       return;
     }
 
@@ -1667,13 +1630,13 @@ export const replaceDataReadinessProjections = async (
           item.sourceEventId,
           item.sourceOccurredAt,
           isPlaceholder,
-        ],
+        ]
       );
     }
 
-    await client.query("COMMIT");
+    await client.query('COMMIT');
   } catch (error) {
-    await client.query("ROLLBACK");
+    await client.query('ROLLBACK');
     throw error;
   } finally {
     client.release();
@@ -1684,7 +1647,7 @@ export const listDataReadinessProjections = async (
   pool: Pool,
   filters: {
     strategyName?: string;
-  } = {},
+  } = {}
 ): Promise<DataReadinessProjectionRecord[]> => {
   const values: unknown[] = [];
   const whereClauses: string[] = [];
@@ -1714,10 +1677,10 @@ export const listDataReadinessProjections = async (
         created_at,
         updated_at
       FROM ops_data_readiness
-      ${whereClauses.length > 0 ? `WHERE ${whereClauses.join(" AND ")}` : ""}
+      ${whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : ''}
       ORDER BY symbol_code ASC, timeframe_code ASC, strategy_name ASC
     `,
-    values,
+    values
   );
 
   return result.rows.map(mapDataReadinessProjectionRow);
@@ -1725,7 +1688,7 @@ export const listDataReadinessProjections = async (
 
 export const upsertExecutionPromotionProjection = async (
   pool: Pool,
-  input: ExecutionPromotionProjectionInput,
+  input: ExecutionPromotionProjectionInput
 ): Promise<ExecutionPromotionProjectionRecord> => {
   const result = await pool.query(
     `
@@ -1800,14 +1763,14 @@ export const upsertExecutionPromotionProjection = async (
       input.promotedAt,
       input.sourceEventId,
       input.sourceOccurredAt,
-    ],
+    ]
   );
 
   return mapExecutionPromotionProjectionRow(result.rows[0]);
 };
 
 export const getActiveExecutionPromotion = async (
-  pool: Pool,
+  pool: Pool
 ): Promise<ExecutionPromotionProjectionRecord | null> => {
   const result = await pool.query(
     `
@@ -1833,7 +1796,7 @@ export const getActiveExecutionPromotion = async (
       WHERE status = 'active'
       ORDER BY promoted_at DESC, promotion_id DESC
       LIMIT 1
-    `,
+    `
   );
 
   return result.rowCount === 0 ? null : mapExecutionPromotionProjectionRow(result.rows[0]);
@@ -1841,7 +1804,7 @@ export const getActiveExecutionPromotion = async (
 
 export const listActiveExecutionPromotions = async (
   pool: Pool,
-  limit = 20,
+  limit = 20
 ): Promise<ExecutionPromotionProjectionRecord[]> => {
   const result = await pool.query(
     `
@@ -1868,7 +1831,7 @@ export const listActiveExecutionPromotions = async (
       ORDER BY selection_value DESC, promoted_at DESC, promotion_id DESC
       LIMIT $1
     `,
-    [Math.max(1, Math.min(limit, 100))],
+    [Math.max(1, Math.min(limit, 100))]
   );
 
   return result.rows.map(mapExecutionPromotionProjectionRow);
@@ -1876,7 +1839,7 @@ export const listActiveExecutionPromotions = async (
 
 export const upsertExecutionTradeProjection = async (
   pool: Pool,
-  input: ExecutionTradeInput,
+  input: ExecutionTradeInput
 ): Promise<ExecutionTradeRecord> => {
   const result = await pool.query(
     `
@@ -2005,7 +1968,7 @@ export const upsertExecutionTradeProjection = async (
       input.feesUsd,
       input.sourceEventId,
       input.sourceOccurredAt,
-    ],
+    ]
   );
 
   return mapExecutionTradeRow(result.rows[0]);
@@ -2013,7 +1976,7 @@ export const upsertExecutionTradeProjection = async (
 
 export const listExecutionTrades = async (
   pool: Pool,
-  query: ExecutionTradeQuery,
+  query: ExecutionTradeQuery
 ): Promise<PaginatedExecutionTrades> => {
   const whereClauses: string[] = [];
   const params: unknown[] = [];
@@ -2028,7 +1991,7 @@ export const listExecutionTrades = async (
       `(LOWER(trade_id) LIKE ${param}
         OR LOWER(COALESCE(external_order_id, '')) LIKE ${param}
         OR LOWER(COALESCE(source_backtest_id, '')) LIKE ${param}
-        OR LOWER(analysis_setting_id) LIKE ${param})`,
+        OR LOWER(analysis_setting_id) LIKE ${param})`
     );
   }
 
@@ -2057,16 +2020,16 @@ export const listExecutionTrades = async (
     whereClauses.push(`mode = ${pushParam(query.mode)}`);
   }
 
-  const whereSql = whereClauses.length > 0 ? `WHERE ${whereClauses.join(" AND ")}` : "";
+  const whereSql = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
   const sortColumnByField: Record<ExecutionTradeSortField, string> = {
-    openedAt: "opened_at",
-    closedAt: "closed_at",
-    realizedPnlPercent: "realized_pnl_percent",
-    symbolCode: "symbol_code",
-    notionalUsd: "notional_usd",
+    openedAt: 'opened_at',
+    closedAt: 'closed_at',
+    realizedPnlPercent: 'realized_pnl_percent',
+    symbolCode: 'symbol_code',
+    notionalUsd: 'notional_usd',
   };
-  const sortColumn = sortColumnByField[query.sortBy] ?? "opened_at";
-  const sortDirection = query.sortDirection === "asc" ? "ASC" : "DESC";
+  const sortColumn = sortColumnByField[query.sortBy] ?? 'opened_at';
+  const sortDirection = query.sortDirection === 'asc' ? 'ASC' : 'DESC';
   const pageSize = Math.max(1, Math.min(query.pageSize, 100));
   const page = Math.max(1, query.page);
   const offset = (page - 1) * pageSize;
@@ -2079,7 +2042,7 @@ export const listExecutionTrades = async (
       FROM ops_execution_trades
       ${whereSql}
     `,
-    params,
+    params
   );
 
   const rowsResult = await pool.query(
@@ -2121,7 +2084,7 @@ export const listExecutionTrades = async (
       LIMIT ${pushParam(pageSize)}
       OFFSET ${pushParam(offset)}
     `,
-    params,
+    params
   );
 
   return {
@@ -2134,7 +2097,7 @@ export const listExecutionTrades = async (
 };
 
 export const getAutoPromoteExecutionSettings = async (
-  pool: Pool,
+  pool: Pool
 ): Promise<ExecutionSettingsSelectionRecord | null> => {
   const result = await pool.query(
     `
@@ -2150,17 +2113,15 @@ export const getAutoPromoteExecutionSettings = async (
         AND auto_promote = TRUE
       ORDER BY updated_at DESC, name ASC
       LIMIT 1
-    `,
+    `
   );
 
-  return result.rowCount === 0
-    ? null
-    : mapExecutionSettingsSelectionRow(result.rows[0]);
+  return result.rowCount === 0 ? null : mapExecutionSettingsSelectionRow(result.rows[0]);
 };
 
 export const promoteBacktestRunIfEligible = async (
   pool: Pool,
-  run: BacktestRunProjectionInput,
+  run: BacktestRunProjectionInput
 ): Promise<PromotionReconciliationResult> => {
   const settings = await getAutoPromoteExecutionSettings(pool);
   if (!settings) {
@@ -2174,12 +2135,7 @@ export const promoteBacktestRunIfEligible = async (
   if (!hasPositivePromotionSelectionValue(run)) {
     return {
       promotion: null,
-      changed: await supersedeActivePromotionsForContext(
-        pool,
-        run,
-        settings.name,
-        settings.mode,
-      ),
+      changed: await supersedeActivePromotionsForContext(pool, run, settings.name, settings.mode),
     };
   }
   const eligibleAnalyses = await listResolvedAnalysisSettings(pool);
@@ -2188,40 +2144,22 @@ export const promoteBacktestRunIfEligible = async (
       analysis.id === run.analysisSettingId &&
       analysis.symbolCode === run.symbol &&
       analysis.timeframeCode === run.timeframeCode &&
-      analysis.riskProfileName === run.riskProfileName,
+      analysis.riskProfileName === run.riskProfileName
   );
   if (!eligibleAnalysis) {
     return {
       promotion: null,
-      changed: await supersedeActivePromotionsForContext(
-        pool,
-        run,
-        settings.name,
-        settings.mode,
-      ),
+      changed: await supersedeActivePromotionsForContext(pool, run, settings.name, settings.mode),
     };
   }
-  if (
-    !meetsStrategyPromotionThresholds(
-      run,
-      eligibleAnalysis.strategy.parameters,
-    )
-  ) {
+  if (!meetsStrategyPromotionThresholds(run, eligibleAnalysis.strategy.parameters)) {
     return {
       promotion: null,
-      changed: await supersedeActivePromotionsForContext(
-        pool,
-        run,
-        settings.name,
-        settings.mode,
-      ),
+      changed: await supersedeActivePromotionsForContext(pool, run, settings.name, settings.mode),
     };
   }
 
-  const activePromotions = await listActiveExecutionPromotions(
-    pool,
-    settings.maxPromotions + 10,
-  );
+  const activePromotions = await listActiveExecutionPromotions(pool, settings.maxPromotions + 10);
   if (activePromotions.some((promotion) => promotion.sourceBacktestId === run.backtestId)) {
     return {
       promotion: null,
@@ -2229,13 +2167,12 @@ export const promoteBacktestRunIfEligible = async (
     };
   }
   const sameContextPromotions = activePromotions.filter((promotion) =>
-    hasSamePromotionContext(promotion, run, settings.name, settings.mode),
+    hasSamePromotionContext(promotion, run, settings.name, settings.mode)
   );
   const competingPromotions = activePromotions.filter(
-    (promotion) => !hasSamePromotionContext(promotion, run, settings.name, settings.mode),
+    (promotion) => !hasSamePromotionContext(promotion, run, settings.name, settings.mode)
   );
-  const lowestCompetingPromotion =
-    competingPromotions[competingPromotions.length - 1] ?? null;
+  const lowestCompetingPromotion = competingPromotions[competingPromotions.length - 1] ?? null;
   if (
     sameContextPromotions.length === 0 &&
     competingPromotions.length >= settings.maxPromotions &&
@@ -2250,7 +2187,7 @@ export const promoteBacktestRunIfEligible = async (
 
   const client = await pool.connect();
   try {
-    await client.query("BEGIN");
+    await client.query('BEGIN');
 
     const result = await client.query(
       `
@@ -2323,7 +2260,7 @@ export const promoteBacktestRunIfEligible = async (
         selectionValue,
         run.sourceEventId,
         run.sourceOccurredAt,
-      ],
+      ]
     );
 
     await client.query(
@@ -2350,7 +2287,7 @@ export const promoteBacktestRunIfEligible = async (
         run.strategyName,
         run.riskProfileName,
         settings.mode,
-      ],
+      ]
     );
 
     await client.query(
@@ -2367,16 +2304,16 @@ export const promoteBacktestRunIfEligible = async (
              LIMIT $1
            )
       `,
-      [settings.maxPromotions],
+      [settings.maxPromotions]
     );
 
-    await client.query("COMMIT");
+    await client.query('COMMIT');
     return {
       promotion: mapExecutionPromotionProjectionRow(result.rows[0]),
       changed: true,
     };
   } catch (error) {
-    await client.query("ROLLBACK");
+    await client.query('ROLLBACK');
     throw error;
   } finally {
     client.release();

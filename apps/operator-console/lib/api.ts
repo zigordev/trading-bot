@@ -1,9 +1,9 @@
 export const API_BASE =
   process.env.NEXT_PUBLIC_CONTROL_PLANE_BASE_URL ??
   process.env.EXPO_PUBLIC_CONTROL_PLANE_BASE_URL ??
-  "http://localhost:3020";
+  'http://localhost:3020';
 
-export const OPS_WS_URL = `${API_BASE.replace(/^http/, "ws")}/ws/ops`;
+export const OPS_WS_URL = `${API_BASE.replace(/^http/, 'ws')}/ws/ops`;
 
 export type BacktestBatch = {
   batchId: string;
@@ -22,7 +22,7 @@ export type BacktestBatch = {
 
 export type BacktestJob = {
   id: string;
-  status: "queued" | "running" | "completed" | "failed";
+  status: 'queued' | 'running' | 'completed' | 'failed';
   analysisSettingId: string;
   riskProfileName: string | null;
   symbolCode: string | null;
@@ -108,10 +108,10 @@ export type ExecutionSettingsRecord = {
   id: string;
   name: string;
   enabled: boolean;
-  mode: "paper" | "live";
+  mode: 'paper' | 'live';
   autoPromote: boolean;
   maxPromotions: number;
-  replaceOpenPositionPolicy: "keep" | "flatten";
+  replaceOpenPositionPolicy: 'keep' | 'flatten';
   createdAt: string;
   updatedAt: string;
 };
@@ -126,7 +126,7 @@ export type RuntimeAnalysis = {
 };
 
 export type DataReadinessItem = {
-  status: "ready" | "partial" | "missing" | "error";
+  status: 'ready' | 'partial' | 'missing' | 'error';
   symbolCode: string;
   timeframeCode: string;
   strategyName: string;
@@ -154,9 +154,9 @@ export type ExecutionPromotion = {
   timeframeCode: string;
   strategyName: string;
   riskProfileName: string;
-  mode: "paper" | "live";
+  mode: 'paper' | 'live';
   selectionValue: number;
-  status: "active" | "superseded";
+  status: 'active' | 'superseded';
   promotedAt: string;
 };
 
@@ -171,9 +171,9 @@ export type ExecutionTrade = {
   timeframeCode: string;
   strategyName: string;
   riskProfileName: string;
-  mode: "paper" | "live";
-  side: "long" | "short";
-  status: "open" | "closed" | "cancelled" | "rejected";
+  mode: 'paper' | 'live';
+  side: 'long' | 'short';
+  status: 'open' | 'closed' | 'cancelled' | 'rejected';
   closeReason: string | null;
   openedAt: string;
   closedAt: string | null;
@@ -213,22 +213,17 @@ export type ExecutionTradesResponse = {
 export type ExecutionTradesQuery = {
   page?: number;
   pageSize?: number;
-  sortBy?:
-    | "openedAt"
-    | "closedAt"
-    | "realizedPnlPercent"
-    | "symbolCode"
-    | "notionalUsd";
-  sortDirection?: "asc" | "desc";
+  sortBy?: 'openedAt' | 'closedAt' | 'realizedPnlPercent' | 'symbolCode' | 'notionalUsd';
+  sortDirection?: 'asc' | 'desc';
   search?: string;
   symbolCode?: string;
   timeframeCode?: string;
   strategyName?: string;
   openedFrom?: string;
   openedTo?: string;
-  side?: "long" | "short";
-  status?: "open" | "closed" | "cancelled" | "rejected";
-  mode?: "paper" | "live";
+  side?: 'long' | 'short';
+  status?: 'open' | 'closed' | 'cancelled' | 'rejected';
+  mode?: 'paper' | 'live';
 };
 
 export type DataReadinessQuery = {
@@ -246,7 +241,7 @@ const fetchJson = async <T>(path: string, init?: RequestInit): Promise<T> => {
   const response = await fetch(`${API_BASE}${path}`, {
     ...init,
     headers: {
-      ...(hasBody ? { "content-type": "application/json" } : {}),
+      ...(hasBody ? { 'content-type': 'application/json' } : {}),
       ...(init?.headers ?? {}),
     },
   });
@@ -271,60 +266,52 @@ const fetchJson = async <T>(path: string, init?: RequestInit): Promise<T> => {
 };
 
 export const getBacktestsSummary = (): Promise<BacktestsSummaryResponse> =>
-  fetchJson("/v1/ops/backtests/summary");
+  fetchJson('/v1/ops/backtests/summary');
 
 export const getRuntimeAnalyses = (): Promise<RuntimeAnalysis[]> =>
-  fetchJson("/v1/runtime-config/analysis-settings");
+  fetchJson('/v1/runtime-config/analysis-settings');
 
 const buildQueryString = (query: Record<string, unknown>): string => {
   const params = new URLSearchParams();
   for (const [key, value] of Object.entries(query)) {
-    if (value === undefined || value === null || value === "") continue;
+    if (value === undefined || value === null || value === '') continue;
     params.set(key, String(value));
   }
   const suffix = params.toString();
-  return suffix ? `?${suffix}` : "";
+  return suffix ? `?${suffix}` : '';
 };
 
-export const getDataReadiness = (
-  query: DataReadinessQuery = {},
-): Promise<DataReadinessResponse> =>
+export const getDataReadiness = (query: DataReadinessQuery = {}): Promise<DataReadinessResponse> =>
   fetchJson(`/v1/ops/data-readiness${buildQueryString(query)}`);
 
 export const getExecutionSummary = (): Promise<ExecutionSummaryResponse> =>
-  fetchJson("/v1/ops/execution/summary");
+  fetchJson('/v1/ops/execution/summary');
 
 export const getExecutionTrades = (
-  query: ExecutionTradesQuery = {},
+  query: ExecutionTradesQuery = {}
 ): Promise<ExecutionTradesResponse> =>
   fetchJson(`/v1/ops/execution/trades${buildQueryString(query)}`);
 
-export const getConfigResourceRecords = (
-  resource: string,
-): Promise<Record<string, unknown>[]> => fetchJson(`/v1/${resource}`);
+export const getConfigResourceRecords = (resource: string): Promise<Record<string, unknown>[]> =>
+  fetchJson(`/v1/${resource}`);
 
-export const getBinanceSymbolReferences = (
-  query: string,
-): Promise<BinanceSymbolReference[]> =>
+export const getBinanceSymbolReferences = (query: string): Promise<BinanceSymbolReference[]> =>
   fetchJson(
-    `/v1/reference/binance-symbols${query.trim() ? `?q=${encodeURIComponent(query.trim())}` : ""}`,
+    `/v1/reference/binance-symbols${query.trim() ? `?q=${encodeURIComponent(query.trim())}` : ''}`
   );
 
 export const saveConfigResource = (
   resource: string,
   payload: Record<string, unknown>,
-  id?: string | null,
+  id?: string | null
 ): Promise<Record<string, unknown>> =>
-  fetchJson(`/v1/${resource}${id ? `/${id}` : ""}`, {
-    method: id ? "PUT" : "POST",
+  fetchJson(`/v1/${resource}${id ? `/${id}` : ''}`, {
+    method: id ? 'PUT' : 'POST',
     body: JSON.stringify(payload),
   });
 
-export const deleteConfigResource = async (
-  resource: string,
-  id: string,
-): Promise<void> => {
+export const deleteConfigResource = async (resource: string, id: string): Promise<void> => {
   await fetchJson(`/v1/${resource}/${id}`, {
-    method: "DELETE",
+    method: 'DELETE',
   });
 };

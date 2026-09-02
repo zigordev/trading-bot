@@ -1,10 +1,10 @@
-"use client";
+'use client';
 
-import * as React from "react";
-import { Command as CommandPrimitive } from "cmdk";
-import { Search } from "lucide-react";
+import * as React from 'react';
+import { Command as CommandPrimitive } from 'cmdk';
+import { Search } from 'lucide-react';
 
-import { cn } from "@/lib/utils";
+import { cn } from '@/lib/utils';
 
 const Command = React.forwardRef<
   React.ElementRef<typeof CommandPrimitive>,
@@ -13,8 +13,8 @@ const Command = React.forwardRef<
   <CommandPrimitive
     ref={ref}
     className={cn(
-      "flex h-full w-full flex-col overflow-hidden rounded-[var(--radius-md)] bg-[var(--color-surface)] text-[var(--color-fg)]",
-      className,
+      'flex h-full w-full flex-col overflow-hidden rounded-[var(--radius-md)] bg-[var(--color-surface)] text-[var(--color-fg)]',
+      className
     )}
     {...props}
   />
@@ -33,8 +33,8 @@ const CommandInput = React.forwardRef<
     <CommandPrimitive.Input
       ref={ref}
       className={cn(
-        "flex h-10 w-full rounded-[inherit] bg-transparent py-2 text-[13px] outline-none placeholder:text-[var(--color-fg-faint)] disabled:cursor-not-allowed disabled:opacity-50",
-        className,
+        'flex h-10 w-full rounded-[inherit] bg-transparent py-2 text-[13px] outline-none placeholder:text-[var(--color-fg-faint)] disabled:cursor-not-allowed disabled:opacity-50',
+        className
       )}
       {...props}
     />
@@ -48,10 +48,7 @@ const CommandList = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <CommandPrimitive.List
     ref={ref}
-    className={cn(
-      "max-h-[320px] overflow-y-auto overflow-x-hidden p-1",
-      className,
-    )}
+    className={cn('max-h-[320px] overflow-y-auto overflow-x-hidden p-1', className)}
     {...props}
   />
 ));
@@ -76,8 +73,8 @@ const CommandGroup = React.forwardRef<
   <CommandPrimitive.Group
     ref={ref}
     className={cn(
-      "overflow-hidden p-1 text-[var(--color-fg)] [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-[11px] [&_[cmdk-group-heading]]:font-semibold [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-wide [&_[cmdk-group-heading]]:text-[var(--color-fg-subtle)]",
-      className,
+      'overflow-hidden p-1 text-[var(--color-fg)] [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-[11px] [&_[cmdk-group-heading]]:font-semibold [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-wide [&_[cmdk-group-heading]]:text-[var(--color-fg-subtle)]',
+      className
     )}
     {...props}
   />
@@ -90,7 +87,7 @@ const CommandSeparator = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <CommandPrimitive.Separator
     ref={ref}
-    className={cn("-mx-1 h-px bg-[var(--color-border)]", className)}
+    className={cn('-mx-1 h-px bg-[var(--color-border)]', className)}
     {...props}
   />
 ));
@@ -103,8 +100,8 @@ const CommandItem = React.forwardRef<
   <CommandPrimitive.Item
     ref={ref}
     className={cn(
-      "relative flex cursor-default select-none items-center gap-2 rounded-[var(--radius-sm)] px-2 py-1.5 text-[13px] outline-none aria-selected:bg-[var(--color-surface-2)] aria-selected:text-[var(--color-fg)] data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50 [&>svg]:size-3.5 [&>svg]:text-[var(--color-fg-subtle)]",
-      className,
+      'relative flex cursor-default select-none items-center gap-2 rounded-[var(--radius-sm)] px-2 py-1.5 text-[13px] outline-none aria-selected:bg-[var(--color-surface-2)] aria-selected:text-[var(--color-fg)] data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50 [&>svg]:size-3.5 [&>svg]:text-[var(--color-fg-subtle)]',
+      className
     )}
     {...props}
   />

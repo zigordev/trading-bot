@@ -1,24 +1,24 @@
-"use client";
+'use client';
 
-import * as React from "react";
-import Link from "next/link";
-import { ArrowLeft, ChevronRight } from "lucide-react";
-import type { ColumnDef } from "@tanstack/react-table";
+import * as React from 'react';
+import Link from 'next/link';
+import { ArrowLeft, ChevronRight } from 'lucide-react';
+import type { ColumnDef } from '@tanstack/react-table';
 
-import { useTopbarSlot } from "@/components/layout/topbar-slot-context";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { ErrorState } from "@/components/shared/error-state";
-import { DataTable } from "@/components/data-table/data-table";
-import { DetailSheet } from "@/components/shared/detail-sheet";
-import { IdCell } from "@/components/shared/id-cell";
-import { SymbolAvatar } from "@/components/shared/symbol-avatar";
-import { useExecutionSummary } from "@/lib/hooks/use-execution-summary";
-import { formatTimestamp } from "@/lib/format";
-import { splitSymbol } from "@/lib/backtesting/derive-rows";
-import { useEnumState, useSelectedRow } from "@/lib/url-state";
-import type { ExecutionPromotion } from "@/lib/api";
-import { usePreferences } from "@/components/providers/preferences-provider";
+import { useTopbarSlot } from '@/components/layout/topbar-slot-context';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { ErrorState } from '@/components/shared/error-state';
+import { DataTable } from '@/components/data-table/data-table';
+import { DetailSheet } from '@/components/shared/detail-sheet';
+import { IdCell } from '@/components/shared/id-cell';
+import { SymbolAvatar } from '@/components/shared/symbol-avatar';
+import { useExecutionSummary } from '@/lib/hooks/use-execution-summary';
+import { formatTimestamp } from '@/lib/format';
+import { splitSymbol } from '@/lib/backtesting/derive-rows';
+import { useEnumState, useSelectedRow } from '@/lib/url-state';
+import type { ExecutionPromotion } from '@/lib/api';
+import { usePreferences } from '@/components/providers/preferences-provider';
 
 export default function PromotionsPage() {
   return (
@@ -32,31 +32,27 @@ function PromotionsPageInner() {
   const { t } = usePreferences();
   const { setTopbarSlot } = useTopbarSlot();
   const summary = useExecutionSummary();
-  const [filter, setFilter] = useEnumState(
-    "view",
-    ["active", "all"] as const,
-    "active",
-  );
+  const [filter, setFilter] = useEnumState('view', ['active', 'all'] as const, 'active');
   const [selectedId, setSelectedId] = useSelectedRow();
 
   React.useEffect(() => {
     setTopbarSlot({
-      title: t("execution.promotions.title"),
+      title: t('execution.promotions.title'),
       actions: (
         <Button asChild variant="outline" size="sm" className="gap-1.5">
           <Link href="/execution">
             <ArrowLeft className="size-3.5" />
-            {t("execution.promotions.back_to_trades")}
+            {t('execution.promotions.back_to_trades')}
           </Link>
         </Button>
       ),
       meta: (
         <div className="inline-flex rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] p-0.5">
-          <FilterButton active={filter === "active"} onClick={() => setFilter("active")}>
-            {t("execution.promotions.filter_active")}
+          <FilterButton active={filter === 'active'} onClick={() => setFilter('active')}>
+            {t('execution.promotions.filter_active')}
           </FilterButton>
-          <FilterButton active={filter === "all"} onClick={() => setFilter("all")}>
-            {t("execution.promotions.filter_all_history")}
+          <FilterButton active={filter === 'all'} onClick={() => setFilter('all')}>
+            {t('execution.promotions.filter_all_history')}
           </FilterButton>
         </div>
       ),
@@ -66,27 +62,24 @@ function PromotionsPageInner() {
 
   const promotions = React.useMemo(() => {
     const list = summary.data?.activePromotions ?? [];
-    if (filter === "active") {
-      return list.filter((promotion) => promotion.status === "active");
+    if (filter === 'active') {
+      return list.filter((promotion) => promotion.status === 'active');
     }
     return list;
   }, [summary.data, filter]);
 
   const selected = React.useMemo<ExecutionPromotion | null>(() => {
     if (!selectedId) return null;
-    return (
-      summary.data?.activePromotions.find((p) => p.promotionId === selectedId) ??
-      null
-    );
+    return summary.data?.activePromotions.find((p) => p.promotionId === selectedId) ?? null;
   }, [summary.data, selectedId]);
 
   const columns = React.useMemo<ColumnDef<ExecutionPromotion, unknown>[]>(
     () => [
       {
-        id: "symbol",
-        accessorKey: "symbolCode",
-        header: t("execution.promotions.pair_header"),
-        meta: { sticky: "left" },
+        id: 'symbol',
+        accessorKey: 'symbolCode',
+        header: t('execution.promotions.pair_header'),
+        meta: { sticky: 'left' },
         cell: ({ row }) => {
           const { base, quote } = splitSymbol(row.original.symbolCode);
           return (
@@ -105,9 +98,9 @@ function PromotionsPageInner() {
         },
       },
       {
-        id: "strategy",
-        accessorKey: "strategyName",
-        header: t("execution.promotions.strategy_header"),
+        id: 'strategy',
+        accessorKey: 'strategyName',
+        header: t('execution.promotions.strategy_header'),
         cell: ({ row }) => (
           <span className="text-[12px] text-[var(--color-fg-muted)]">
             {row.original.strategyName}
@@ -115,35 +108,33 @@ function PromotionsPageInner() {
         ),
       },
       {
-        id: "mode",
-        accessorKey: "mode",
-        header: t("execution.promotions.mode_header"),
+        id: 'mode',
+        accessorKey: 'mode',
+        header: t('execution.promotions.mode_header'),
         cell: ({ row }) => (
-          <Badge variant={row.original.mode === "live" ? "accent" : "outline"}>
-            {t(row.original.mode === "live" ? "status.trade_mode.live" : "status.trade_mode.paper")}
+          <Badge variant={row.original.mode === 'live' ? 'accent' : 'outline'}>
+            {t(row.original.mode === 'live' ? 'status.trade_mode.live' : 'status.trade_mode.paper')}
           </Badge>
         ),
       },
       {
-        id: "status",
-        accessorKey: "status",
-        header: t("execution.promotions.status_header"),
+        id: 'status',
+        accessorKey: 'status',
+        header: t('execution.promotions.status_header'),
         cell: ({ row }) => (
-          <Badge
-            variant={row.original.status === "active" ? "success" : "default"}
-          >
+          <Badge variant={row.original.status === 'active' ? 'success' : 'default'}>
             {t(
-              row.original.status === "active"
-                ? "execution.promotions.status_active"
-                : "execution.promotions.status_superseded",
+              row.original.status === 'active'
+                ? 'execution.promotions.status_active'
+                : 'execution.promotions.status_superseded'
             )}
           </Badge>
         ),
       },
       {
-        id: "executionSettings",
-        accessorKey: "executionSettingsName",
-        header: t("execution.promotions.execution_settings_header"),
+        id: 'executionSettings',
+        accessorKey: 'executionSettingsName',
+        header: t('execution.promotions.execution_settings_header'),
         meta: { hideOnNarrow: true },
         cell: ({ row }) => (
           <span className="text-[12px] text-[var(--color-fg-muted)]">
@@ -152,9 +143,9 @@ function PromotionsPageInner() {
         ),
       },
       {
-        id: "riskProfile",
-        accessorKey: "riskProfileName",
-        header: t("execution.promotions.risk_profile_header"),
+        id: 'riskProfile',
+        accessorKey: 'riskProfileName',
+        header: t('execution.promotions.risk_profile_header'),
         meta: { hideOnNarrow: true },
         cell: ({ row }) => (
           <span className="text-[12px] text-[var(--color-fg-muted)]">
@@ -163,30 +154,28 @@ function PromotionsPageInner() {
         ),
       },
       {
-        id: "selection",
-        accessorKey: "selectionValue",
-        header: t("execution.promotions.selection_header"),
-        meta: { align: "right" },
+        id: 'selection',
+        accessorKey: 'selectionValue',
+        header: t('execution.promotions.selection_header'),
+        meta: { align: 'right' },
         cell: ({ row }) => (
-          <span className="num text-[12px]">
-            {row.original.selectionValue.toFixed(2)}
-          </span>
+          <span className="num text-[12px]">{row.original.selectionValue.toFixed(2)}</span>
         ),
       },
       {
-        id: "promotedAt",
-        accessorKey: "promotedAt",
-        header: t("execution.promotions.promoted_header"),
+        id: 'promotedAt',
+        accessorKey: 'promotedAt',
+        header: t('execution.promotions.promoted_header'),
         cell: ({ row }) => (
           <span className="num text-[12px] text-[var(--color-fg-muted)]">
-            {formatTimestamp(row.original.promotedAt, { style: "compact" })}
+            {formatTimestamp(row.original.promotedAt, { style: 'compact' })}
           </span>
         ),
       },
       {
-        id: "actions",
-        header: "",
-        meta: { align: "right" },
+        id: 'actions',
+        header: '',
+        meta: { align: 'right' },
         enableSorting: false,
         cell: ({ row }) => (
           <Button
@@ -197,7 +186,7 @@ function PromotionsPageInner() {
               event.stopPropagation();
               setSelectedId(row.original.promotionId);
             }}
-            aria-label={t("execution.promotions.open_details_aria")}
+            aria-label={t('execution.promotions.open_details_aria')}
             className="text-[var(--color-fg-subtle)]"
           >
             <ChevronRight />
@@ -205,15 +194,15 @@ function PromotionsPageInner() {
         ),
       },
     ],
-    [setSelectedId, t],
+    [setSelectedId, t]
   );
 
   return (
     <>
       {summary.isError ? (
         <ErrorState
-          title={t("execution.promotions.error_title")}
-          description={t("execution.promotions.error_description")}
+          title={t('execution.promotions.error_title')}
+          description={t('execution.promotions.error_description')}
           onRetry={() => summary.refetch()}
         />
       ) : (
@@ -223,7 +212,7 @@ function PromotionsPageInner() {
           rowKey={(row) => row.promotionId}
           isLoading={summary.isLoading}
           onRowClick={(row) => setSelectedId(row.promotionId)}
-          empty={t("execution.promotions.empty_state")}
+          empty={t('execution.promotions.empty_state')}
           pageSize={25}
         />
       )}
@@ -231,7 +220,7 @@ function PromotionsPageInner() {
       <DetailSheet
         open={Boolean(selected)}
         onOpenChange={(open) => {
-          if (!open) setSelectedId("");
+          if (!open) setSelectedId('');
         }}
         size="md"
         title={
@@ -250,22 +239,20 @@ function PromotionsPageInner() {
               </div>
             </div>
           ) : (
-            t("execution.promotions.detail_title_fallback")
+            t('execution.promotions.detail_title_fallback')
           )
         }
         headerAccessory={
           selected ? (
             <div className="flex items-center gap-1.5">
-              <Badge variant={selected.mode === "live" ? "accent" : "outline"}>
-                {t(selected.mode === "live" ? "status.trade_mode.live" : "status.trade_mode.paper")}
+              <Badge variant={selected.mode === 'live' ? 'accent' : 'outline'}>
+                {t(selected.mode === 'live' ? 'status.trade_mode.live' : 'status.trade_mode.paper')}
               </Badge>
-              <Badge
-                variant={selected.status === "active" ? "success" : "default"}
-              >
+              <Badge variant={selected.status === 'active' ? 'success' : 'default'}>
                 {t(
-                  selected.status === "active"
-                    ? "execution.promotions.status_active"
-                    : "execution.promotions.status_superseded",
+                  selected.status === 'active'
+                    ? 'execution.promotions.status_active'
+                    : 'execution.promotions.status_superseded'
                 )}
               </Badge>
             </div>
@@ -275,28 +262,40 @@ function PromotionsPageInner() {
         {selected && (
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-3">
-              <Stat label={t("execution.promotions.selection_value")} value={selected.selectionValue.toFixed(2)} />
               <Stat
-                label={t("execution.promotions.promoted_at")}
-                value={formatTimestamp(selected.promotedAt, { style: "full" })}
+                label={t('execution.promotions.selection_value')}
+                value={selected.selectionValue.toFixed(2)}
               />
-              <Stat label={t("execution.promotions.execution_settings")} value={selected.executionSettingsName} />
-              <Stat label={t("execution.promotions.risk_profile")} value={selected.riskProfileName} />
+              <Stat
+                label={t('execution.promotions.promoted_at')}
+                value={formatTimestamp(selected.promotedAt, { style: 'full' })}
+              />
+              <Stat
+                label={t('execution.promotions.execution_settings')}
+                value={selected.executionSettingsName}
+              />
+              <Stat
+                label={t('execution.promotions.risk_profile')}
+                value={selected.riskProfileName}
+              />
             </div>
 
             <div className="space-y-2">
               <h3 className="text-[11px] font-medium uppercase tracking-wide text-[var(--color-fg-subtle)]">
-                {t("execution.promotions.identifiers_section")}
+                {t('execution.promotions.identifiers_section')}
               </h3>
               <dl className="space-y-2 text-[12px]">
-                <Identifier label={t("execution.promotions.promotion_id")} value={selected.promotionId} />
                 <Identifier
-                  label={t("execution.promotions.analysis_setting")}
+                  label={t('execution.promotions.promotion_id')}
+                  value={selected.promotionId}
+                />
+                <Identifier
+                  label={t('execution.promotions.analysis_setting')}
                   value={selected.analysisSettingId}
                 />
                 {selected.sourceBacktestId && (
                   <Identifier
-                    label={t("execution.promotions.source_backtest")}
+                    label={t('execution.promotions.source_backtest')}
                     value={selected.sourceBacktestId}
                   />
                 )}
@@ -324,8 +323,8 @@ function FilterButton({
       onClick={onClick}
       className={`rounded-[var(--radius-sm)] px-2.5 py-1 text-[12px] ${
         active
-          ? "bg-[var(--color-surface-2)] text-[var(--color-fg)]"
-          : "text-[var(--color-fg-subtle)]"
+          ? 'bg-[var(--color-surface-2)] text-[var(--color-fg)]'
+          : 'text-[var(--color-fg-subtle)]'
       }`}
     >
       {children}
@@ -336,9 +335,7 @@ function FilterButton({
 function Stat({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="flex flex-col gap-0.5 rounded-[var(--radius-md)] border border-[var(--color-border)] p-3">
-      <dt className="text-[11px] uppercase tracking-wide text-[var(--color-fg-subtle)]">
-        {label}
-      </dt>
+      <dt className="text-[11px] uppercase tracking-wide text-[var(--color-fg-subtle)]">{label}</dt>
       <dd className="text-[13px] font-medium text-[var(--color-fg)]">{value}</dd>
     </div>
   );

@@ -1,13 +1,13 @@
-import assert from "node:assert/strict";
-import test from "node:test";
+import assert from 'node:assert/strict';
+import test from 'node:test';
 
 import {
   createConfigChangeEventPublisher,
   type ConfigChangeEventEnvelope,
-} from "../src/infrastructure/config-change-events.js";
-import { createNoopLogger, testConfig } from "./helpers.ts";
+} from '../src/infrastructure/config-change-events.js';
+import { createNoopLogger, testConfig } from './helpers.ts';
 
-test("createConfigChangeEventPublisher publishes the expected envelope directly to Kafka", async () => {
+test('createConfigChangeEventPublisher publishes the expected envelope directly to Kafka', async () => {
   const sentPayloads: unknown[] = [];
   let connectCalls = 0;
   let disconnectCalls = 0;
@@ -43,10 +43,10 @@ test("createConfigChangeEventPublisher publishes the expected envelope directly 
 
   await publisher.start();
   await publisher.publish({
-    resourceType: "analysis_settings",
-    operation: "updated",
-    resourceId: "resource-1",
-    data: { id: "resource-1", enabled: false },
+    resourceType: 'analysis_settings',
+    operation: 'updated',
+    resourceId: 'resource-1',
+    data: { id: 'resource-1', enabled: false },
   });
   await publisher.stop();
 
@@ -63,15 +63,12 @@ test("createConfigChangeEventPublisher publishes the expected envelope directly 
   };
   assert.equal(sent.topic, testConfig.configChangeEventsTopic);
   assert.equal(sent.messages.length, 1);
-  assert.equal(
-    sent.messages[0]?.key,
-    "analysis_settings:resource-1",
-  );
+  assert.equal(sent.messages[0]?.key, 'analysis_settings:resource-1');
 
   const payload = JSON.parse(String(sent.messages[0]?.value)) as ConfigChangeEventEnvelope;
-  assert.equal(payload.eventType, "trading-bot.control-plane.config-changed.v1");
-  assert.equal(payload.resourceType, "analysis_settings");
-  assert.equal(payload.operation, "updated");
-  assert.equal(payload.resourceId, "resource-1");
-  assert.deepEqual(payload.data, { id: "resource-1", enabled: false });
+  assert.equal(payload.eventType, 'trading-bot.control-plane.config-changed.v1');
+  assert.equal(payload.resourceType, 'analysis_settings');
+  assert.equal(payload.operation, 'updated');
+  assert.equal(payload.resourceId, 'resource-1');
+  assert.deepEqual(payload.data, { id: 'resource-1', enabled: false });
 });

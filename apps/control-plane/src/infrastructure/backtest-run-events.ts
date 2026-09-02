@@ -1,33 +1,30 @@
-import type { FastifyBaseLogger } from "fastify";
-import { Kafka, logLevel, type Consumer, type Producer } from "kafkajs";
-import type { Pool } from "pg";
+import type { FastifyBaseLogger } from 'fastify';
+import { Kafka, logLevel, type Consumer, type Producer } from 'kafkajs';
+import type { Pool } from 'pg';
 
-import type { AppConfig } from "../config.js";
+import type { AppConfig } from '../config.js';
 import {
   completeBacktestJobFromProjectionEvent,
   promoteBacktestRunIfEligible,
   type BacktestRunProjectionInput,
   upsertBacktestRunProjection,
-} from "../features/ops.js";
-import { publishOpsEvent } from "./ops-events.js";
+} from '../features/ops.js';
+import { publishOpsEvent } from './ops-events.js';
 
 export type BacktestCompletedEventEnvelope = {
   eventId: string;
-  eventType: "trading-bot.research-backtesting.backtest-completed.v1";
+  eventType: 'trading-bot.research-backtesting.backtest-completed.v1';
   source: string;
   occurredAt: string;
-  data: Omit<BacktestRunProjectionInput, "sourceEventId" | "sourceOccurredAt"> & {
+  data: Omit<BacktestRunProjectionInput, 'sourceEventId' | 'sourceOccurredAt'> & {
     controlPlaneJobId?: string;
   };
 };
 
-type KafkaAdmin = Pick<
-  ReturnType<Kafka["admin"]>,
-  "connect" | "disconnect" | "createTopics"
->;
+type KafkaAdmin = Pick<ReturnType<Kafka['admin']>, 'connect' | 'disconnect' | 'createTopics'>;
 
 type ConsumerDependencies = {
-  consumer?: Pick<Consumer, "connect" | "disconnect" | "subscribe" | "run" | "stop">;
+  consumer?: Pick<Consumer, 'connect' | 'disconnect' | 'subscribe' | 'run' | 'stop'>;
   admin?: KafkaAdmin;
 };
 
@@ -39,12 +36,13 @@ export type BacktestRunProjectionConsumer = {
 
 type FetchJson = (url: string, init?: RequestInit) => Promise<unknown>;
 
-const eventType = "trading-bot.research-backtesting.backtest-completed.v1";
+const eventType = 'trading-bot.research-backtesting.backtest-completed.v1';
 
 const parseTimeslotAnalysis = (value: unknown) =>
   (Array.isArray(value) ? value : [])
-    .filter((item): item is Record<string, unknown> =>
-      typeof item === "object" && item !== null && !Array.isArray(item),
+    .filter(
+      (item): item is Record<string, unknown> =>
+        typeof item === 'object' && item !== null && !Array.isArray(item)
     )
     .map((item) => ({
       dayOfWeek: Number(item.dayOfWeek ?? 0),
@@ -67,7 +65,7 @@ const parseEnvelope = (value: string): BacktestCompletedEventEnvelope | null => 
   }
 
   const data =
-    typeof parsed.data === "object" && parsed.data !== null && !Array.isArray(parsed.data)
+    typeof parsed.data === 'object' && parsed.data !== null && !Array.isArray(parsed.data)
       ? (parsed.data as Record<string, unknown>)
       : null;
   if (!data) {
@@ -75,25 +73,25 @@ const parseEnvelope = (value: string): BacktestCompletedEventEnvelope | null => 
   }
 
   const requiredStrings = [
-    "backtestId",
-    "finishedAt",
-    "analysisSettingId",
-    "riskProfileName",
-    "symbol",
-    "timeframeCode",
-    "strategyName",
+    'backtestId',
+    'finishedAt',
+    'analysisSettingId',
+    'riskProfileName',
+    'symbol',
+    'timeframeCode',
+    'strategyName',
   ] as const;
 
   if (
-    typeof parsed.eventId !== "string" ||
-    typeof parsed.source !== "string" ||
-    typeof parsed.occurredAt !== "string"
+    typeof parsed.eventId !== 'string' ||
+    typeof parsed.source !== 'string' ||
+    typeof parsed.occurredAt !== 'string'
   ) {
     return null;
   }
 
   for (const key of requiredStrings) {
-    if (typeof data[key] !== "string") {
+    if (typeof data[key] !== 'string') {
       return null;
     }
   }
@@ -105,7 +103,7 @@ const parseEnvelope = (value: string): BacktestCompletedEventEnvelope | null => 
     occurredAt: parsed.occurredAt,
     data: {
       controlPlaneJobId:
-        typeof data.controlPlaneJobId === "string" ? data.controlPlaneJobId : undefined,
+        typeof data.controlPlaneJobId === 'string' ? data.controlPlaneJobId : undefined,
       backtestId: data.backtestId as string,
       finishedAt: data.finishedAt as string,
       backtestDurationMs: Number(data.backtestDurationMs ?? 0),
@@ -136,32 +134,34 @@ const parseEnvelope = (value: string): BacktestCompletedEventEnvelope | null => 
   };
 };
 
-const createFetchJson = (config: AppConfig): FetchJson => async (url, init) => {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), config.upstreamRequestTimeoutMs);
+const createFetchJson =
+  (config: AppConfig): FetchJson =>
+  async (url, init) => {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), config.upstreamRequestTimeoutMs);
 
-  try {
-    const response = await fetch(url, {
-      ...init,
-      signal: controller.signal,
-      headers: {
-        "content-type": "application/json",
-        ...(init?.headers ?? {}),
-      },
-    });
+    try {
+      const response = await fetch(url, {
+        ...init,
+        signal: controller.signal,
+        headers: {
+          'content-type': 'application/json',
+          ...(init?.headers ?? {}),
+        },
+      });
 
-    if (!response.ok) {
-      throw new Error(`request failed with status ${response.status}`);
+      if (!response.ok) {
+        throw new Error(`request failed with status ${response.status}`);
+      }
+
+      return response.json();
+    } finally {
+      clearTimeout(timeout);
     }
-
-    return response.json();
-  } finally {
-    clearTimeout(timeout);
-  }
-};
+  };
 
 const toProjectionInput = (
-  envelope: BacktestCompletedEventEnvelope,
+  envelope: BacktestCompletedEventEnvelope
 ): BacktestRunProjectionInput => {
   const { controlPlaneJobId: _controlPlaneJobId, ...data } = envelope.data;
   return {
@@ -175,12 +175,12 @@ export const createBacktestRunProjectionConsumer = (
   config: AppConfig,
   logger: FastifyBaseLogger,
   pool: Pool,
-  dependencies: ConsumerDependencies = {},
+  dependencies: ConsumerDependencies = {}
 ): BacktestRunProjectionConsumer => {
   const kafka = new Kafka({
     clientId: `${config.serviceName}-backtest-projection-consumer`,
     brokers: config.kafkaBootstrapServers
-      .split(",")
+      .split(',')
       .map((broker) => broker.trim())
       .filter(Boolean),
     logLevel: logLevel.NOTHING,
@@ -216,25 +216,25 @@ export const createBacktestRunProjectionConsumer = (
     const fetchJson = createFetchJson(config);
     try {
       const payload = await fetchJson(
-        `${config.researchBacktestingBaseUrl}/v1/backtests?limit=200`,
+        `${config.researchBacktestingBaseUrl}/v1/backtests?limit=200`
       );
       if (!Array.isArray(payload)) {
         return;
       }
 
       for (const item of payload) {
-        if (typeof item !== "object" || item === null) {
+        if (typeof item !== 'object' || item === null) {
           continue;
         }
         const run = item as Record<string, unknown>;
         if (
-          typeof run.backtestId !== "string" ||
-          typeof run.finishedAt !== "string" ||
-          typeof run.analysisSettingId !== "string" ||
-          typeof run.riskProfileName !== "string" ||
-          typeof run.symbol !== "string" ||
-          typeof run.timeframeCode !== "string" ||
-          typeof run.strategyName !== "string"
+          typeof run.backtestId !== 'string' ||
+          typeof run.finishedAt !== 'string' ||
+          typeof run.analysisSettingId !== 'string' ||
+          typeof run.riskProfileName !== 'string' ||
+          typeof run.symbol !== 'string' ||
+          typeof run.timeframeCode !== 'string' ||
+          typeof run.strategyName !== 'string'
         ) {
           continue;
         }
@@ -259,14 +259,16 @@ export const createBacktestRunProjectionConsumer = (
           takeProfitTradeCount: Number((run as Record<string, unknown>).takeProfitTradeCount ?? 0),
           reversalTradeCount: Number((run as Record<string, unknown>).reversalTradeCount ?? 0),
           windowEndTradeCount: Number((run as Record<string, unknown>).windowEndTradeCount ?? 0),
-          nonReversalTradeCount: Number((run as Record<string, unknown>).nonReversalTradeCount ?? 0),
+          nonReversalTradeCount: Number(
+            (run as Record<string, unknown>).nonReversalTradeCount ?? 0
+          ),
           totalPnlPercent: Number(run.totalPnlPercent ?? 0),
           equityCurvePnlPercent: Number(run.equityCurvePnlPercent ?? 0),
           maxDrawdownPercent: Number(run.maxDrawdownPercent ?? 0),
           reversalRatio: Number(run.reversalRatio ?? 0),
           score: Number(run.score ?? 0),
           timeslotAnalysis: parseTimeslotAnalysis(
-            (run as Record<string, unknown>).timeslotAnalysis,
+            (run as Record<string, unknown>).timeslotAnalysis
           ),
           sourceEventId: `bootstrap:${run.backtestId}`,
           sourceOccurredAt: run.finishedAt,
@@ -275,12 +277,12 @@ export const createBacktestRunProjectionConsumer = (
 
       logger.info(
         { hydratedRuns: payload.length },
-        "Backtest projection hydrated from research-backtesting",
+        'Backtest projection hydrated from research-backtesting'
       );
     } catch (error) {
       logger.warn(
         { err: error },
-        "Failed to hydrate backtest projection from research-backtesting",
+        'Failed to hydrate backtest projection from research-backtesting'
       );
     }
   };
@@ -305,7 +307,7 @@ export const createBacktestRunProjectionConsumer = (
       });
       await consumer.run({
         eachMessage: async ({ message }) => {
-          const rawValue = message.value?.toString("utf8");
+          const rawValue = message.value?.toString('utf8');
           if (!rawValue) {
             return;
           }
@@ -326,7 +328,7 @@ export const createBacktestRunProjectionConsumer = (
               });
             }
             publishOpsEvent({
-              type: "ops.backtests.updated",
+              type: 'ops.backtests.updated',
               payload: {
                 symbols: [envelope.data.symbol],
                 timeframeCodes: [envelope.data.timeframeCode],
@@ -334,7 +336,7 @@ export const createBacktestRunProjectionConsumer = (
             });
             if (promotionResult.changed) {
               publishOpsEvent({
-                type: "ops.execution.updated",
+                type: 'ops.execution.updated',
                 payload: {
                   symbols: [envelope.data.symbol],
                   timeframeCodes: [envelope.data.timeframeCode],
@@ -342,10 +344,7 @@ export const createBacktestRunProjectionConsumer = (
               });
             }
           } catch (error) {
-            logger.error(
-              { err: error, rawValue },
-              "Failed to project backtest-completed event",
-            );
+            logger.error({ err: error, rawValue }, 'Failed to project backtest-completed event');
           }
         },
       });
@@ -355,7 +354,7 @@ export const createBacktestRunProjectionConsumer = (
           groupId: config.backtestCompletedEventsConsumerGroupId,
           topic: config.backtestCompletedEventsTopic,
         },
-        "Backtest projection consumer started",
+        'Backtest projection consumer started'
       );
     },
     stop: async () => {

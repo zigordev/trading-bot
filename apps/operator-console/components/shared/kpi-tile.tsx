@@ -1,46 +1,46 @@
-"use client";
+'use client';
 
-import * as React from "react";
-import { Area, AreaChart, ResponsiveContainer } from "recharts";
+import * as React from 'react';
+import { Area, AreaChart, ResponsiveContainer } from 'recharts';
 
-import { cn } from "@/lib/utils";
-import { Skeleton } from "@/components/ui/skeleton";
+import { cn } from '@/lib/utils';
+import { Skeleton } from '@/components/ui/skeleton';
 
 interface KpiTileProps {
   label: React.ReactNode;
   value: React.ReactNode;
   delta?: {
     value: React.ReactNode;
-    direction?: "up" | "down" | "flat";
+    direction?: 'up' | 'down' | 'flat';
   };
   hint?: React.ReactNode;
   spark?: number[];
-  tone?: "default" | "accent" | "success" | "warning" | "danger";
+  tone?: 'default' | 'accent' | 'success' | 'warning' | 'danger';
   loading?: boolean;
   icon?: React.ReactNode;
   className?: string;
 }
 
 const TONE_COLOR = {
-  default: "var(--color-fg-muted)",
-  accent: "var(--color-accent)",
-  success: "var(--color-success)",
-  warning: "var(--color-warning)",
-  danger: "var(--color-danger)",
+  default: 'var(--color-fg-muted)',
+  accent: 'var(--color-accent)',
+  success: 'var(--color-success)',
+  warning: 'var(--color-warning)',
+  danger: 'var(--color-danger)',
 } as const;
 
 const TONE_BORDER = {
-  default: "border-[var(--color-border)]",
-  accent: "border-[var(--color-accent)]/30",
-  success: "border-[var(--color-success)]/30",
-  warning: "border-[var(--color-warning)]/30",
-  danger: "border-[var(--color-danger)]/30",
+  default: 'border-[var(--color-border)]',
+  accent: 'border-[var(--color-accent)]/30',
+  success: 'border-[var(--color-success)]/30',
+  warning: 'border-[var(--color-warning)]/30',
+  danger: 'border-[var(--color-danger)]/30',
 } as const;
 
 const directionColor = {
-  up: "text-[var(--color-success)]",
-  down: "text-[var(--color-danger)]",
-  flat: "text-[var(--color-fg-subtle)]",
+  up: 'text-[var(--color-success)]',
+  down: 'text-[var(--color-danger)]',
+  flat: 'text-[var(--color-fg-subtle)]',
 } as const;
 
 export function KpiTile({
@@ -49,7 +49,7 @@ export function KpiTile({
   delta,
   hint,
   spark,
-  tone = "default",
+  tone = 'default',
   loading,
   icon,
   className,
@@ -64,17 +64,15 @@ export function KpiTile({
   return (
     <div
       className={cn(
-        "relative overflow-hidden rounded-[var(--radius-lg)] border bg-[var(--color-surface)] p-4",
+        'relative overflow-hidden rounded-[var(--radius-lg)] border bg-[var(--color-surface)] p-4',
         TONE_BORDER[tone],
-        className,
+        className
       )}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 flex-col gap-2">
           <span className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-[var(--color-fg-subtle)]">
-            {icon && (
-              <span className="text-[var(--color-fg-subtle)]">{icon}</span>
-            )}
+            {icon && <span className="text-[var(--color-fg-subtle)]">{icon}</span>}
             {label}
           </span>
           {loading ? (
@@ -87,8 +85,8 @@ export function KpiTile({
               {delta && (
                 <span
                   className={cn(
-                    "num text-[12px] font-medium",
-                    directionColor[delta.direction ?? "flat"],
+                    'num text-[12px] font-medium',
+                    directionColor[delta.direction ?? 'flat']
                   )}
                 >
                   {delta.value}
@@ -96,9 +94,7 @@ export function KpiTile({
               )}
             </div>
           )}
-          {hint && (
-            <span className="text-[12px] text-[var(--color-fg-subtle)]">{hint}</span>
-          )}
+          {hint && <span className="text-[12px] text-[var(--color-fg-subtle)]">{hint}</span>}
         </div>
         {sparkData && sparkData.length > 1 && (
           <div className="h-12 w-24">

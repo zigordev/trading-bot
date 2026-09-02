@@ -1,10 +1,10 @@
-"use client";
+'use client';
 
-import * as React from "react";
-import { Check, ChevronDown, Loader2, X } from "lucide-react";
+import * as React from 'react';
+import { Check, ChevronDown, Loader2, X } from 'lucide-react';
 
-import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
+import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
 import {
   Command,
   CommandEmpty,
@@ -12,13 +12,9 @@ import {
   CommandInput,
   CommandItem,
   CommandList,
-} from "@/components/ui/command";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import { usePreferences } from "@/components/providers/preferences-provider";
+} from '@/components/ui/command';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { usePreferences } from '@/components/providers/preferences-provider';
 
 export interface ComboboxOption {
   value: string;
@@ -55,12 +51,11 @@ export function Combobox({
   className,
 }: ComboboxProps) {
   const { t } = usePreferences();
-  const placeholder = providedPlaceholder ?? t("ui.combobox.placeholder");
-  const searchPlaceholder =
-    providedSearchPlaceholder ?? t("ui.combobox.search_placeholder");
-  const emptyText = providedEmptyText ?? t("ui.combobox.empty_text");
+  const placeholder = providedPlaceholder ?? t('ui.combobox.placeholder');
+  const searchPlaceholder = providedSearchPlaceholder ?? t('ui.combobox.search_placeholder');
+  const emptyText = providedEmptyText ?? t('ui.combobox.empty_text');
   const [open, setOpen] = React.useState(false);
-  const [query, setQuery] = React.useState("");
+  const [query, setQuery] = React.useState('');
   const selected = options.find((o) => o.value === value) ?? null;
 
   React.useEffect(() => {
@@ -84,9 +79,9 @@ export function Combobox({
           aria-expanded={open}
           disabled={disabled}
           className={cn(
-            "h-9 w-full justify-between gap-2 px-3 text-[13px] font-normal",
-            !selected && "text-[var(--color-fg-subtle)]",
-            className,
+            'h-9 w-full justify-between gap-2 px-3 text-[13px] font-normal',
+            !selected && 'text-[var(--color-fg-subtle)]',
+            className
           )}
         >
           <div className="flex flex-1 items-center gap-2 overflow-hidden">
@@ -103,7 +98,7 @@ export function Combobox({
                 type="button"
                 onClick={clear}
                 className="rounded-sm p-0.5 text-[var(--color-fg-subtle)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-fg)]"
-                aria-label={t("ui.combobox.clear_selection")}
+                aria-label={t('ui.combobox.clear_selection')}
               >
                 <X className="size-3" />
               </button>
@@ -118,16 +113,12 @@ export function Combobox({
         sideOffset={4}
       >
         <Command shouldFilter={!onSearch}>
-          <CommandInput
-            placeholder={searchPlaceholder}
-            value={query}
-            onValueChange={setQuery}
-          />
+          <CommandInput placeholder={searchPlaceholder} value={query} onValueChange={setQuery} />
           <CommandList>
             {loading ? (
               <div className="flex items-center justify-center gap-2 py-6 text-[12px] text-[var(--color-fg-subtle)]">
                 <Loader2 className="size-3.5 animate-spin" />
-                {t("ui.combobox.loading")}
+                {t('ui.combobox.loading')}
               </div>
             ) : (
               <>
@@ -145,10 +136,8 @@ export function Combobox({
                     >
                       <Check
                         className={cn(
-                          "size-3.5",
-                          opt.value === value
-                            ? "text-[var(--color-accent)]"
-                            : "opacity-0",
+                          'size-3.5',
+                          opt.value === value ? 'text-[var(--color-accent)]' : 'opacity-0'
                         )}
                       />
                       {opt.icon && (

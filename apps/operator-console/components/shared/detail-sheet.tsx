@@ -1,33 +1,33 @@
-"use client";
+'use client';
 
-import * as React from "react";
+import * as React from 'react';
 
-import { cn } from "@/lib/utils";
+import { cn } from '@/lib/utils';
 import {
   Sheet,
   SheetContent,
   SheetDescription,
   SheetHeader,
   SheetTitle,
-} from "@/components/ui/sheet";
+} from '@/components/ui/sheet';
 
 interface DetailSheetProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   title: React.ReactNode;
   description?: React.ReactNode;
-  side?: "right" | "left";
-  size?: "sm" | "md" | "lg";
+  side?: 'right' | 'left';
+  size?: 'sm' | 'md' | 'lg';
   children: React.ReactNode;
   footer?: React.ReactNode;
   headerAccessory?: React.ReactNode;
   className?: string;
 }
 
-const SIZE_CLASS: Record<NonNullable<DetailSheetProps["size"]>, string> = {
-  sm: "sm:max-w-[480px]",
-  md: "sm:max-w-[640px]",
-  lg: "sm:max-w-[760px]",
+const SIZE_CLASS: Record<NonNullable<DetailSheetProps['size']>, string> = {
+  sm: 'sm:max-w-[480px]',
+  md: 'sm:max-w-[640px]',
+  lg: 'sm:max-w-[760px]',
 };
 
 export function DetailSheet({
@@ -35,8 +35,8 @@ export function DetailSheet({
   onOpenChange,
   title,
   description,
-  side = "right",
-  size = "md",
+  side = 'right',
+  size = 'md',
   children,
   footer,
   headerAccessory,
@@ -46,20 +46,14 @@ export function DetailSheet({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side={side}
-        className={cn(
-          "flex w-full flex-col gap-0 p-0",
-          SIZE_CLASS[size],
-          className,
-        )}
+        className={cn('flex w-full flex-col gap-0 p-0', SIZE_CLASS[size], className)}
       >
         <SheetHeader className="border-b border-[var(--color-border)] p-5">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0 flex-1">
               <SheetTitle className="text-[15px]">{title}</SheetTitle>
               {description && (
-                <SheetDescription className="mt-1 text-[12px]">
-                  {description}
-                </SheetDescription>
+                <SheetDescription className="mt-1 text-[12px]">{description}</SheetDescription>
               )}
             </div>
             {headerAccessory}
