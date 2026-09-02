@@ -44,10 +44,13 @@ export const registerHealthRoutes = (
             properties: {
               status: { type: 'string' },
               service: { type: 'string' },
-              checks: {
+              components: {
                 type: 'object',
                 properties: {
-                  database: { type: 'string' },
+                  db: {
+                    type: 'object',
+                    properties: { status: { type: 'string' } },
+                  },
                 },
               },
             },
@@ -57,10 +60,13 @@ export const registerHealthRoutes = (
             properties: {
               status: { type: 'string' },
               service: { type: 'string' },
-              checks: {
+              components: {
                 type: 'object',
                 properties: {
-                  database: { type: 'string' },
+                  db: {
+                    type: 'object',
+                    properties: { status: { type: 'string' } },
+                  },
                 },
               },
             },
@@ -76,8 +82,8 @@ export const registerHealthRoutes = (
         return {
           status: 'ok',
           service: config.serviceName,
-          checks: {
-            database: 'up',
+          components: {
+            db: { status: 'up' },
           },
         };
       } catch (error) {
@@ -86,10 +92,10 @@ export const registerHealthRoutes = (
         reply.code(503);
 
         return {
-          status: 'degraded',
+          status: 'error',
           service: config.serviceName,
-          checks: {
-            database: 'down',
+          components: {
+            db: { status: 'down' },
           },
         };
       }
