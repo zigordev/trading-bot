@@ -47,6 +47,9 @@ services:
       - ./clickhouse-log-to-console.xml:/etc/clickhouse-server/config.d/clickhouse-log-to-console.xml:ro
       # Relax query/HTTP limits for large backtest queries.
       - ./clickhouse-large-query-settings.xml:/etc/clickhouse-server/config.d/clickhouse-large-query-settings.xml:ro
+      # Bind IPv4: the default `::` fails in this container and leaves the
+      # server listening on nothing.
+      - ./clickhouse-listen.xml:/etc/clickhouse-server/config.d/clickhouse-listen.xml:ro
     healthcheck:
       test:
         [
