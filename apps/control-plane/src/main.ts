@@ -1,4 +1,5 @@
 import fastifyCors from '@fastify/cors';
+import fastifyHelmet from '@fastify/helmet';
 import fastifySwagger from '@fastify/swagger';
 import fastifySwaggerUi from '@fastify/swagger-ui';
 import fastifyWebsocket from '@fastify/websocket';
@@ -53,6 +54,11 @@ const hasStatusCode = (error: unknown): error is { statusCode: number } =>
   error !== null &&
   'statusCode' in error &&
   typeof error.statusCode === 'number';
+
+// Security headers. CSP is off for the same reason as the Nest APIs: this
+// serves JSON and Swagger UI, and a default policy blocks the inline scripts
+// Swagger needs. HSTS, nosniff, frame-options and referrer-policy still apply.
+await app.register(fastifyHelmet, { contentSecurityPolicy: false });
 
 await app.register(fastifySwagger, {
   openapi: {
