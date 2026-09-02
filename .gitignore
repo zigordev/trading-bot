@@ -17,6 +17,10 @@ pnpm-debug.log*
 # Build output
 dist/
 build/
+
+# TypeScript incremental build state — machine-local, and it churns on every
+# build. cv, gpool and kini all ignore it.
+*.tsbuildinfo
 coverage/
 target/
 .expo/

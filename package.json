@@ -8,23 +8,42 @@
     "apps/operator-console"
   ],
   "scripts": {
+    "audit": "npm audit --audit-level=high",
+    "build": "npm run build:control-plane && npm run build:operator-console && npm run build:execution && npm run build:market-data && npm run build:research-backtesting",
     "build:control-plane": "npm run build -w @trading-bot/control-plane",
-    "build:operator-console": "npm run build -w @trading-bot/operator-console",
-    "dev:operator-console": "npm run dev -w @trading-bot/operator-console",
-    "test:operator-console": "npm run test -w @trading-bot/operator-console",
     "build:execution": "cargo build -p trading-bot-execution",
     "build:market-data": "cargo build -p trading-bot-market-data",
+    "build:operator-console": "npm run build -w @trading-bot/operator-console",
     "build:research-backtesting": "cargo build -p trading-bot-research-backtesting",
-    "build": "npm run build:control-plane && npm run build:operator-console && npm run build:execution && npm run build:market-data && npm run build:research-backtesting",
+    "ci:quality:local": "npm run format:check && npm run lint:rust:fmt && npm run lint && npm run typecheck && npm run build && npm run test",
+    "dev:operator-console": "npm run dev -w @trading-bot/operator-console",
+    "format": "prettier --write \"apps/**/*.{ts,tsx}\" \".github/**/*.{yml,yaml}\" \"docker/**/*.{yml,yaml}\" \"docs/**/*.md\" \"*.{json,md}\"",
+    "format:check": "prettier --check \"apps/**/*.{ts,tsx}\" \".github/**/*.{yml,yaml}\" \"docker/**/*.{yml,yaml}\" \"docs/**/*.md\" \"*.{json,md}\"",
+    "lint": "cargo clippy --workspace --all-targets -- -D warnings",
+    "lint:rust:fmt": "cargo fmt --all --check",
+    "local:down": "./scripts/local-stack-down.sh",
+    "local:reset": "./scripts/local-stack-reset.sh",
+    "local:token": "bash ../platform-ops/scripts/provision-local-app-token.sh trading-bot",
+    "local:up": "./scripts/local-stack-up.sh",
+    "precommit:checks": "npm run test:secrets:gitleaks && npm run format:check && npm run lint:rust:fmt && npm run typecheck",
+    "prepare": "node ./scripts/prepare-husky.mjs",
+    "test": "npm run test:control-plane && npm run test:operator-console && npm run test:execution && npm run test:market-data && npm run test:research-backtesting",
     "test:control-plane": "npm run test -w @trading-bot/control-plane",
     "test:execution": "cargo test -p trading-bot-execution",
     "test:market-data": "cargo test -p trading-bot-market-data",
+    "test:operator-console": "npm run test -w @trading-bot/operator-console",
     "test:research-backtesting": "cargo test -p trading-bot-research-backtesting",
-    "test": "npm run test:control-plane && npm run test:operator-console && npm run test:execution && npm run test:market-data && npm run test:research-backtesting",
-    "typecheck": "npm run typecheck -w @trading-bot/control-plane && npm run typecheck -w @trading-bot/operator-console",
-    "local:up": "./scripts/local-stack-up.sh",
-    "local:down": "./scripts/local-stack-down.sh",
-    "local:reset": "./scripts/local-stack-reset.sh",
-    "local:token": "bash ../platform-ops/scripts/provision-local-app-token.sh trading-bot"
+    "test:secrets:gitleaks": "./scripts/precommit-gitleaks.sh",
+    "typecheck": "npm run typecheck -w @trading-bot/control-plane && npm run typecheck -w @trading-bot/operator-console"
+  },
+  "engines": {
+    "node": ">=20.19.0 <21",
+    "npm": ">=10"
+  },
+  "devDependencies": {
+    "@commitlint/cli": "^20.4.2",
+    "@commitlint/config-conventional": "^20.4.2",
+    "husky": "^9.1.7",
+    "prettier": "^3.6.2"
   }
 }

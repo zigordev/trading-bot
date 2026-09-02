@@ -1,0 +1,11 @@
+# Build output and generated code. Prettier honours this file, not .gitignore,
+# so anything generated has to be listed here or `format:check` starts failing
+# on files nobody wrote.
+node_modules/
+.next/
+dist/
+build/
+target/
+coverage/
+*.tsbuildinfo
+package-lock.json

@@ -1,0 +1,45 @@
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  HUSKY: '0'
+
+jobs:
+  analyze:
+    name: Analyze
+    # CodeQL requires GitHub Advanced Security on a private repository. This
+    # guard keeps the workflow green rather than failing every run — but it also
+    # means the job does not analyse anything until the repo is public or GHAS
+    # is enabled. Every repo in this estate is currently private.
+    if: ${{ !github.event.repository.private }}
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        language: ['javascript-typescript']
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - uses: github/codeql-action/init@v4
+        with:
+          languages: ${{ matrix.language }}
+
+      - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
+        with:
+          node-version: 20.19.0
+          cache: npm
+
+      - run: npm install
+
+      - uses: github/codeql-action/analyze@v4
