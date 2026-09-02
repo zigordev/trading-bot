@@ -1,11 +1,11 @@
-"use client";
+'use client';
 
-import * as React from "react";
-import { Columns3, Search } from "lucide-react";
+import * as React from 'react';
+import { Columns3, Search } from 'lucide-react';
 
-import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -13,8 +13,8 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { usePreferences } from "@/components/providers/preferences-provider";
+} from '@/components/ui/dropdown-menu';
+import { usePreferences } from '@/components/providers/preferences-provider';
 
 interface ColumnDescriptor {
   id: string;
@@ -46,18 +46,13 @@ export function DataTableToolbar({
 }: DataTableToolbarProps) {
   const { t } = usePreferences();
   return (
-    <div
-      className={cn(
-        "flex flex-wrap items-center gap-2",
-        className,
-      )}
-    >
+    <div className={cn('flex flex-wrap items-center gap-2', className)}>
       {start}
       {search && (
         <div className="relative min-w-[200px] flex-1">
           <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-[var(--color-fg-subtle)]" />
           <Input
-            placeholder={search.placeholder ?? t("data_table.search_placeholder")}
+            placeholder={search.placeholder ?? t('data_table.search_placeholder')}
             value={search.value}
             onChange={(event) => search.onChange(event.target.value)}
             className="h-9 pl-8"
@@ -68,18 +63,13 @@ export function DataTableToolbar({
         {columns && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="h-8 gap-1.5"
-              >
+              <Button type="button" variant="outline" size="sm" className="h-8 gap-1.5">
                 <Columns3 className="size-3.5" />
-                {t("data_table.columns")}
+                {t('data_table.columns')}
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-[200px]">
-              <DropdownMenuLabel>{t("data_table.toggle_columns")}</DropdownMenuLabel>
+              <DropdownMenuLabel>{t('data_table.toggle_columns')}</DropdownMenuLabel>
               <DropdownMenuSeparator />
               {columns.items.map((col) => (
                 <DropdownMenuCheckboxItem

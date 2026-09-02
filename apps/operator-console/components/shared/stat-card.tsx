@@ -1,7 +1,7 @@
-import * as React from "react";
+import * as React from 'react';
 
-import { cn } from "@/lib/utils";
-import { Skeleton } from "@/components/ui/skeleton";
+import { cn } from '@/lib/utils';
+import { Skeleton } from '@/components/ui/skeleton';
 
 interface StatCardProps {
   label: React.ReactNode;
@@ -9,7 +9,7 @@ interface StatCardProps {
   hint?: React.ReactNode;
   delta?: {
     value: React.ReactNode;
-    direction?: "up" | "down" | "flat";
+    direction?: 'up' | 'down' | 'flat';
   };
   icon?: React.ReactNode;
   loading?: boolean;
@@ -17,25 +17,17 @@ interface StatCardProps {
 }
 
 const directionColor = {
-  up: "text-[var(--color-success)]",
-  down: "text-[var(--color-danger)]",
-  flat: "text-[var(--color-fg-subtle)]",
+  up: 'text-[var(--color-success)]',
+  down: 'text-[var(--color-danger)]',
+  flat: 'text-[var(--color-fg-subtle)]',
 } as const;
 
-export function StatCard({
-  label,
-  value,
-  hint,
-  delta,
-  icon,
-  loading,
-  className,
-}: StatCardProps) {
+export function StatCard({ label, value, hint, delta, icon, loading, className }: StatCardProps) {
   return (
     <div
       className={cn(
-        "flex flex-col gap-2 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4",
-        className,
+        'flex flex-col gap-2 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4',
+        className
       )}
     >
       <div className="flex items-center justify-between gap-2 text-[11px] font-medium uppercase tracking-wide text-[var(--color-fg-subtle)]">
@@ -52,8 +44,8 @@ export function StatCard({
           {delta && (
             <span
               className={cn(
-                "num text-[12px] font-medium",
-                directionColor[delta.direction ?? "flat"],
+                'num text-[12px] font-medium',
+                directionColor[delta.direction ?? 'flat']
               )}
             >
               {delta.value}
@@ -61,9 +53,7 @@ export function StatCard({
           )}
         </div>
       )}
-      {hint && (
-        <span className="text-[12px] text-[var(--color-fg-subtle)]">{hint}</span>
-      )}
+      {hint && <span className="text-[12px] text-[var(--color-fg-subtle)]">{hint}</span>}
     </div>
   );
 }

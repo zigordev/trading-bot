@@ -1,6 +1,6 @@
-"use client";
+'use client';
 
-import * as React from "react";
+import * as React from 'react';
 import {
   Area,
   AreaChart,
@@ -9,13 +9,13 @@ import {
   Tooltip as RechartsTooltip,
   XAxis,
   YAxis,
-} from "recharts";
+} from 'recharts';
 
-import { useExecutionSummary } from "@/lib/hooks/use-execution-summary";
-import { formatTimestamp, formatUsd } from "@/lib/format";
-import { SectionCard } from "@/components/layout/section-card";
-import { Skeleton } from "@/components/ui/skeleton";
-import { usePreferences } from "@/components/providers/preferences-provider";
+import { useExecutionSummary } from '@/lib/hooks/use-execution-summary';
+import { formatTimestamp, formatUsd } from '@/lib/format';
+import { SectionCard } from '@/components/layout/section-card';
+import { Skeleton } from '@/components/ui/skeleton';
+import { usePreferences } from '@/components/providers/preferences-provider';
 
 export function EquityCurve() {
   const { t } = usePreferences();
@@ -26,8 +26,7 @@ export function EquityCurve() {
     if (trades.length === 0) return [];
     const sorted = [...trades].sort(
       (a, b) =>
-        new Date(a.closedAt ?? a.openedAt).getTime() -
-        new Date(b.closedAt ?? b.openedAt).getTime(),
+        new Date(a.closedAt ?? a.openedAt).getTime() - new Date(b.closedAt ?? b.openedAt).getTime()
     );
     let running = 0;
     return sorted.map((trade) => {
@@ -41,17 +40,15 @@ export function EquityCurve() {
 
   return (
     <SectionCard
-      title={t("overview.equity_curve.title")}
-      description={t("overview.equity_curve.description")}
+      title={t('overview.equity_curve.title')}
+      description={t('overview.equity_curve.description')}
       padding="default"
     >
       {isLoading ? (
         <Skeleton className="h-56 w-full" />
       ) : isError || points.length === 0 ? (
         <div className="flex h-56 items-center justify-center text-[12px] text-[var(--color-fg-subtle)]">
-          {isError
-            ? t("overview.equity_curve.failed_to_load")
-            : t("overview.equity_curve.empty")}
+          {isError ? t('overview.equity_curve.failed_to_load') : t('overview.equity_curve.empty')}
         </div>
       ) : (
         <div className="h-56 w-full">
@@ -67,8 +64,8 @@ export function EquityCurve() {
               <XAxis
                 dataKey="t"
                 type="number"
-                domain={["dataMin", "dataMax"]}
-                tickFormatter={(value) => formatTimestamp(value, { style: "compact" })}
+                domain={['dataMin', 'dataMax']}
+                tickFormatter={(value) => formatTimestamp(value, { style: 'compact' })}
                 stroke="var(--color-fg-subtle)"
                 fontSize={11}
                 tickLine={false}
@@ -84,17 +81,15 @@ export function EquityCurve() {
               />
               <RechartsTooltip
                 contentStyle={{
-                  background: "var(--color-surface)",
-                  border: "1px solid var(--color-border)",
-                  borderRadius: "var(--radius-md)",
+                  background: 'var(--color-surface)',
+                  border: '1px solid var(--color-border)',
+                  borderRadius: 'var(--radius-md)',
                   fontSize: 12,
                 }}
-                labelFormatter={(value) =>
-                  formatTimestamp(value as number, { style: "full" })
-                }
+                labelFormatter={(value) => formatTimestamp(value as number, { style: 'full' })}
                 formatter={(value: number) => [
                   formatUsd(value, { signed: true }),
-                  t("overview.equity_curve.tooltip_label"),
+                  t('overview.equity_curve.tooltip_label'),
                 ]}
               />
               <Area

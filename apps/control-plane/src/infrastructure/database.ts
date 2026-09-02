@@ -1,6 +1,6 @@
-import { Pool } from "pg";
+import { Pool } from 'pg';
 
-import type { AppConfig } from "../config.js";
+import type { AppConfig } from '../config.js';
 
 export const createPool = (config: AppConfig): Pool =>
   new Pool({
@@ -13,5 +13,5 @@ export const createPool = (config: AppConfig): Pool =>
   });
 
 export const checkDatabaseReadiness = async (pool: Pool): Promise<void> => {
-  await pool.query("SELECT 1");
+  await pool.query('SELECT 1');
 };

@@ -1,66 +1,66 @@
-import type { FastifyInstance } from "fastify";
-import type { Gauge } from "prom-client";
-import type { Pool } from "pg";
+import type { FastifyInstance } from 'fastify';
+import type { Gauge } from 'prom-client';
+import type { Pool } from 'pg';
 
-import type { AppConfig } from "../config.js";
-import { checkDatabaseReadiness } from "../infrastructure/database.js";
+import type { AppConfig } from '../config.js';
+import { checkDatabaseReadiness } from '../infrastructure/database.js';
 
 export const registerHealthRoutes = (
   app: FastifyInstance,
   pool: Pool,
   databaseReadinessGauge: Gauge<string>,
-  config: AppConfig,
+  config: AppConfig
 ): void => {
   app.get(
-    "/health/liveness",
+    '/health/liveness',
     {
       schema: {
-        summary: "Liveness probe",
+        summary: 'Liveness probe',
         response: {
           200: {
-            type: "object",
+            type: 'object',
             properties: {
-              status: { type: "string" },
-              service: { type: "string" },
+              status: { type: 'string' },
+              service: { type: 'string' },
             },
           },
         },
       },
     },
     async () => ({
-      status: "ok",
+      status: 'ok',
       service: config.serviceName,
-    }),
+    })
   );
 
   app.get(
-    "/health/readiness",
+    '/health/readiness',
     {
       schema: {
-        summary: "Readiness probe",
+        summary: 'Readiness probe',
         response: {
           200: {
-            type: "object",
+            type: 'object',
             properties: {
-              status: { type: "string" },
-              service: { type: "string" },
+              status: { type: 'string' },
+              service: { type: 'string' },
               checks: {
-                type: "object",
+                type: 'object',
                 properties: {
-                  database: { type: "string" },
+                  database: { type: 'string' },
                 },
               },
             },
           },
           503: {
-            type: "object",
+            type: 'object',
             properties: {
-              status: { type: "string" },
-              service: { type: "string" },
+              status: { type: 'string' },
+              service: { type: 'string' },
               checks: {
-                type: "object",
+                type: 'object',
                 properties: {
-                  database: { type: "string" },
+                  database: { type: 'string' },
                 },
               },
             },
@@ -74,25 +74,25 @@ export const registerHealthRoutes = (
         databaseReadinessGauge.set(1);
 
         return {
-          status: "ok",
+          status: 'ok',
           service: config.serviceName,
           checks: {
-            database: "up",
+            database: 'up',
           },
         };
       } catch (error) {
         databaseReadinessGauge.set(0);
-        app.log.error(error, "Database readiness check failed");
+        app.log.error(error, 'Database readiness check failed');
         reply.code(503);
 
         return {
-          status: "degraded",
+          status: 'degraded',
           service: config.serviceName,
           checks: {
-            database: "down",
+            database: 'down',
           },
         };
       }
-    },
+    }
   );
 };

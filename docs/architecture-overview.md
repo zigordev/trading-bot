@@ -116,7 +116,7 @@ through market-data and research-backtesting:
 - on-demand `research_settings` lookup from the control-plane
 - legacy-compatible timeframe-specific replay-window derivation
 - shared `emaCross` strategy logic reused offline from the shared strategy library crate
- - quote-aware stop-loss, take-profit, reversal, fee, and slippage simulation with aggregate-trade fallback
+- quote-aware stop-loss, take-profit, reversal, fee, and slippage simulation with aggregate-trade fallback
 - local PostgreSQL
 - local Alloy sidecar
 

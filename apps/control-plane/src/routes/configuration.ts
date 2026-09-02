@@ -1,4 +1,4 @@
-import type { FastifyInstance, FastifyReply } from "fastify";
+import type { FastifyInstance, FastifyReply } from 'fastify';
 
 import {
   analysisSettingsBodySchema,
@@ -15,39 +15,33 @@ import {
   strategyRecordSchema,
   timeframeBodySchema,
   timeframeRecordSchema,
-} from "../features/config-resources.js";
-import type { AppConfig } from "../config.js";
-import { HttpError } from "../http-error.js";
-import { publishOpsEvent } from "../infrastructure/ops-events.js";
+} from '../features/config-resources.js';
+import type { AppConfig } from '../config.js';
+import { HttpError } from '../http-error.js';
+import { publishOpsEvent } from '../infrastructure/ops-events.js';
 
 const idParamsSchema = {
-  type: "object",
+  type: 'object',
   properties: {
-    id: { type: "string", minLength: 1 },
+    id: { type: 'string', minLength: 1 },
   },
-  required: ["id"],
+  required: ['id'],
 } as const;
 
 const errorSchema = {
-  type: "object",
+  type: 'object',
   properties: {
-    statusCode: { type: "integer" },
-    message: { type: "string" },
+    statusCode: { type: 'integer' },
+    message: { type: 'string' },
   },
-  required: ["statusCode", "message"],
+  required: ['statusCode', 'message'],
 } as const;
 
 const isUniqueViolation = (error: unknown): boolean =>
-  typeof error === "object" &&
-  error !== null &&
-  "code" in error &&
-  error.code === "23505";
+  typeof error === 'object' && error !== null && 'code' in error && error.code === '23505';
 
 const isForeignKeyViolation = (error: unknown): boolean =>
-  typeof error === "object" &&
-  error !== null &&
-  "code" in error &&
-  error.code === "23503";
+  typeof error === 'object' && error !== null && 'code' in error && error.code === '23503';
 
 const assertFound = <T>(entity: T | null, entityName: string, id: string): T => {
   if (!entity) {
@@ -70,7 +64,7 @@ type CrudRouteOptions<TInput, TRecord> = {
 
 const registerCrudRoutes = <TInput, TRecord>(
   app: FastifyInstance,
-  options: CrudRouteOptions<TInput, TRecord>,
+  options: CrudRouteOptions<TInput, TRecord>
 ): void => {
   const { bodySchema, entityName, path, recordSchema, store, tag } = options;
 
@@ -80,7 +74,7 @@ const registerCrudRoutes = <TInput, TRecord>(
       summary: `List ${tag}`,
       response: {
         200: {
-          type: "array",
+          type: 'array',
           items: recordSchema,
         },
       },
@@ -102,8 +96,12 @@ const registerCrudRoutes = <TInput, TRecord>(
       try {
         const created = await store.create(request.body as TInput);
         publishOpsEvent({
-          type: "config.resource.updated",
-          payload: { resource: tag as never, operation: "created", id: String((created as { id?: unknown }).id ?? "") || undefined },
+          type: 'config.resource.updated',
+          payload: {
+            resource: tag as never,
+            operation: 'created',
+            id: String((created as { id?: unknown }).id ?? '') || undefined,
+          },
         });
         reply.code(201);
         return created;
@@ -112,15 +110,15 @@ const registerCrudRoutes = <TInput, TRecord>(
           throw new HttpError(
             409,
             `${entityName} with ${store.uniqueFieldName} "${store.getUniqueFieldValue(
-              request.body as TInput,
-            )}" already exists`,
+              request.body as TInput
+            )}" already exists`
           );
         }
 
         if (isForeignKeyViolation(error)) {
           throw new HttpError(
             409,
-            `${entityName} references configuration entries that do not exist`,
+            `${entityName} references configuration entries that do not exist`
           );
         }
 
@@ -148,8 +146,8 @@ const registerCrudRoutes = <TInput, TRecord>(
         const updated = await store.update(id, request.body as TInput);
         if (updated) {
           publishOpsEvent({
-            type: "config.resource.updated",
-            payload: { resource: tag as never, operation: "updated", id },
+            type: 'config.resource.updated',
+            payload: { resource: tag as never, operation: 'updated', id },
           });
         }
         return assertFound(updated, entityName, id);
@@ -158,15 +156,15 @@ const registerCrudRoutes = <TInput, TRecord>(
           throw new HttpError(
             409,
             `${entityName} with ${store.uniqueFieldName} "${store.getUniqueFieldValue(
-              request.body as TInput,
-            )}" already exists`,
+              request.body as TInput
+            )}" already exists`
           );
         }
 
         if (isForeignKeyViolation(error)) {
           throw new HttpError(
             409,
-            `${entityName} references configuration entries that do not exist`,
+            `${entityName} references configuration entries that do not exist`
           );
         }
 
@@ -182,7 +180,7 @@ const registerCrudRoutes = <TInput, TRecord>(
       params: idParamsSchema,
       response: {
         204: {
-          type: "null",
+          type: 'null',
         },
         404: errorSchema,
         409: errorSchema,
@@ -200,7 +198,7 @@ const registerCrudRoutes = <TInput, TRecord>(
         if (isForeignKeyViolation(error)) {
           throw new HttpError(
             409,
-            `${entityName} ${id} is still referenced by another configuration resource`,
+            `${entityName} ${id} is still referenced by another configuration resource`
           );
         }
 
@@ -208,8 +206,8 @@ const registerCrudRoutes = <TInput, TRecord>(
       }
 
       publishOpsEvent({
-        type: "config.resource.updated",
-        payload: { resource: tag as never, operation: "deleted", id },
+        type: 'config.resource.updated',
+        payload: { resource: tag as never, operation: 'deleted', id },
       });
       return sendNoContent(reply);
     },
@@ -219,41 +217,38 @@ const registerCrudRoutes = <TInput, TRecord>(
 export const registerConfigurationRoutes = (
   app: FastifyInstance,
   config: AppConfig,
-  stores: ConfigStores,
+  stores: ConfigStores
 ): void => {
-  app.get("/v1/reference/binance-symbols", {
+  app.get('/v1/reference/binance-symbols', {
     schema: {
-      tags: ["symbols"],
-      summary: "Search Binance spot symbols for symbol creation",
+      tags: ['symbols'],
+      summary: 'Search Binance spot symbols for symbol creation',
       querystring: {
-        type: "object",
+        type: 'object',
         properties: {
-          q: { type: "string" },
+          q: { type: 'string' },
         },
       },
       response: {
         200: {
-          type: "array",
+          type: 'array',
           items: {
-            type: "object",
+            type: 'object',
             properties: {
-              symbol: { type: "string" },
-              baseAsset: { type: "string" },
-              destinationAsset: { type: "string" },
+              symbol: { type: 'string' },
+              baseAsset: { type: 'string' },
+              destinationAsset: { type: 'string' },
             },
-            required: ["symbol", "baseAsset", "destinationAsset"],
+            required: ['symbol', 'baseAsset', 'destinationAsset'],
           },
         },
       },
     },
     handler: async (request) => {
       const { q } = request.query as { q?: string };
-      const query = q?.trim().toUpperCase() ?? "";
+      const query = q?.trim().toUpperCase() ?? '';
       const controller = new AbortController();
-      const timeout = setTimeout(
-        () => controller.abort(),
-        config.upstreamRequestTimeoutMs,
-      );
+      const timeout = setTimeout(() => controller.abort(), config.upstreamRequestTimeoutMs);
 
       try {
         const response = await fetch(
@@ -261,15 +256,15 @@ export const registerConfigurationRoutes = (
           {
             signal: controller.signal,
             headers: {
-              "content-type": "application/json",
+              'content-type': 'application/json',
             },
-          },
+          }
         );
 
         if (!response.ok) {
           throw new HttpError(
             502,
-            `Binance symbol reference failed with status ${response.status}`,
+            `Binance symbol reference failed with status ${response.status}`
           );
         }
 
@@ -284,21 +279,25 @@ export const registerConfigurationRoutes = (
         };
 
         return (payload.symbols ?? [])
-          .filter((item) => item.status === "TRADING")
+          .filter((item) => item.status === 'TRADING')
           .filter((item) => item.isSpotTradingAllowed !== false)
-          .filter((item) => typeof item.symbol === "string")
+          .filter((item) => typeof item.symbol === 'string')
           .filter((item) =>
             query
               ? item.symbol!.includes(query) ||
-                String(item.baseAsset ?? "").toUpperCase().includes(query) ||
-                String(item.quoteAsset ?? "").toUpperCase().includes(query)
-              : true,
+                String(item.baseAsset ?? '')
+                  .toUpperCase()
+                  .includes(query) ||
+                String(item.quoteAsset ?? '')
+                  .toUpperCase()
+                  .includes(query)
+              : true
           )
           .slice(0, 100)
           .map((item) => ({
             symbol: String(item.symbol),
-            baseAsset: String(item.baseAsset ?? ""),
-            destinationAsset: String(item.quoteAsset ?? ""),
+            baseAsset: String(item.baseAsset ?? ''),
+            destinationAsset: String(item.quoteAsset ?? ''),
           }));
       } catch (error) {
         if (error instanceof HttpError) {
@@ -307,7 +306,7 @@ export const registerConfigurationRoutes = (
 
         throw new HttpError(
           502,
-          error instanceof Error ? error.message : "Binance symbol reference failed",
+          error instanceof Error ? error.message : 'Binance symbol reference failed'
         );
       } finally {
         clearTimeout(timeout);
@@ -316,54 +315,54 @@ export const registerConfigurationRoutes = (
   });
 
   registerCrudRoutes(app, {
-    path: "/v1/symbols",
-    tag: "symbols",
-    entityName: "symbol",
+    path: '/v1/symbols',
+    tag: 'symbols',
+    entityName: 'symbol',
     bodySchema: symbolBodySchema,
     recordSchema: symbolRecordSchema,
     store: stores.symbols,
   });
 
   registerCrudRoutes(app, {
-    path: "/v1/timeframes",
-    tag: "timeframes",
-    entityName: "timeframe",
+    path: '/v1/timeframes',
+    tag: 'timeframes',
+    entityName: 'timeframe',
     bodySchema: timeframeBodySchema,
     recordSchema: timeframeRecordSchema,
     store: stores.timeframes,
   });
 
   registerCrudRoutes(app, {
-    path: "/v1/strategies",
-    tag: "strategies",
-    entityName: "strategy",
+    path: '/v1/strategies',
+    tag: 'strategies',
+    entityName: 'strategy',
     bodySchema: strategyBodySchema,
     recordSchema: strategyRecordSchema,
     store: stores.strategies,
   });
 
   registerCrudRoutes(app, {
-    path: "/v1/risk-profiles",
-    tag: "risk-profiles",
-    entityName: "risk profile",
+    path: '/v1/risk-profiles',
+    tag: 'risk-profiles',
+    entityName: 'risk profile',
     bodySchema: riskProfileBodySchema,
     recordSchema: riskProfileRecordSchema,
     store: stores.riskProfiles,
   });
 
   registerCrudRoutes(app, {
-    path: "/v1/analysis-settings",
-    tag: "analysis-settings",
-    entityName: "analysis setting",
+    path: '/v1/analysis-settings',
+    tag: 'analysis-settings',
+    entityName: 'analysis setting',
     bodySchema: analysisSettingsBodySchema,
     recordSchema: analysisSettingsRecordSchema,
     store: stores.analysisSettings,
   });
 
   registerCrudRoutes(app, {
-    path: "/v1/execution-settings",
-    tag: "execution-settings",
-    entityName: "execution setting",
+    path: '/v1/execution-settings',
+    tag: 'execution-settings',
+    entityName: 'execution setting',
     bodySchema: executionSettingsBodySchema,
     recordSchema: executionSettingsRecordSchema,
     store: stores.executionSettings,

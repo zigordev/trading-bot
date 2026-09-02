@@ -1,37 +1,29 @@
-"use client";
+'use client';
 
-import * as React from "react";
-import {
-  useForm,
-  Controller,
-  FormProvider,
-  useFormContext,
-} from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { toast } from "sonner";
+import * as React from 'react';
+import { useForm, Controller, FormProvider, useFormContext } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { toast } from 'sonner';
 
-import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { Switch } from "@/components/ui/switch";
-import { Label } from "@/components/ui/label";
+import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
-import { DetailSheet } from "@/components/shared/detail-sheet";
-import { AssetLabel } from "@/components/shared/symbol-avatar";
-import {
-  type ConfigField,
-  type ConfigResourceDefinition,
-} from "@/lib/configuration/schemas";
-import { useSaveConfigResource } from "@/lib/hooks/use-config-resource";
-import { usePreferences } from "@/components/providers/preferences-provider";
-import { BinanceSymbolCombobox } from "./binance-symbol-combobox";
+} from '@/components/ui/select';
+import { DetailSheet } from '@/components/shared/detail-sheet';
+import { AssetLabel } from '@/components/shared/symbol-avatar';
+import { type ConfigField, type ConfigResourceDefinition } from '@/lib/configuration/schemas';
+import { useSaveConfigResource } from '@/lib/hooks/use-config-resource';
+import { usePreferences } from '@/components/providers/preferences-provider';
+import { BinanceSymbolCombobox } from './binance-symbol-combobox';
 
 interface ConfigFormSheetProps {
   resource: ConfigResourceDefinition;
@@ -40,22 +32,18 @@ interface ConfigFormSheetProps {
   initial: Record<string, unknown> | null;
 }
 
-export function ConfigFormSheet({
-  resource,
-  open,
-  onOpenChange,
-  initial,
-}: ConfigFormSheetProps) {
+export function ConfigFormSheet({ resource, open, onOpenChange, initial }: ConfigFormSheetProps) {
   const { t } = usePreferences();
   const isEdit = Boolean(initial);
-  const editingId = isEdit && resource.idField
-    ? String((initial as Record<string, unknown>)[resource.idField] ?? "")
-    : null;
+  const editingId =
+    isEdit && resource.idField
+      ? String((initial as Record<string, unknown>)[resource.idField] ?? '')
+      : null;
 
   const form = useForm<Record<string, unknown>>({
     resolver: zodResolver(resource.schema),
     defaultValues: initial ?? resource.defaultValues(),
-    mode: "onBlur",
+    mode: 'onBlur',
   });
 
   React.useEffect(() => {
@@ -70,14 +58,9 @@ export function ConfigFormSheet({
     const payload = values as Record<string, unknown>;
     const promise = save.mutateAsync({ payload, id: editingId ?? null });
     toast.promise(promise, {
-      loading: isEdit
-        ? t("toast.config_save.saving")
-        : t("toast.config_save.creating"),
-      success: isEdit
-        ? t("toast.config_save.saved")
-        : t("toast.config_save.created"),
-      error: (err) =>
-        err instanceof Error ? err.message : t("toast.config_save.error"),
+      loading: isEdit ? t('toast.config_save.saving') : t('toast.config_save.creating'),
+      success: isEdit ? t('toast.config_save.saved') : t('toast.config_save.created'),
+      error: (err) => (err instanceof Error ? err.message : t('toast.config_save.error')),
     });
     try {
       await promise;
@@ -92,7 +75,7 @@ export function ConfigFormSheet({
       open={open}
       onOpenChange={onOpenChange}
       size="md"
-      title={`${isEdit ? t("configuration.actions.edit") : t("configuration.actions.add")} ${t(resource.labelSingularKey).toLowerCase()}`}
+      title={`${isEdit ? t('configuration.actions.edit') : t('configuration.actions.add')} ${t(resource.labelSingularKey).toLowerCase()}`}
       footer={
         <div className="flex items-center justify-end gap-2">
           <Button
@@ -102,19 +85,14 @@ export function ConfigFormSheet({
             onClick={() => onOpenChange(false)}
             disabled={save.isPending}
           >
-            {t("configuration.actions.cancel")}
+            {t('configuration.actions.cancel')}
           </Button>
-          <Button
-            type="button"
-            size="sm"
-            onClick={onSubmit}
-            disabled={save.isPending}
-          >
+          <Button type="button" size="sm" onClick={onSubmit} disabled={save.isPending}>
             {save.isPending
-              ? t("configuration.actions.saving")
+              ? t('configuration.actions.saving')
               : isEdit
-                ? t("configuration.actions.save")
-                : t("configuration.actions.create")}
+                ? t('configuration.actions.save')
+                : t('configuration.actions.create')}
           </Button>
         </div>
       }
@@ -138,19 +116,15 @@ function ConfigFieldRow({ field }: { field: ConfigField }) {
   return (
     <div className="space-y-1.5">
       <div className="flex items-center justify-between gap-3">
-        <Label htmlFor={field.name} className={cn(error && "text-[var(--color-danger)]")}>
+        <Label htmlFor={field.name} className={cn(error && 'text-[var(--color-danger)]')}>
           {t(field.labelKey)}
         </Label>
       </div>
       <FieldControl field={field} />
-      {"descriptionKey" in field && field.descriptionKey && (
+      {'descriptionKey' in field && field.descriptionKey && (
         <p className="text-[12px] text-[var(--color-fg-subtle)]">{t(field.descriptionKey)}</p>
       )}
-      {error && (
-        <p className="text-[12px] font-medium text-[var(--color-danger)]">
-          {error}
-        </p>
-      )}
+      {error && <p className="text-[12px] font-medium text-[var(--color-danger)]">{error}</p>}
     </div>
   );
 }
@@ -159,31 +133,27 @@ function FieldControl({ field }: { field: ConfigField }) {
   const form = useFormContext();
   const { t } = usePreferences();
 
-  if (field.kind === "boolean") {
+  if (field.kind === 'boolean') {
     return (
       <Controller
         control={form.control}
         name={field.name}
         render={({ field: rhf }) => (
-          <Switch
-            id={field.name}
-            checked={Boolean(rhf.value)}
-            onCheckedChange={rhf.onChange}
-          />
+          <Switch id={field.name} checked={Boolean(rhf.value)} onCheckedChange={rhf.onChange} />
         )}
       />
     );
   }
 
-  if (field.kind === "select") {
+  if (field.kind === 'select') {
     return (
       <Controller
         control={form.control}
         name={field.name}
         render={({ field: rhf }) => (
-          <Select value={String(rhf.value ?? "")} onValueChange={rhf.onChange}>
+          <Select value={String(rhf.value ?? '')} onValueChange={rhf.onChange}>
             <SelectTrigger id={field.name} className="h-9">
-              <SelectValue placeholder={t("configuration.actions.select_placeholder")} />
+              <SelectValue placeholder={t('configuration.actions.select_placeholder')} />
             </SelectTrigger>
             <SelectContent>
               {field.options.map((opt) => (
@@ -198,7 +168,7 @@ function FieldControl({ field }: { field: ConfigField }) {
     );
   }
 
-  if (field.kind === "symbol") {
+  if (field.kind === 'symbol') {
     return (
       <Controller
         control={form.control}
@@ -207,10 +177,9 @@ function FieldControl({ field }: { field: ConfigField }) {
           <BinanceSymbolCombobox
             value={(rhf.value as string) ?? null}
             onChange={(next, base, dest) => {
-              rhf.onChange(next ?? "");
-              if (base) form.setValue("baseAsset", base, { shouldValidate: true });
-              if (dest)
-                form.setValue("destinationAsset", dest, { shouldValidate: true });
+              rhf.onChange(next ?? '');
+              if (base) form.setValue('baseAsset', base, { shouldValidate: true });
+              if (dest) form.setValue('destinationAsset', dest, { shouldValidate: true });
             }}
             placeholder={field.placeholder}
           />
@@ -219,9 +188,9 @@ function FieldControl({ field }: { field: ConfigField }) {
     );
   }
 
-  if (field.kind === "asset-display") {
+  if (field.kind === 'asset-display') {
     const value = form.watch(field.name);
-    const asset = typeof value === "string" ? value.trim() : "";
+    const asset = typeof value === 'string' ? value.trim() : '';
     return (
       <div
         id={field.name}
@@ -232,14 +201,14 @@ function FieldControl({ field }: { field: ConfigField }) {
           <AssetLabel asset={asset} size={18} />
         ) : (
           <span className="text-[var(--color-fg-subtle)]">
-            {field.placeholder ?? t("configuration.actions.autofilled_placeholder")}
+            {field.placeholder ?? t('configuration.actions.autofilled_placeholder')}
           </span>
         )}
       </div>
     );
   }
 
-  if (field.kind === "textarea") {
+  if (field.kind === 'textarea') {
     return (
       <Controller
         control={form.control}
@@ -249,7 +218,7 @@ function FieldControl({ field }: { field: ConfigField }) {
             id={field.name}
             placeholder={field.placeholder}
             rows={field.rows ?? 3}
-            value={(rhf.value as string) ?? ""}
+            value={(rhf.value as string) ?? ''}
             onChange={rhf.onChange}
           />
         )}
@@ -257,7 +226,7 @@ function FieldControl({ field }: { field: ConfigField }) {
     );
   }
 
-  if (field.kind === "number") {
+  if (field.kind === 'number') {
     return (
       <Controller
         control={form.control}
@@ -267,14 +236,10 @@ function FieldControl({ field }: { field: ConfigField }) {
             id={field.name}
             type="number"
             placeholder={field.placeholder}
-            value={
-              rhf.value === null || rhf.value === undefined
-                ? ""
-                : String(rhf.value)
-            }
+            value={rhf.value === null || rhf.value === undefined ? '' : String(rhf.value)}
             onChange={(event) => {
               const value = event.target.value;
-              rhf.onChange(value === "" ? "" : Number(value));
+              rhf.onChange(value === '' ? '' : Number(value));
             }}
           />
         )}
@@ -282,11 +247,11 @@ function FieldControl({ field }: { field: ConfigField }) {
     );
   }
 
-  if (field.kind === "json") {
+  if (field.kind === 'json') {
     return <JsonField name={field.name} placeholder={field.placeholder} />;
   }
 
-  if (field.kind === "promotion-thresholds") {
+  if (field.kind === 'promotion-thresholds') {
     return <PromotionThresholdsField name={field.name} />;
   }
 
@@ -298,7 +263,7 @@ function FieldControl({ field }: { field: ConfigField }) {
         <Input
           id={field.name}
           placeholder={field.placeholder}
-          value={(rhf.value as string) ?? ""}
+          value={(rhf.value as string) ?? ''}
           onChange={rhf.onChange}
         />
       )}
@@ -306,19 +271,11 @@ function FieldControl({ field }: { field: ConfigField }) {
   );
 }
 
-function JsonField({
-  name,
-  placeholder,
-}: {
-  name: string;
-  placeholder?: string;
-}) {
+function JsonField({ name, placeholder }: { name: string; placeholder?: string }) {
   const form = useFormContext();
   const { t } = usePreferences();
   const value = form.watch(name);
-  const [text, setText] = React.useState(() =>
-    JSON.stringify(value ?? {}, null, 2),
-  );
+  const [text, setText] = React.useState(() => JSON.stringify(value ?? {}, null, 2));
   const [parseError, setParseError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
@@ -332,9 +289,7 @@ function JsonField({
       form.setValue(name, parsed, { shouldDirty: true, shouldValidate: true });
       setParseError(null);
     } catch (err) {
-      setParseError(
-        err instanceof Error ? err.message : t("configuration.actions.invalid_json"),
-      );
+      setParseError(err instanceof Error ? err.message : t('configuration.actions.invalid_json'));
     }
   };
 
@@ -349,43 +304,41 @@ function JsonField({
         className="font-mono text-[12px]"
       />
       {parseError && (
-        <p className="text-[12px] font-medium text-[var(--color-danger)]">
-          {parseError}
-        </p>
+        <p className="text-[12px] font-medium text-[var(--color-danger)]">{parseError}</p>
       )}
     </div>
   );
 }
 
 const THRESHOLDS: {
-  key: "minTradeCount" | "minTradesPer1000Candles" | "maxDrawdownPercent" | "maxReversalRatio";
+  key: 'minTradeCount' | 'minTradesPer1000Candles' | 'maxDrawdownPercent' | 'maxReversalRatio';
   labelKey: string;
   hintKey: string;
   step?: string;
 }[] = [
   {
-    key: "minTradeCount",
-    labelKey: "configuration.thresholds.minTradeCount",
-    hintKey: "configuration.thresholds.minTradeCountHint",
-    step: "1",
+    key: 'minTradeCount',
+    labelKey: 'configuration.thresholds.minTradeCount',
+    hintKey: 'configuration.thresholds.minTradeCountHint',
+    step: '1',
   },
   {
-    key: "minTradesPer1000Candles",
-    labelKey: "configuration.thresholds.minTradesPer1000Candles",
-    hintKey: "configuration.thresholds.minTradesPer1000CandlesHint",
-    step: "0.1",
+    key: 'minTradesPer1000Candles',
+    labelKey: 'configuration.thresholds.minTradesPer1000Candles',
+    hintKey: 'configuration.thresholds.minTradesPer1000CandlesHint',
+    step: '0.1',
   },
   {
-    key: "maxDrawdownPercent",
-    labelKey: "configuration.thresholds.maxDrawdownPercent",
-    hintKey: "configuration.thresholds.maxDrawdownPercentHint",
-    step: "0.1",
+    key: 'maxDrawdownPercent',
+    labelKey: 'configuration.thresholds.maxDrawdownPercent',
+    hintKey: 'configuration.thresholds.maxDrawdownPercentHint',
+    step: '0.1',
   },
   {
-    key: "maxReversalRatio",
-    labelKey: "configuration.thresholds.maxReversalRatio",
-    hintKey: "configuration.thresholds.maxReversalRatioHint",
-    step: "0.01",
+    key: 'maxReversalRatio',
+    labelKey: 'configuration.thresholds.maxReversalRatio',
+    hintKey: 'configuration.thresholds.maxReversalRatioHint',
+    step: '0.01',
   },
 ];
 
@@ -416,14 +369,10 @@ function PromotionThresholdsField({ name }: { name: string }) {
                   type="number"
                   step={threshold.step}
                   className="mt-1.5 h-8 text-[13px]"
-                  value={
-                    rhf.value === null || rhf.value === undefined
-                      ? ""
-                      : String(rhf.value)
-                  }
+                  value={rhf.value === null || rhf.value === undefined ? '' : String(rhf.value)}
                   onChange={(event) => {
                     const value = event.target.value;
-                    rhf.onChange(value === "" ? undefined : Number(value));
+                    rhf.onChange(value === '' ? undefined : Number(value));
                   }}
                 />
               )}
@@ -438,19 +387,16 @@ function PromotionThresholdsField({ name }: { name: string }) {
   );
 }
 
-function getError(
-  errors: Record<string, unknown>,
-  path: string,
-): string | undefined {
-  const parts = path.split(".");
+function getError(errors: Record<string, unknown>, path: string): string | undefined {
+  const parts = path.split('.');
   let cursor: unknown = errors;
   for (const part of parts) {
-    if (!cursor || typeof cursor !== "object") return undefined;
+    if (!cursor || typeof cursor !== 'object') return undefined;
     cursor = (cursor as Record<string, unknown>)[part];
   }
-  if (cursor && typeof cursor === "object" && "message" in cursor) {
+  if (cursor && typeof cursor === 'object' && 'message' in cursor) {
     const msg = (cursor as { message?: unknown }).message;
-    return typeof msg === "string" ? msg : undefined;
+    return typeof msg === 'string' ? msg : undefined;
   }
   return undefined;
 }

@@ -4,12 +4,12 @@ import type {
   DataReadinessItem,
   DataReadinessResponse,
   RecentBacktestRun,
-} from "@/lib/api";
+} from '@/lib/api';
 
-import type { BacktestRow, ProgressTotals, RowStatus } from "./types";
+import type { BacktestRow, ProgressTotals, RowStatus } from './types';
 
 export function splitSymbol(symbol: string): { base: string; quote: string } {
-  const known = ["USDT", "USDC", "BUSD", "USD", "BTC", "ETH"];
+  const known = ['USDT', 'USDC', 'BUSD', 'USD', 'BTC', 'ETH'];
   const upper = symbol.toUpperCase();
   for (const quote of known) {
     if (upper.endsWith(quote)) {
@@ -36,12 +36,12 @@ function emptyProgress(): ProgressTotals {
 
 function statusFromReadinessOrJobs(
   readiness: DataReadinessItem | null,
-  jobs: BacktestJob[],
+  jobs: BacktestJob[]
 ): RowStatus {
-  if (jobs.some((j) => j.status === "failed")) return "error";
+  if (jobs.some((j) => j.status === 'failed')) return 'error';
   if (readiness?.status) return readiness.status;
-  if (jobs.length === 0) return "missing";
-  return "partial";
+  if (jobs.length === 0) return 'missing';
+  return 'partial';
 }
 
 function rollupProgress(jobs: BacktestJob[]): ProgressTotals {
@@ -49,13 +49,13 @@ function rollupProgress(jobs: BacktestJob[]): ProgressTotals {
   totals.total = jobs.length;
   let progressSum = 0;
   for (const job of jobs) {
-    if (job.status === "queued") totals.queued += 1;
-    else if (job.status === "running") totals.running += 1;
-    else if (job.status === "completed") totals.completed += 1;
-    else if (job.status === "failed") totals.failed += 1;
-    if (typeof job.progressPercent === "number") {
+    if (job.status === 'queued') totals.queued += 1;
+    else if (job.status === 'running') totals.running += 1;
+    else if (job.status === 'completed') totals.completed += 1;
+    else if (job.status === 'failed') totals.failed += 1;
+    if (typeof job.progressPercent === 'number') {
       progressSum += job.progressPercent;
-    } else if (job.status === "completed") {
+    } else if (job.status === 'completed') {
       progressSum += 100;
     }
   }
@@ -67,15 +67,13 @@ function rollupProgress(jobs: BacktestJob[]): ProgressTotals {
 function pickLatestRun(runs: RecentBacktestRun[]): RecentBacktestRun | null {
   if (runs.length === 0) return null;
   return [...runs].sort(
-    (a, b) => new Date(b.finishedAt).getTime() - new Date(a.finishedAt).getTime(),
+    (a, b) => new Date(b.finishedAt).getTime() - new Date(a.finishedAt).getTime()
   )[0];
 }
 
 function scoreHistoryFor(runs: RecentBacktestRun[]): number[] {
   return [...runs]
-    .sort(
-      (a, b) => new Date(a.finishedAt).getTime() - new Date(b.finishedAt).getTime(),
-    )
+    .sort((a, b) => new Date(a.finishedAt).getTime() - new Date(b.finishedAt).getTime())
     .map((r) => r.score)
     .slice(-10);
 }
@@ -88,11 +86,7 @@ interface DeriveInput {
 export function deriveBacktestRows({ summary, readiness }: DeriveInput): BacktestRow[] {
   const rowMap = new Map<string, BacktestRow>();
 
-  const ensureRow = (
-    symbol: string,
-    timeframeCode: string,
-    strategyName: string,
-  ): BacktestRow => {
+  const ensureRow = (symbol: string, timeframeCode: string, strategyName: string): BacktestRow => {
     const key = rowKey(symbol, timeframeCode, strategyName);
     let row = rowMap.get(key);
     if (!row) {
@@ -105,7 +99,7 @@ export function deriveBacktestRows({ summary, readiness }: DeriveInput): Backtes
         timeframeCode,
         strategyName,
         readiness: null,
-        status: "missing",
+        status: 'missing',
         klineCoverage: null,
         klineRowCount: null,
         klineWorstDimension: null,
@@ -154,7 +148,7 @@ export function deriveBacktestRows({ summary, readiness }: DeriveInput): Backtes
   }
 
   for (const [key, jobs] of jobsBySymbolTfStrat) {
-    const [symbol, timeframeCode, strategyName] = key.split("::");
+    const [symbol, timeframeCode, strategyName] = key.split('::');
     const row = ensureRow(symbol, timeframeCode, strategyName);
     row.jobs = jobs;
     row.progress = rollupProgress(jobs);
@@ -177,7 +171,7 @@ export function deriveBacktestRows({ summary, readiness }: DeriveInput): Backtes
   }
 
   for (const [key, runs] of recentBySymbolTfStrat) {
-    const [symbol, timeframeCode, strategyName] = key.split("::");
+    const [symbol, timeframeCode, strategyName] = key.split('::');
     const row = ensureRow(symbol, timeframeCode, strategyName);
     if (!row.latestRun) row.latestRun = pickLatestRun(runs);
     row.scoreHistory = scoreHistoryFor(runs);
@@ -189,8 +183,7 @@ export function deriveBacktestRows({ summary, readiness }: DeriveInput): Backtes
 
   return Array.from(rowMap.values()).sort((a, b) => {
     if (a.symbol !== b.symbol) return a.symbol.localeCompare(b.symbol);
-    if (a.timeframeCode !== b.timeframeCode)
-      return a.timeframeCode.localeCompare(b.timeframeCode);
+    if (a.timeframeCode !== b.timeframeCode) return a.timeframeCode.localeCompare(b.timeframeCode);
     return a.strategyName.localeCompare(b.strategyName);
   });
 }

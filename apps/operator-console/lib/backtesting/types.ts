@@ -1,10 +1,6 @@
-import type {
-  BacktestJob,
-  DataReadinessItem,
-  RecentBacktestRun,
-} from "@/lib/api";
+import type { BacktestJob, DataReadinessItem, RecentBacktestRun } from '@/lib/api';
 
-export type RowStatus = "ready" | "partial" | "missing" | "error";
+export type RowStatus = 'ready' | 'partial' | 'missing' | 'error';
 
 export interface ProgressTotals {
   total: number;

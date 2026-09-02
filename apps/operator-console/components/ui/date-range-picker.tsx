@@ -1,28 +1,24 @@
-"use client";
+'use client';
 
-import * as React from "react";
-import { CalendarIcon, X } from "lucide-react";
-import type { DateRange } from "react-day-picker";
+import * as React from 'react';
+import { CalendarIcon, X } from 'lucide-react';
+import type { DateRange } from 'react-day-picker';
 
-import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
-import { Calendar } from "@/components/ui/calendar";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import { usePreferences } from "@/components/providers/preferences-provider";
+import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
+import { Calendar } from '@/components/ui/calendar';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { usePreferences } from '@/components/providers/preferences-provider';
 
 type Preset = {
   label: string;
   getRange: () => DateRange;
 };
 
-const compactDate = new Intl.DateTimeFormat("en-US", {
-  month: "short",
-  day: "2-digit",
-  year: "2-digit",
+const compactDate = new Intl.DateTimeFormat('en-US', {
+  month: 'short',
+  day: '2-digit',
+  year: '2-digit',
 });
 
 interface DateRangePickerProps {
@@ -31,7 +27,7 @@ interface DateRangePickerProps {
   placeholder?: string;
   presets?: Preset[];
   className?: string;
-  align?: "start" | "center" | "end";
+  align?: 'start' | 'center' | 'end';
   disabled?: boolean;
   numberOfMonths?: number;
 }
@@ -42,44 +38,44 @@ export function DateRangePicker({
   placeholder: providedPlaceholder,
   presets: providedPresets,
   className,
-  align = "start",
+  align = 'start',
   disabled,
   numberOfMonths = 2,
 }: DateRangePickerProps) {
   const { t } = usePreferences();
-  const placeholder = providedPlaceholder ?? t("ui.date_range_picker.placeholder");
+  const placeholder = providedPlaceholder ?? t('ui.date_range_picker.placeholder');
   const defaultPresets = React.useMemo<Preset[]>(
     () => [
       {
-        label: t("ui.date_range_picker.preset_24h"),
+        label: t('ui.date_range_picker.preset_24h'),
         getRange: () => ({
           from: new Date(Date.now() - 24 * 60 * 60 * 1000),
           to: new Date(),
         }),
       },
       {
-        label: t("ui.date_range_picker.preset_7d"),
+        label: t('ui.date_range_picker.preset_7d'),
         getRange: () => ({
           from: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
           to: new Date(),
         }),
       },
       {
-        label: t("ui.date_range_picker.preset_30d"),
+        label: t('ui.date_range_picker.preset_30d'),
         getRange: () => ({
           from: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
           to: new Date(),
         }),
       },
       {
-        label: t("ui.date_range_picker.preset_90d"),
+        label: t('ui.date_range_picker.preset_90d'),
         getRange: () => ({
           from: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000),
           to: new Date(),
         }),
       },
     ],
-    [t],
+    [t]
   );
   const presets = providedPresets ?? defaultPresets;
   const [open, setOpen] = React.useState(false);
@@ -103,9 +99,9 @@ export function DateRangePicker({
           variant="outline"
           disabled={disabled}
           className={cn(
-            "h-9 justify-start gap-2 px-3 text-[13px] font-normal",
-            !value?.from && "text-[var(--color-fg-subtle)]",
-            className,
+            'h-9 justify-start gap-2 px-3 text-[13px] font-normal',
+            !value?.from && 'text-[var(--color-fg-subtle)]',
+            className
           )}
         >
           <CalendarIcon className="size-3.5 text-[var(--color-fg-subtle)]" />
@@ -115,22 +111,18 @@ export function DateRangePicker({
               type="button"
               onClick={clear}
               className="rounded-sm p-0.5 text-[var(--color-fg-subtle)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-fg)]"
-              aria-label={t("ui.date_range_picker.clear_date_range")}
+              aria-label={t('ui.date_range_picker.clear_date_range')}
             >
               <X className="size-3" />
             </button>
           )}
         </Button>
       </PopoverTrigger>
-      <PopoverContent
-        className="w-auto p-0"
-        align={align}
-        sideOffset={4}
-      >
+      <PopoverContent className="w-auto p-0" align={align} sideOffset={4}>
         <div className="flex">
           <div className="flex flex-col border-r border-[var(--color-border)] p-2">
             <span className="px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-[var(--color-fg-subtle)]">
-              {t("ui.date_range_picker.quick_ranges")}
+              {t('ui.date_range_picker.quick_ranges')}
             </span>
             {presets.map((preset) => (
               <button
@@ -149,7 +141,7 @@ export function DateRangePicker({
               onClick={() => onChange(undefined)}
               className="mt-2 rounded-[var(--radius-sm)] px-2 py-1.5 text-left text-[13px] text-[var(--color-fg-subtle)] hover:bg-[var(--color-surface-2)]"
             >
-              {t("ui.date_range_picker.clear")}
+              {t('ui.date_range_picker.clear')}
             </button>
           </div>
           <Calendar

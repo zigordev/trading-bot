@@ -1,13 +1,13 @@
-"use client";
+'use client';
 
-import * as React from "react";
-import Image from "next/image";
+import * as React from 'react';
+import Image from 'next/image';
 
-import { cn } from "@/lib/utils";
-import { splitSymbol } from "@/lib/backtesting/derive-rows";
+import { cn } from '@/lib/utils';
+import { splitSymbol } from '@/lib/backtesting/derive-rows';
 
 const GENERIC_ICON_URL =
-  "https://cdn.jsdelivr.net/gh/spothq/cryptocurrency-icons@master/32/color/generic.png";
+  'https://cdn.jsdelivr.net/gh/spothq/cryptocurrency-icons@master/32/color/generic.png';
 
 function iconUrl(asset: string | null | undefined): string {
   const code = asset?.trim().toLowerCase();
@@ -27,7 +27,7 @@ export function AssetIcon({
   const target = iconUrl(asset);
   const [src, setSrc] = React.useState(target);
   const [failed, setFailed] = React.useState(false);
-  const fallback = (asset?.trim().slice(0, 3) || "?").toUpperCase();
+  const fallback = (asset?.trim().slice(0, 3) || '?').toUpperCase();
 
   React.useEffect(() => {
     setSrc(target);
@@ -38,8 +38,8 @@ export function AssetIcon({
     return (
       <span
         className={cn(
-          "inline-flex select-none items-center justify-center rounded-full border border-[var(--color-border)] bg-[var(--color-surface-2)] font-semibold uppercase text-[var(--color-fg-muted)]",
-          className,
+          'inline-flex select-none items-center justify-center rounded-full border border-[var(--color-border)] bg-[var(--color-surface-2)] font-semibold uppercase text-[var(--color-fg-muted)]',
+          className
         )}
         style={{
           width: size,
@@ -55,11 +55,11 @@ export function AssetIcon({
   return (
     <Image
       src={src}
-      alt={asset ?? "asset"}
+      alt={asset ?? 'asset'}
       width={size}
       height={size}
       unoptimized
-      className={cn("rounded-full bg-white", className)}
+      className={cn('rounded-full bg-white', className)}
       onError={() => {
         if (src === GENERIC_ICON_URL) setFailed(true);
         else setSrc(GENERIC_ICON_URL);
@@ -75,16 +75,11 @@ interface SymbolAvatarProps {
   className?: string;
 }
 
-export function SymbolAvatar({
-  baseAsset,
-  quoteAsset,
-  size = 28,
-  className,
-}: SymbolAvatarProps) {
+export function SymbolAvatar({ baseAsset, quoteAsset, size = 28, className }: SymbolAvatarProps) {
   const quoteSize = Math.max(14, Math.round(size * 0.5));
   return (
     <span
-      className={cn("relative inline-flex shrink-0 items-center", className)}
+      className={cn('relative inline-flex shrink-0 items-center', className)}
       style={{ width: size + Math.round(quoteSize * 0.4), height: size }}
     >
       <AssetIcon asset={baseAsset} size={size} />
@@ -107,19 +102,12 @@ interface PairLabelProps {
   textClassName?: string;
 }
 
-export function PairLabel({
-  code,
-  size = 22,
-  className,
-  textClassName,
-}: PairLabelProps) {
+export function PairLabel({ code, size = 22, className, textClassName }: PairLabelProps) {
   const { base, quote } = splitSymbol(code);
   return (
-    <span className={cn("inline-flex items-center gap-2", className)}>
+    <span className={cn('inline-flex items-center gap-2', className)}>
       <SymbolAvatar baseAsset={base} quoteAsset={quote} size={size} />
-      <span className={cn("font-medium text-[var(--color-fg)]", textClassName)}>
-        {code}
-      </span>
+      <span className={cn('font-medium text-[var(--color-fg)]', textClassName)}>{code}</span>
     </span>
   );
 }
@@ -131,16 +119,11 @@ interface AssetLabelProps {
   textClassName?: string;
 }
 
-export function AssetLabel({
-  asset,
-  size = 18,
-  className,
-  textClassName,
-}: AssetLabelProps) {
+export function AssetLabel({ asset, size = 18, className, textClassName }: AssetLabelProps) {
   return (
-    <span className={cn("inline-flex items-center gap-1.5", className)}>
+    <span className={cn('inline-flex items-center gap-1.5', className)}>
       <AssetIcon asset={asset} size={size} />
-      <span className={cn("text-[var(--color-fg)]", textClassName)}>{asset}</span>
+      <span className={cn('text-[var(--color-fg)]', textClassName)}>{asset}</span>
     </span>
   );
 }

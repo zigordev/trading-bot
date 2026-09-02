@@ -1,18 +1,18 @@
-"use client";
+'use client';
 
-import type { ReactNode } from "react";
-import Link from "next/link";
-import { usePathname } from "next/navigation";
+import type { ReactNode } from 'react';
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 
-import { AppShell as DsAppShell } from "@/design-system/components/navigation/AppShell.jsx";
-import { Icon } from "@/design-system/components/icons/Icon.jsx";
-import { Logo } from "@/design-system/components/navigation/Logo.jsx";
-import type { AppShellNavItem } from "@/design-system/components/navigation/AppShell";
-import { WsStatusDot } from "@/components/shared/ws-status-dot";
-import { useTopbarSlot } from "@/components/layout/topbar-slot-context";
-import { usePreferences, type Translate } from "@/components/providers/preferences-provider";
-import { ThemeButton, LanguageButton } from "@/components/layout/topbar-utilities";
-import { configResources } from "@/lib/configuration/schemas";
+import { AppShell as DsAppShell } from '@/design-system/components/navigation/AppShell.jsx';
+import { Icon } from '@/design-system/components/icons/Icon.jsx';
+import { Logo } from '@/design-system/components/navigation/Logo.jsx';
+import type { AppShellNavItem } from '@/design-system/components/navigation/AppShell';
+import { WsStatusDot } from '@/components/shared/ws-status-dot';
+import { useTopbarSlot } from '@/components/layout/topbar-slot-context';
+import { usePreferences, type Translate } from '@/components/providers/preferences-provider';
+import { ThemeButton, LanguageButton } from '@/components/layout/topbar-utilities';
+import { configResources } from '@/lib/configuration/schemas';
 
 /**
  * Single source of truth for primary navigation — previously byte-duplicated
@@ -27,20 +27,28 @@ import { configResources } from "@/lib/configuration/schemas";
  */
 function getNavItems(t: Translate): AppShellNavItem[] {
   return [
-    { href: "/", label: t("nav.overview"), icon: <Icon name="layout-dashboard" className="size-4" /> },
-    { href: "/backtesting", label: t("nav.backtesting"), icon: <Icon name="history" className="size-4" /> },
+    {
+      href: '/',
+      label: t('nav.overview'),
+      icon: <Icon name="layout-dashboard" className="size-4" />,
+    },
+    {
+      href: '/backtesting',
+      label: t('nav.backtesting'),
+      icon: <Icon name="history" className="size-4" />,
+    },
     {
       // Paper/Live is a mode, not two destinations — it lives in the
       // Topbar's `mode` slot (see execution-screen.tsx). Nesting it here
       // duplicated the whole subtree and forced a mobile-only mirror of
       // the same switch, since BottomNav only surfaces top-level items.
-      href: "/execution",
-      label: t("nav.execution"),
+      href: '/execution',
+      label: t('nav.execution'),
       icon: <Icon name="chart-line" className="size-4" />,
     },
     {
-      href: "/configuration",
-      label: t("nav.configuration"),
+      href: '/configuration',
+      label: t('nav.configuration'),
       icon: <Icon name="settings" className="size-4" />,
       children: Object.values(configResources).map((resource) => ({
         href: `/configuration/${resource.key}`,
@@ -77,10 +85,10 @@ function SidebarFooter() {
   return (
     <div>
       <div className="text-[11px] leading-tight text-[var(--ds-color-fg-subtle)]">
-        {t("shell.control_plane")}
+        {t('shell.control_plane')}
       </div>
       <div className="truncate font-mono text-[11px] text-[var(--ds-color-fg-muted)]">
-        {process.env.NEXT_PUBLIC_CONTROL_PLANE_BASE_URL ?? "http://localhost:3020"}
+        {process.env.NEXT_PUBLIC_CONTROL_PLANE_BASE_URL ?? 'http://localhost:3020'}
       </div>
     </div>
   );
@@ -93,7 +101,7 @@ function TopbarUtilities() {
       <WsStatusDot />
       <div className="hidden items-center gap-2 rounded-[var(--ds-radius-md)] border border-[var(--ds-color-border)] px-2.5 py-1 text-[11px] text-[var(--ds-color-fg-muted)] md:flex">
         <span className="size-1.5 rounded-full bg-[var(--ds-color-success)]" />
-        <span>{t("shell.local")}</span>
+        <span>{t('shell.local')}</span>
       </div>
       <ThemeButton />
       <LanguageButton />

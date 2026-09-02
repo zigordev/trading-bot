@@ -28,7 +28,10 @@ export interface TableProps {
 
 export declare function Table(props: TableProps): JSX.Element;
 
-export interface TableSortHeaderProps extends Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'onClick'> {
+export interface TableSortHeaderProps extends Omit<
+  React.ButtonHTMLAttributes<HTMLButtonElement>,
+  'onClick'
+> {
   /** Current sort on this column, or null when it is not the active one. */
   direction?: 'asc' | 'desc' | null;
   /** Omit to render the label with no affordance (a non-sortable column). */

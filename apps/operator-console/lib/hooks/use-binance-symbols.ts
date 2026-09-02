@@ -1,11 +1,11 @@
-"use client";
+'use client';
 
-import { useQuery, keepPreviousData } from "@tanstack/react-query";
+import { useQuery, keepPreviousData } from '@tanstack/react-query';
 
-import { getBinanceSymbolReferences } from "@/lib/api";
+import { getBinanceSymbolReferences } from '@/lib/api';
 
 export const binanceSymbolsKey = (query: string) =>
-  ["reference", "binance-symbols", query] as const;
+  ['reference', 'binance-symbols', query] as const;
 
 export function useBinanceSymbols(query: string) {
   return useQuery({

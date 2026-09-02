@@ -167,11 +167,11 @@ The shared infrastructure comes from `platform-ops`:
    - the target `analysis_setting`
    - the selected `research_settings` profile
 3. It computes the replay window for that timeframe.
-5. It warms the shared `emaCross` evaluator with pre-window candles.
-6. It replays the historical closed klines through the same evaluator used live.
+4. It warms the shared `emaCross` evaluator with pre-window candles.
+5. It replays the historical closed klines through the same evaluator used live.
    configured risk profile and trading defaults.
-8. It persists the completed run in ClickHouse.
-9. It returns the persisted run payload with signals, simulated trades, and summary PnL.
+6. It persists the completed run in ClickHouse.
+7. It returns the persisted run payload with signals, simulated trades, and summary PnL.
 
 ## Historical Data And Backtesting Window Rules
 
@@ -313,7 +313,6 @@ Current historical-data behavior:
   - klines
   - aggregate trades
 - exposes recent and replay-oriented HTTP reads
-
 
 - current backfill is snapshot-only (`/api/v3/depth?limit=5`, using `lastUpdateId`) and does **not** reconstruct arbitrary
   and catches up quickly after gaps.

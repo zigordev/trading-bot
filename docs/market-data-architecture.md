@@ -90,8 +90,6 @@ The live transport uses Binance combined websocket streams for:
 REST is used for bounded kline backfill and tail-gap repair, plus aggregate-trade backfill aligned
 to the stored kline window for each active pair.
 
-
-
 This split is the right default because it:
 
 - avoids continuous REST polling overhead
@@ -213,7 +211,6 @@ Aggregate-trade events additionally include:
 - `quantity`
 - `tradeTime`
 - `marketMaker`
-
 
 - `orderBookUpdateId`
 - `bidPrice`

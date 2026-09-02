@@ -1,39 +1,24 @@
-"use client";
+'use client';
 
-import * as React from "react";
-import { ExternalLink, Lock } from "lucide-react";
+import * as React from 'react';
+import { ExternalLink, Lock } from 'lucide-react';
 
-import { cn } from "@/lib/utils";
-import { formatPercent, formatScore, formatTimestamp } from "@/lib/format";
-import type { BacktestRow } from "@/lib/backtesting/types";
-import {
-  evaluateThresholds,
-  type PromotionThresholds,
-} from "@/lib/backtesting/derive-thresholds";
-import type { RecentBacktestRun } from "@/lib/api";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "@/components/ui/tabs";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
-import { DetailSheet } from "@/components/shared/detail-sheet";
-import {
-  MetricGate,
-  MetricGateLegend,
-} from "@/components/shared/metric-gate";
-import { ReadinessBar } from "@/components/shared/readiness-bar";
-import { ScoreCell } from "@/components/shared/score-cell";
-import { SymbolAvatar } from "@/components/shared/symbol-avatar";
-import { ProgressCell } from "@/components/shared/progress-cell";
-import { usePreferences } from "@/components/providers/preferences-provider";
+import { cn } from '@/lib/utils';
+import { formatPercent, formatScore, formatTimestamp } from '@/lib/format';
+import type { BacktestRow } from '@/lib/backtesting/types';
+import { evaluateThresholds, type PromotionThresholds } from '@/lib/backtesting/derive-thresholds';
+import type { RecentBacktestRun } from '@/lib/api';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { DetailSheet } from '@/components/shared/detail-sheet';
+import { MetricGate, MetricGateLegend } from '@/components/shared/metric-gate';
+import { ReadinessBar } from '@/components/shared/readiness-bar';
+import { ScoreCell } from '@/components/shared/score-cell';
+import { SymbolAvatar } from '@/components/shared/symbol-avatar';
+import { ProgressCell } from '@/components/shared/progress-cell';
+import { usePreferences } from '@/components/providers/preferences-provider';
 
 interface BacktestingDetailSheetProps {
   open: boolean;
@@ -76,10 +61,10 @@ export function BacktestingDetailSheet({
         <div className="flex items-center justify-between gap-3">
           <div className="text-[12px] text-[var(--color-fg-subtle)]">
             {row.latestRun
-              ? t("backtesting.detail.footer_last_run", {
-                  time: formatTimestamp(row.latestRun.finishedAt, { style: "relative" }),
+              ? t('backtesting.detail.footer_last_run', {
+                  time: formatTimestamp(row.latestRun.finishedAt, { style: 'relative' }),
                 })
-              : t("backtesting.detail.footer_no_runs")}
+              : t('backtesting.detail.footer_no_runs')}
           </div>
           <div className="flex items-center gap-2">
             <Tooltip>
@@ -87,24 +72,22 @@ export function BacktestingDetailSheet({
                 <span tabIndex={0}>
                   <Button type="button" variant="outline" size="sm" disabled className="gap-1.5">
                     <Lock className="size-3.5" />
-                    {t("backtesting.detail.promote_paper")}
+                    {t('backtesting.detail.promote_paper')}
                   </Button>
                 </span>
               </TooltipTrigger>
-              <TooltipContent>
-                {t("backtesting.detail.promote_paper_tooltip")}
-              </TooltipContent>
+              <TooltipContent>{t('backtesting.detail.promote_paper_tooltip')}</TooltipContent>
             </Tooltip>
             <Tooltip>
               <TooltipTrigger asChild>
                 <span tabIndex={0}>
                   <Button type="button" size="sm" disabled className="gap-1.5">
                     <Lock className="size-3.5" />
-                    {t("backtesting.detail.promote_live")}
+                    {t('backtesting.detail.promote_live')}
                   </Button>
                 </span>
               </TooltipTrigger>
-              <TooltipContent>{t("backtesting.detail.promote_live_tooltip")}</TooltipContent>
+              <TooltipContent>{t('backtesting.detail.promote_live_tooltip')}</TooltipContent>
             </Tooltip>
           </div>
         </div>
@@ -112,10 +95,10 @@ export function BacktestingDetailSheet({
     >
       <Tabs defaultValue="summary" className="flex flex-col gap-4">
         <TabsList>
-          <TabsTrigger value="summary">{t("backtesting.detail.tab_summary")}</TabsTrigger>
-          <TabsTrigger value="runs">{t("backtesting.detail.tab_runs")}</TabsTrigger>
-          <TabsTrigger value="thresholds">{t("backtesting.detail.tab_thresholds")}</TabsTrigger>
-          <TabsTrigger value="readiness">{t("backtesting.detail.tab_readiness")}</TabsTrigger>
+          <TabsTrigger value="summary">{t('backtesting.detail.tab_summary')}</TabsTrigger>
+          <TabsTrigger value="runs">{t('backtesting.detail.tab_runs')}</TabsTrigger>
+          <TabsTrigger value="thresholds">{t('backtesting.detail.tab_thresholds')}</TabsTrigger>
+          <TabsTrigger value="readiness">{t('backtesting.detail.tab_readiness')}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="summary" className="space-y-4">
@@ -123,7 +106,7 @@ export function BacktestingDetailSheet({
           {row.latestRun && (
             <div className="rounded-[var(--radius-lg)] border border-[var(--color-border)] p-3">
               <p className="text-[11px] font-medium uppercase tracking-wide text-[var(--color-fg-subtle)]">
-                {t("backtesting.detail.latest_run_highlights")}
+                {t('backtesting.detail.latest_run_highlights')}
               </p>
               <RunSummary run={row.latestRun} />
             </div>
@@ -131,17 +114,14 @@ export function BacktestingDetailSheet({
         </TabsContent>
 
         <TabsContent value="runs">
-          <RunsList
-            runs={recentRuns}
-            onRunSelect={onRunSelect}
-          />
+          <RunsList runs={recentRuns} onRunSelect={onRunSelect} />
         </TabsContent>
 
         <TabsContent value="thresholds" className="space-y-3">
           <MetricGateLegend />
           {evals.length === 0 ? (
             <p className="text-[12px] text-[var(--color-fg-subtle)]">
-              {t("backtesting.detail.thresholds_empty")}
+              {t('backtesting.detail.thresholds_empty')}
             </p>
           ) : (
             <div className="flex flex-col gap-2">
@@ -159,9 +139,9 @@ export function BacktestingDetailSheet({
           )}
           {!thresholds && (
             <p className="text-[11px] text-[var(--color-fg-subtle)]">
-              {t("backtesting.detail.thresholds_not_configured_prefix")}{" "}
+              {t('backtesting.detail.thresholds_not_configured_prefix')}{' '}
               <span className="font-mono">{row.strategyName}</span>
-              {t("backtesting.detail.thresholds_not_configured_suffix")}
+              {t('backtesting.detail.thresholds_not_configured_suffix')}
             </p>
           )}
         </TabsContent>
@@ -179,17 +159,17 @@ function SummaryGrid({ row }: { row: BacktestRow }) {
   return (
     <div className="grid grid-cols-2 gap-3">
       <SummaryCell
-        label={t("backtesting.detail.stat_status")}
+        label={t('backtesting.detail.stat_status')}
         value={
           <Badge
             variant={
-              row.status === "ready"
-                ? "success"
-                : row.status === "partial"
-                  ? "warning"
-                  : row.status === "error"
-                    ? "danger"
-                    : "default"
+              row.status === 'ready'
+                ? 'success'
+                : row.status === 'partial'
+                  ? 'warning'
+                  : row.status === 'error'
+                    ? 'danger'
+                    : 'default'
             }
           >
             {t(`backtesting.filters.status.${row.status}`)}
@@ -197,11 +177,11 @@ function SummaryGrid({ row }: { row: BacktestRow }) {
         }
       />
       <SummaryCell
-        label={t("backtesting.detail.stat_latest_score")}
+        label={t('backtesting.detail.stat_latest_score')}
         value={<ScoreCell value={row.latestRun?.score ?? null} history={row.scoreHistory} />}
       />
       <SummaryCell
-        label={t("backtesting.detail.stat_kline_coverage")}
+        label={t('backtesting.detail.stat_kline_coverage')}
         value={
           <ReadinessBar
             ratio={row.klineCoverage !== null ? row.klineCoverage / 100 : null}
@@ -210,7 +190,7 @@ function SummaryGrid({ row }: { row: BacktestRow }) {
         }
       />
       <SummaryCell
-        label={t("backtesting.detail.stat_job_progress")}
+        label={t('backtesting.detail.stat_job_progress')}
         value={
           <ProgressCell
             total={row.progress.total}
@@ -242,17 +222,29 @@ function RunSummary({ run }: { run: RecentBacktestRun }) {
   return (
     <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-2 text-[12px]">
       <RunStat
-        label={t("backtesting.detail.stat_total_pnl")}
+        label={t('backtesting.detail.stat_total_pnl')}
         value={formatPercent(run.totalPnlPercent, { signed: true })}
       />
       <RunStat
-        label={t("backtesting.detail.stat_equity_pnl")}
+        label={t('backtesting.detail.stat_equity_pnl')}
         value={formatPercent(run.equityCurvePnlPercent, { signed: true })}
       />
-      <RunStat label={t("backtesting.detail.stat_drawdown")} value={formatPercent(run.maxDrawdownPercent)} />
-      <RunStat label={t("backtesting.detail.stat_reversal_ratio")} value={run.reversalRatio.toFixed(2)} />
-      <RunStat label={t("backtesting.detail.stat_trades")} value={run.tradeCount.toLocaleString()} />
-      <RunStat label={t("backtesting.detail.stat_signals")} value={run.signalCount.toLocaleString()} />
+      <RunStat
+        label={t('backtesting.detail.stat_drawdown')}
+        value={formatPercent(run.maxDrawdownPercent)}
+      />
+      <RunStat
+        label={t('backtesting.detail.stat_reversal_ratio')}
+        value={run.reversalRatio.toFixed(2)}
+      />
+      <RunStat
+        label={t('backtesting.detail.stat_trades')}
+        value={run.tradeCount.toLocaleString()}
+      />
+      <RunStat
+        label={t('backtesting.detail.stat_signals')}
+        value={run.signalCount.toLocaleString()}
+      />
     </dl>
   );
 }
@@ -277,7 +269,7 @@ function RunsList({
   if (runs.length === 0) {
     return (
       <p className="text-[12px] text-[var(--color-fg-subtle)]">
-        {t("backtesting.detail.runs_empty")}
+        {t('backtesting.detail.runs_empty')}
       </p>
     );
   }
@@ -289,28 +281,28 @@ function RunsList({
             type="button"
             onClick={() => onRunSelect(run)}
             className={cn(
-              "flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left transition-colors hover:bg-[var(--color-surface-2)]",
+              'flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left transition-colors hover:bg-[var(--color-surface-2)]'
             )}
           >
             <div className="flex flex-col">
               <span className="text-[12px] font-medium text-[var(--color-fg)]">
-                {formatTimestamp(run.finishedAt, { style: "compact" })}
+                {formatTimestamp(run.finishedAt, { style: 'compact' })}
               </span>
               <span className="text-[11px] text-[var(--color-fg-subtle)]">
                 {t(
                   run.tradeCount === 1
-                    ? "backtesting.detail.runs_list_summary_one"
-                    : "backtesting.detail.runs_list_summary_other",
+                    ? 'backtesting.detail.runs_list_summary_one'
+                    : 'backtesting.detail.runs_list_summary_other',
                   {
                     pnl: formatPercent(run.totalPnlPercent, { signed: true }),
                     count: run.tradeCount.toLocaleString(),
-                  },
+                  }
                 )}
               </span>
             </div>
             <div className="flex items-center gap-2">
               <span className="num text-[12px] text-[var(--color-fg-muted)]">
-                {t("backtesting.detail.runs_list_score", { score: formatScore(run.score) })}
+                {t('backtesting.detail.runs_list_score', { score: formatScore(run.score) })}
               </span>
               <ExternalLink className="size-3.5 text-[var(--color-fg-subtle)]" />
             </div>
@@ -328,7 +320,7 @@ function ReadinessPanel({ row }: { row: BacktestRow }) {
     <div className="space-y-4">
       <div>
         <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-[var(--color-fg-subtle)]">
-          {t("backtesting.detail.readiness_klines_heading")}
+          {t('backtesting.detail.readiness_klines_heading')}
         </p>
         {dimensions.length > 0 ? (
           <ul className="space-y-2">
@@ -342,7 +334,7 @@ function ReadinessPanel({ row }: { row: BacktestRow }) {
                 </span>
                 <ReadinessBar
                   ratio={(dim.coveragePercent ?? 0) / 100}
-                  status={dim.complete ? "ready" : "partial"}
+                  status={dim.complete ? 'ready' : 'partial'}
                   rowCount={dim.rowCount}
                   className="max-w-[180px]"
                 />
@@ -351,13 +343,13 @@ function ReadinessPanel({ row }: { row: BacktestRow }) {
           </ul>
         ) : (
           <p className="text-[12px] text-[var(--color-fg-subtle)]">
-            {t("backtesting.detail.readiness_no_klines")}
+            {t('backtesting.detail.readiness_no_klines')}
           </p>
         )}
       </div>
       <div>
         <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-[var(--color-fg-subtle)]">
-          {t("backtesting.detail.readiness_trades_heading")}
+          {t('backtesting.detail.readiness_trades_heading')}
         </p>
         {row.tradesCoverage !== null ? (
           <ReadinessBar
@@ -368,7 +360,7 @@ function ReadinessPanel({ row }: { row: BacktestRow }) {
           />
         ) : (
           <p className="text-[12px] text-[var(--color-fg-subtle)]">
-            {t("backtesting.detail.readiness_no_trades")}
+            {t('backtesting.detail.readiness_no_trades')}
           </p>
         )}
       </div>

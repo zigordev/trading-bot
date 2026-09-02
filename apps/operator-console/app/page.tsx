@@ -1,8 +1,8 @@
-import { ActivityFeed } from "@/components/overview/activity-feed";
-import { EquityCurve } from "@/components/overview/equity-curve";
-import { OverviewKpiStrip } from "@/components/overview/kpi-strip";
-import { SystemHealth } from "@/components/overview/system-health";
-import { TopPerformers } from "@/components/overview/top-performers";
+import { ActivityFeed } from '@/components/overview/activity-feed';
+import { EquityCurve } from '@/components/overview/equity-curve';
+import { OverviewKpiStrip } from '@/components/overview/kpi-strip';
+import { SystemHealth } from '@/components/overview/system-health';
+import { TopPerformers } from '@/components/overview/top-performers';
 
 export default function OverviewPage() {
   return (

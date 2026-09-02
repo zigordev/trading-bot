@@ -1843,6 +1843,10 @@ impl MarketDataService {
         )
     }
 
+    // Eight distinct tuning values with no natural grouping. Bundling them into
+    // a struct purely to satisfy the lint would add indirection without adding
+    // meaning; revisit if a ninth arrives.
+    #[allow(clippy::too_many_arguments)]
     fn build_required_history_plan_from_settings(
         records: &[ResolvedAnalysisSettingsRecord],
         active: &ActiveSubscriptions,
@@ -1888,10 +1892,8 @@ impl MarketDataService {
             );
             let headroom_ms = scheduled_backtest_history_headroom_ms as i64;
             let required_trade_history_ms = configured_duration_ms.saturating_add(headroom_ms);
-            let kline_requirements = Self::data_readiness_kline_requirements(
-                record,
-                backtest_warmup_candles,
-            );
+            let kline_requirements =
+                Self::data_readiness_kline_requirements(record, backtest_warmup_candles);
             let max_required_warmup_ms = kline_requirements
                 .iter()
                 .map(|requirement| {
@@ -1926,8 +1928,8 @@ impl MarketDataService {
                 subscription.pair_code.clone(),
                 subscription.timeframe_code.clone(),
             );
-            let fallback_ms = (historical_backfill_limit as i64)
-                .saturating_mul(subscription.period_ms.max(1));
+            let fallback_ms =
+                (historical_backfill_limit as i64).saturating_mul(subscription.period_ms.max(1));
             let required_ms = kline_by_key.get(&key).copied().unwrap_or(fallback_ms);
             kline_by_subscription_id.insert(subscription.subscription_id.clone(), required_ms);
             trade_gap_threshold_by_pair_code
@@ -1952,9 +1954,7 @@ impl MarketDataService {
         backtesting_timerange_ms_by_timeframe
             .get(timeframe_code)
             .copied()
-            .unwrap_or_else(|| {
-                (historical_backfill_limit as i64).saturating_mul(period_ms.max(1))
-            })
+            .unwrap_or_else(|| (historical_backfill_limit as i64).saturating_mul(period_ms.max(1)))
             .max(period_ms.max(1))
     }
 

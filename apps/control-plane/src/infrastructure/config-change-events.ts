@@ -1,15 +1,15 @@
-import { randomUUID } from "node:crypto";
+import { randomUUID } from 'node:crypto';
 
-import type { FastifyBaseLogger } from "fastify";
-import { Kafka, logLevel, type Producer } from "kafkajs";
+import type { FastifyBaseLogger } from 'fastify';
+import { Kafka, logLevel, type Producer } from 'kafkajs';
 
-import type { AppConfig } from "../config.js";
+import type { AppConfig } from '../config.js';
 
-export type ConfigChangeOperation = "created" | "updated" | "deleted";
+export type ConfigChangeOperation = 'created' | 'updated' | 'deleted';
 
 export type ConfigChangeEventEnvelope = {
   eventId: string;
-  eventType: "trading-bot.control-plane.config-changed.v1";
+  eventType: 'trading-bot.control-plane.config-changed.v1';
   source: string;
   occurredAt: string;
   resourceType: string;
@@ -31,10 +31,10 @@ export type ConfigChangeEventPublisher = {
   publish(params: PublishConfigChangeEventParams): Promise<void>;
 };
 
-type ConfigChangeEventProducer = Pick<Producer, "connect" | "disconnect" | "send">;
+type ConfigChangeEventProducer = Pick<Producer, 'connect' | 'disconnect' | 'send'>;
 type ConfigChangeEventAdmin = Pick<
-  ReturnType<Kafka["admin"]>,
-  "connect" | "disconnect" | "createTopics"
+  ReturnType<Kafka['admin']>,
+  'connect' | 'disconnect' | 'createTopics'
 >;
 
 type PublisherDependencies = {
@@ -42,12 +42,12 @@ type PublisherDependencies = {
   admin?: ConfigChangeEventAdmin;
 };
 
-const configChangeEventType = "trading-bot.control-plane.config-changed.v1";
+const configChangeEventType = 'trading-bot.control-plane.config-changed.v1';
 
 const buildConfigChangeEventEnvelope = (
   config: AppConfig,
   params: PublishConfigChangeEventParams,
-  timestamp = new Date(),
+  timestamp = new Date()
 ): ConfigChangeEventEnvelope => ({
   eventId: randomUUID(),
   eventType: configChangeEventType,
@@ -62,18 +62,17 @@ const buildConfigChangeEventEnvelope = (
 export const createConfigChangeEventPublisher = (
   config: AppConfig,
   logger: FastifyBaseLogger,
-  dependencies: PublisherDependencies = {},
+  dependencies: PublisherDependencies = {}
 ): ConfigChangeEventPublisher => {
   const kafka = new Kafka({
     clientId: `${config.serviceName}-config-change-publisher`,
     brokers: config.kafkaBootstrapServers
-      .split(",")
+      .split(',')
       .map((broker) => broker.trim())
       .filter(Boolean),
     logLevel: logLevel.NOTHING,
   });
-  const producer: ConfigChangeEventProducer =
-    dependencies.producer ?? kafka.producer();
+  const producer: ConfigChangeEventProducer = dependencies.producer ?? kafka.producer();
   const admin: ConfigChangeEventAdmin = dependencies.admin ?? kafka.admin();
   let producerConnected = false;
   let started = false;
@@ -87,7 +86,7 @@ export const createConfigChangeEventPublisher = (
     try {
       await producer.disconnect();
     } catch (error) {
-      logger.warn({ err: error }, "Failed to disconnect config-change producer cleanly");
+      logger.warn({ err: error }, 'Failed to disconnect config-change producer cleanly');
     } finally {
       producerConnected = false;
     }
@@ -105,7 +104,7 @@ export const createConfigChangeEventPublisher = (
         brokers: config.kafkaBootstrapServers,
         topic: config.configChangeEventsTopic,
       },
-      "Config-change producer connected",
+      'Config-change producer connected'
     );
   };
 
@@ -159,7 +158,7 @@ export const createConfigChangeEventPublisher = (
             operation: params.operation,
             resourceId: params.resourceId,
           },
-          "Skipping config-change publish because the publisher is stopping",
+          'Skipping config-change publish because the publisher is stopping'
         );
         return;
       }
@@ -186,7 +185,7 @@ export const createConfigChangeEventPublisher = (
             operation: envelope.operation,
             resourceId: envelope.resourceId,
           },
-          "Failed to publish config-change event directly to Kafka",
+          'Failed to publish config-change event directly to Kafka'
         );
         await disconnectProducer();
       }

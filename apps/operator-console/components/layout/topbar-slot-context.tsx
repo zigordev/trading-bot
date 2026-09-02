@@ -1,6 +1,6 @@
-"use client";
+'use client';
 
-import { createContext, useCallback, useContext, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useState, type ReactNode } from 'react';
 
 /**
  * Trading Bot has no per-route "portal into the header" mechanism, since

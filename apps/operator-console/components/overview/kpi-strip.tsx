@@ -1,23 +1,25 @@
-"use client";
+'use client';
 
-import * as React from "react";
-import { Activity, BarChart3, DollarSign, Gauge } from "lucide-react";
+import * as React from 'react';
+import { Activity, BarChart3, DollarSign, Gauge } from 'lucide-react';
 
-import { formatPercent, formatUsd } from "@/lib/format";
-import { useBacktestsSummary } from "@/lib/hooks/use-backtests-summary";
-import { useDataReadiness } from "@/lib/hooks/use-data-readiness";
-import { useExecutionSummary } from "@/lib/hooks/use-execution-summary";
-import { KpiTile } from "@/components/shared/kpi-tile";
-import { PairLabel } from "@/components/shared/symbol-avatar";
-import { usePreferences } from "@/components/providers/preferences-provider";
+import { formatPercent, formatUsd } from '@/lib/format';
+import { useBacktestsSummary } from '@/lib/hooks/use-backtests-summary';
+import { useDataReadiness } from '@/lib/hooks/use-data-readiness';
+import { useExecutionSummary } from '@/lib/hooks/use-execution-summary';
+import { KpiTile } from '@/components/shared/kpi-tile';
+import { PairLabel } from '@/components/shared/symbol-avatar';
+import { usePreferences } from '@/components/providers/preferences-provider';
 
-function readinessRatio(items: { kline?: { coveragePercent?: number } | null }[] | undefined): number | null {
+function readinessRatio(
+  items: { kline?: { coveragePercent?: number } | null }[] | undefined
+): number | null {
   if (!items || items.length === 0) return null;
   let total = 0;
   let count = 0;
   for (const item of items) {
     const pct = item.kline?.coveragePercent;
-    if (typeof pct === "number") {
+    if (typeof pct === 'number') {
       total += pct;
       count += 1;
     }
@@ -34,32 +36,36 @@ export function OverviewKpiStrip() {
   const realizedPnl = execution.data?.totals.realizedPnlUsd ?? null;
   const openPositions = execution.data?.totals.openTradeCount ?? 0;
   const activePromotions = execution.data?.activePromotions.length ?? 0;
-  const recentScores = backtests.data?.recentRuns.slice(0, 14).map((r) => r.score).reverse() ?? [];
+  const recentScores =
+    backtests.data?.recentRuns
+      .slice(0, 14)
+      .map((r) => r.score)
+      .reverse() ?? [];
   const readinessPct = readinessRatio(readiness.data?.items);
 
   return (
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
       <KpiTile
-        label={t("overview.kpi.realized_pnl")}
+        label={t('overview.kpi.realized_pnl')}
         value={formatUsd(realizedPnl, { signed: true })}
-        tone={realizedPnl !== null && realizedPnl >= 0 ? "success" : "danger"}
+        tone={realizedPnl !== null && realizedPnl >= 0 ? 'success' : 'danger'}
         loading={execution.isLoading}
-        hint={t("overview.kpi.trades_24h", {
+        hint={t('overview.kpi.trades_24h', {
           count: execution.data?.totals.recentTradeCount ?? 0,
         })}
         icon={<DollarSign className="size-4" />}
       />
       <KpiTile
-        label={t("overview.kpi.open_positions")}
+        label={t('overview.kpi.open_positions')}
         value={openPositions.toLocaleString()}
-        hint={t("overview.kpi.closed_today", {
+        hint={t('overview.kpi.closed_today', {
           count: execution.data?.totals.closedTradeCount ?? 0,
         })}
         loading={execution.isLoading}
         icon={<Activity className="size-4" />}
       />
       <KpiTile
-        label={t("overview.kpi.active_promotions")}
+        label={t('overview.kpi.active_promotions')}
         value={activePromotions.toLocaleString()}
         hint={
           execution.data?.activePromotion?.symbolCode ? (
@@ -69,7 +75,7 @@ export function OverviewKpiStrip() {
               textClassName="text-[12px] text-[var(--color-fg-subtle)]"
             />
           ) : (
-            "—"
+            '—'
           )
         }
         tone="accent"
@@ -78,19 +84,19 @@ export function OverviewKpiStrip() {
         spark={recentScores.length > 1 ? recentScores : undefined}
       />
       <KpiTile
-        label={t("overview.kpi.data_readiness")}
-        value={readinessPct !== null ? formatPercent(readinessPct, { digits: 1 }) : "—"}
-        hint={t("overview.kpi.pair_timeframe", {
+        label={t('overview.kpi.data_readiness')}
+        value={readinessPct !== null ? formatPercent(readinessPct, { digits: 1 }) : '—'}
+        hint={t('overview.kpi.pair_timeframe', {
           count: readiness.data?.items.length ?? 0,
         })}
         tone={
           readinessPct === null
-            ? "default"
+            ? 'default'
             : readinessPct >= 99
-              ? "success"
+              ? 'success'
               : readinessPct >= 95
-                ? "warning"
-                : "danger"
+                ? 'warning'
+                : 'danger'
         }
         loading={readiness.isLoading}
         icon={<Gauge className="size-4" />}

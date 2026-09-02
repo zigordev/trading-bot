@@ -1,9 +1,9 @@
-"use client";
+'use client';
 
-import * as React from "react";
-import * as TabsPrimitive from "@radix-ui/react-tabs";
+import * as React from 'react';
+import * as TabsPrimitive from '@radix-ui/react-tabs';
 
-import { cn } from "@/lib/utils";
+import { cn } from '@/lib/utils';
 
 const Tabs = TabsPrimitive.Root;
 
@@ -14,8 +14,8 @@ const TabsList = React.forwardRef<
   <TabsPrimitive.List
     ref={ref}
     className={cn(
-      "inline-flex h-9 items-center gap-1 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface-2)] p-1",
-      className,
+      'inline-flex h-9 items-center gap-1 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface-2)] p-1',
+      className
     )}
     {...props}
   />
@@ -29,8 +29,8 @@ const TabsTrigger = React.forwardRef<
   <TabsPrimitive.Trigger
     ref={ref}
     className={cn(
-      "inline-flex h-7 items-center justify-center whitespace-nowrap rounded-[6px] px-3 text-[12px] font-medium text-[var(--color-fg-muted)] transition-colors hover:text-[var(--color-fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-[var(--color-surface)] data-[state=active]:text-[var(--color-fg)] data-[state=active]:shadow-xs",
-      className,
+      'inline-flex h-7 items-center justify-center whitespace-nowrap rounded-[6px] px-3 text-[12px] font-medium text-[var(--color-fg-muted)] transition-colors hover:text-[var(--color-fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-[var(--color-surface)] data-[state=active]:text-[var(--color-fg)] data-[state=active]:shadow-xs',
+      className
     )}
     {...props}
   />
@@ -44,8 +44,8 @@ const TabsContent = React.forwardRef<
   <TabsPrimitive.Content
     ref={ref}
     className={cn(
-      "mt-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]",
-      className,
+      'mt-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]',
+      className
     )}
     {...props}
   />

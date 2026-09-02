@@ -1,8 +1,8 @@
-"use client";
+'use client';
 
-import * as React from "react";
+import * as React from 'react';
 
-import { cn } from "@/lib/utils";
+import { cn } from '@/lib/utils';
 
 interface ProgressCellProps {
   total: number;
@@ -29,7 +29,7 @@ export function ProgressCell({
   const failedPct = safeTotal === 0 ? 0 : (failed / safeTotal) * 100;
 
   return (
-    <div className={cn("flex min-w-[140px] flex-col gap-1", className)}>
+    <div className={cn('flex min-w-[140px] flex-col gap-1', className)}>
       <div className="flex h-1.5 w-full overflow-hidden rounded-full bg-[var(--color-surface-2)]">
         {completedPct > 0 && (
           <span
@@ -39,18 +39,12 @@ export function ProgressCell({
         )}
         {runningPct > 0 && (
           <span
-            className={cn(
-              "h-full bg-[var(--color-accent)]",
-              running > 0 && "animate-pulse",
-            )}
+            className={cn('h-full bg-[var(--color-accent)]', running > 0 && 'animate-pulse')}
             style={{ width: `${runningPct}%` }}
           />
         )}
         {failedPct > 0 && (
-          <span
-            className="h-full bg-[var(--color-danger)]"
-            style={{ width: `${failedPct}%` }}
-          />
+          <span className="h-full bg-[var(--color-danger)]" style={{ width: `${failedPct}%` }} />
         )}
       </div>
       {showCounts && (
@@ -64,12 +58,8 @@ export function ProgressCell({
               {running} running
             </span>
           )}
-          {failed > 0 && (
-            <span className="text-[var(--color-danger)]">{failed} failed</span>
-          )}
-          {pending > 0 && (
-            <span className="text-[var(--color-fg-subtle)]">{pending} queued</span>
-          )}
+          {failed > 0 && <span className="text-[var(--color-danger)]">{failed} failed</span>}
+          {pending > 0 && <span className="text-[var(--color-fg-subtle)]">{pending} queued</span>}
         </div>
       )}
     </div>
