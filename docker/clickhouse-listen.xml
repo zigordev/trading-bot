@@ -1,0 +1,11 @@
+<yandex>
+    <!-- The stock image listens on `::`, and IPv6 is not available in this
+         container: every listener fails with "Address family for hostname not
+         supported" and the server comes up bound to nothing. It stays running,
+         so the failure looks like a healthcheck problem rather than a startup
+         one — the healthcheck simply gets "Connection refused" forever.
+
+         Binding IPv4 explicitly is the fix ClickHouse itself suggests in that
+         error message. -->
+    <listen_host>0.0.0.0</listen_host>
+</yandex>
