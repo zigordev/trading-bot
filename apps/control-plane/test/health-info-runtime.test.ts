@@ -41,13 +41,13 @@ test('GET /health/readiness returns ok when the database is reachable', async (t
   assert.deepEqual(response.json(), {
     status: 'ok',
     service: testConfig.serviceName,
-    checks: {
-      database: 'up',
+    components: {
+      db: { status: 'up' },
     },
   });
 });
 
-test('GET /health/readiness returns degraded when the database is down', async (t) => {
+test('GET /health/readiness returns error when the database is down', async (t) => {
   const app = Fastify({ logger: false });
   t.after(() => app.close());
 
@@ -69,10 +69,10 @@ test('GET /health/readiness returns degraded when the database is down', async (
 
   assert.equal(response.statusCode, 503);
   assert.deepEqual(response.json(), {
-    status: 'degraded',
+    status: 'error',
     service: testConfig.serviceName,
-    checks: {
-      database: 'down',
+    components: {
+      db: { status: 'down' },
     },
   });
 });
