@@ -24,6 +24,7 @@
     "typecheck": "npm run typecheck -w @trading-bot/control-plane && npm run typecheck -w @trading-bot/operator-console",
     "local:up": "./scripts/local-stack-up.sh",
     "local:down": "./scripts/local-stack-down.sh",
-    "local:reset": "./scripts/local-stack-reset.sh"
+    "local:reset": "./scripts/local-stack-reset.sh",
+    "local:token": "bash ../platform-ops/scripts/provision-local-app-token.sh trading-bot"
   }
 }
