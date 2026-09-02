@@ -1,0 +1,12 @@
+title = "trading-bot gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Allow known placeholder/example values"
+regexes = [
+  '''CHANGE_ME_[A-Z0-9_]+''',
+  '''REQUIRED_SET_BY_DEPLOY''',
+  '''dummy''',
+]
