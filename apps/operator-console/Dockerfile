@@ -7,7 +7,9 @@ RUN apk add --no-cache libc6-compat
 COPY package.json package-lock.json* ./
 COPY apps/operator-console/package.json apps/operator-console/package.json
 COPY apps/control-plane/package.json apps/control-plane/package.json
-RUN npm ci --workspaces --include-workspace-root --no-audit --no-fund
+# HUSKY=0 and --ignore-scripts: the root `prepare` script installs git hooks
+# and lives in scripts/, which this stage does not copy.
+RUN HUSKY=0 npm ci --workspaces --include-workspace-root --no-audit --no-fund --ignore-scripts
 
 FROM node:20-alpine AS build
 WORKDIR /repo

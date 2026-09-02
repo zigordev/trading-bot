@@ -4,7 +4,9 @@ WORKDIR /app
 FROM base AS deps
 COPY package.json package-lock.json ./
 COPY apps/control-plane/package.json apps/control-plane/package.json
-RUN npm ci -w @trading-bot/control-plane
+# HUSKY=0 and --ignore-scripts: the root `prepare` script installs git hooks
+# and lives in scripts/, which this stage does not copy.
+RUN HUSKY=0 npm ci -w @trading-bot/control-plane --ignore-scripts
 
 FROM base AS build
 COPY --from=deps /app/node_modules /app/node_modules
