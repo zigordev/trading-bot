@@ -28,7 +28,15 @@ ENV NODE_ENV=production
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
 ENV NEXT_TELEMETRY_DISABLED=1
-RUN apk add --no-cache wget && addgroup -g 1001 -S nodejs && adduser -S nextjs -u 1001
+# Same hardening as the other Node runtime images this session: patch
+# Alpine's OpenSSL at build time rather than waiting on the upstream tag, and
+# drop the bundled npm/yarn CLIs — a standalone Next.js server has no
+# legitimate use for either.
+RUN apk upgrade --no-cache zlib libcrypto3 libssl3 \
+ && apk add --no-cache wget \
+ && addgroup -g 1001 -S nodejs && adduser -S nextjs -u 1001 \
+ && rm -rf /usr/local/lib/node_modules/npm /opt/yarn-v1.22.22 \
+ && rm -f /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack
 COPY --from=build --chown=nextjs:nodejs /repo/apps/operator-console/.next/standalone ./
 COPY --from=build --chown=nextjs:nodejs /repo/apps/operator-console/.next/static ./apps/operator-console/.next/static
 COPY --from=build --chown=nextjs:nodejs /repo/apps/operator-console/public ./apps/operator-console/public
