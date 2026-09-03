@@ -20,6 +20,14 @@ jobs:
   secrets-scan:
     name: Secrets Scan (Gitleaks)
     runs-on: ubuntu-latest
+    # gitleaks-action calls GET /pulls/{n}/commits to scope its scan to the PR's
+    # own commits. The workflow-level `contents: read` above doesn't cover that
+    # call, and Dependabot-triggered runs get no implicit permissions beyond
+    # what's declared here — every Dependabot PR failed this job with a 403
+    # until this was added.
+    permissions:
+      contents: read
+      pull-requests: read
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
