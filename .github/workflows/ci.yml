@@ -44,6 +44,13 @@ jobs:
       - name: Install toolchain
         run: rustup show
 
+      # rdkafka's cmake-build feature compiles librdkafka from source, and its
+      # SASL OAUTHBEARER/OIDC support includes curl.h unconditionally even with
+      # -DWITH_CURL=0 passed — the dev headers just need to be present, whether
+      # or not curl ends up linked. Not on the runner by default.
+      - name: Install librdkafka build dependencies
+        run: sudo apt-get update && sudo apt-get install -y libcurl4-openssl-dev
+
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
 
       - name: Format
@@ -96,7 +103,10 @@ jobs:
         run: |
           for f in docker/compose.app.*.yml; do
             echo "rendering $f"
-            docker compose -f "$f" config >/dev/null
+            # docker/.env.app.local.example carries safe placeholders for the
+            # secrets the compose file requires (OPENBAO_TOKEN, POSTGRES_PASSWORD)
+            # so this validates interpolation and structure without a real one.
+            docker compose --env-file docker/.env.app.local.example -f "$f" config >/dev/null
           done
 
   security-supply-chain:
