@@ -249,13 +249,10 @@ fn resolve_until_time(
     end_time_exclusive: i64,
     config: SimulationConfig,
 ) -> Result<PositionResolution> {
-    loop {
-        let Some(next_event_time) = replay_trades
-            .get(*trade_cursor)
-            .map(|record| record.trade_time)
-        else {
-            break;
-        };
+    while let Some(next_event_time) = replay_trades
+        .get(*trade_cursor)
+        .map(|record| record.trade_time)
+    {
         if next_event_time >= end_time_exclusive {
             break;
         }
