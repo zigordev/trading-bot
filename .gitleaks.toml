@@ -9,4 +9,9 @@ regexes = [
   '''CHANGE_ME_[A-Z0-9_]+''',
   '''REQUIRED_SET_BY_DEPLOY''',
   '''dummy''',
+  # A promotion-threshold config field name, not a credential. The generic
+  # high-recall "key: '...'" rule flags it purely on character-mix entropy —
+  # it appears as an object key across schemas.ts, config-form-sheet.tsx and
+  # the message catalogs.
+  '''minTradesPer1000Candles''',
 ]
