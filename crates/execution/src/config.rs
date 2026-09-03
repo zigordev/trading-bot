@@ -73,7 +73,7 @@ pub fn load_config() -> Result<AppConfig> {
 
     Ok(AppConfig {
         app_env: env_or_default("APP_ENV", "local"),
-        service_name: env_or_default("SERVICE_NAME", "trading-bot-execution"),
+        service_name: env_or_default("OTEL_SERVICE_NAME", "trading-bot-execution"),
         port: parse_u16("PORT", 8120)?,
         control_plane_base_url: env_or_default(
             "CONTROL_PLANE_BASE_URL",
@@ -121,8 +121,12 @@ mod tests {
 
     #[test]
     fn load_config_uses_defaults() {
+        // Test-only. Rust 2024 made `std::env::remove_var` unsafe because it
+        // is not thread-safe, so a test that clears an env var has no other
+        // way to do it. Nothing here dereferences a pointer.
+        // nosemgrep: rust.lang.security.unsafe-usage.unsafe-usage
         unsafe {
-            std::env::remove_var("SERVICE_NAME");
+            std::env::remove_var("OTEL_SERVICE_NAME");
             std::env::remove_var("EXECUTION_DEFAULT_MODE");
         }
 

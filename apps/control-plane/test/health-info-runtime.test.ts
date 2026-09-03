@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import { onTestFinished, test } from 'vitest';
 
 import Fastify from 'fastify';
 import { Gauge } from 'prom-client';
@@ -8,7 +8,7 @@ import type { ResolvedAnalysisSettingsRecord } from '../src/features/config-reso
 import { registerHealthRoutes } from '../src/routes/health.js';
 import { registerOpsRoutes } from '../src/routes/ops.js';
 import { registerRuntimeConfigRoutes } from '../src/routes/runtime-config.js';
-import { testConfig } from './helpers.ts';
+import { testConfig } from './helpers.js';
 
 const createGauge = (): Gauge<string> =>
   new Gauge({
@@ -19,9 +19,9 @@ const createGauge = (): Gauge<string> =>
     registers: [],
   });
 
-test('GET /health/readiness returns ok when the database is reachable', async (t) => {
+test('GET /health returns ok when the database is reachable', async () => {
   const app = Fastify({ logger: false });
-  t.after(() => app.close());
+  onTestFinished(() => app.close());
 
   registerHealthRoutes(
     app,
@@ -34,7 +34,7 @@ test('GET /health/readiness returns ok when the database is reachable', async (t
 
   const response = await app.inject({
     method: 'GET',
-    url: '/health/readiness',
+    url: '/health',
   });
 
   assert.equal(response.statusCode, 200);
@@ -47,9 +47,9 @@ test('GET /health/readiness returns ok when the database is reachable', async (t
   });
 });
 
-test('GET /health/readiness returns error when the database is down', async (t) => {
+test('GET /health returns error when the database is down', async () => {
   const app = Fastify({ logger: false });
-  t.after(() => app.close());
+  onTestFinished(() => app.close());
 
   registerHealthRoutes(
     app,
@@ -64,7 +64,7 @@ test('GET /health/readiness returns error when the database is down', async (t) 
 
   const response = await app.inject({
     method: 'GET',
-    url: '/health/readiness',
+    url: '/health',
   });
 
   assert.equal(response.statusCode, 503);
@@ -77,9 +77,9 @@ test('GET /health/readiness returns error when the database is down', async (t) 
   });
 });
 
-test('GET /v1/runtime-config/analysis-settings returns the injected projection', async (t) => {
+test('GET /v1/runtime-config/analysis-settings returns the injected projection', async () => {
   const app = Fastify({ logger: false });
-  t.after(() => app.close());
+  onTestFinished(() => app.close());
 
   const projection: ResolvedAnalysisSettingsRecord[] = [
     {
@@ -147,9 +147,9 @@ test('GET /v1/runtime-config/analysis-settings returns the injected projection',
   assert.deepEqual(response.json(), projection);
 });
 
-test('GET /v1/ops/execution endpoints return injected execution projections', async (t) => {
+test('GET /v1/ops/execution endpoints return injected execution projections', async () => {
   const app = Fastify({ logger: false });
-  t.after(() => app.close());
+  onTestFinished(() => app.close());
 
   registerOpsRoutes(app, testConfig, {} as never, {
     listBacktestJobsFn: async () => [],

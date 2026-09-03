@@ -185,22 +185,45 @@ struct DataReadinessSnapshotPayload {
     items: Vec<DataReadinessSnapshotItem>,
 }
 
+/// One dependency's state, in the estate-wide health shape:
+/// `{ "components": { "<name>": { "status": "up" } } }`. The nesting looks
+/// redundant for a bare up/down, but it is what lets a component grow a
+/// `latencyMs` or a `lastSeenAt` later without breaking every consumer.
+#[derive(Clone, Debug, Serialize)]
+pub struct ComponentStatus {
+    pub status: String,
+}
+
+impl From<&str> for ComponentStatus {
+    fn from(status: &str) -> Self {
+        Self {
+            status: status.to_string(),
+        }
+    }
+}
+
+impl From<String> for ComponentStatus {
+    fn from(status: String) -> Self {
+        Self { status }
+    }
+}
+
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReadinessPayload {
     pub status: String,
     pub service: String,
-    pub checks: ReadinessChecks,
+    pub components: HealthComponents,
 }
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ReadinessChecks {
-    pub runtime_config: String,
-    pub kafka_producer: String,
-    pub kafka_consumer: String,
-    pub market_stream: String,
-    pub database: String,
+pub struct HealthComponents {
+    pub runtime_config: ComponentStatus,
+    pub kafka_producer: ComponentStatus,
+    pub kafka_consumer: ComponentStatus,
+    pub market_stream: ComponentStatus,
+    pub database: ComponentStatus,
 }
 
 #[derive(Debug, Deserialize)]
@@ -592,6 +615,11 @@ impl MarketDataService {
         self.inner.metrics.encode()
     }
 
+    /// The shared HTTP metrics, for the router's middleware layer.
+    pub fn http_metrics(&self) -> trading_bot_observability::HttpMetrics {
+        self.inner.metrics.http.clone()
+    }
+
     pub async fn readiness(&self) -> ReadinessPayload {
         let db_ok = self.inner.database.ping().await.is_ok();
         self.inner
@@ -641,18 +669,18 @@ impl MarketDataService {
         {
             "ok"
         } else {
-            "degraded"
+            "error"
         };
 
         ReadinessPayload {
             status: status_text.to_string(),
             service: self.inner.config.service_name.clone(),
-            checks: ReadinessChecks {
-                runtime_config: runtime_config.to_string(),
-                kafka_producer: kafka_producer.to_string(),
-                kafka_consumer: kafka_consumer.to_string(),
-                market_stream: market_stream.to_string(),
-                database: database.to_string(),
+            components: HealthComponents {
+                runtime_config: runtime_config.into(),
+                kafka_producer: kafka_producer.into(),
+                kafka_consumer: kafka_consumer.into(),
+                market_stream: market_stream.into(),
+                database: database.into(),
             },
         }
     }

@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import { test } from 'vitest';
 
 import {
   createConfigChangeEventPublisher,
   type ConfigChangeEventEnvelope,
 } from '../src/infrastructure/config-change-events.js';
-import { createNoopLogger, testConfig } from './helpers.ts';
+import { createNoopLogger, testConfig } from './helpers.js';
 
 test('createConfigChangeEventPublisher publishes the expected envelope directly to Kafka', async () => {
   const sentPayloads: unknown[] = [];

@@ -11,6 +11,10 @@ const lookup = (tree: MessageTree, key: string): string | undefined => {
   let current: unknown = tree;
   for (const segment of key.split('.')) {
     if (!current || typeof current !== 'object') return undefined;
+    // Own properties only. Reading is not the write-based prototype pollution
+    // the scanner warns about, but `lookup(tree, 'constructor.name')` would
+    // otherwise resolve to something that is not a message.
+    if (!Object.prototype.hasOwnProperty.call(current, segment)) return undefined;
     current = (current as MessageTree)[segment];
   }
   return typeof current === 'string' ? current : undefined;

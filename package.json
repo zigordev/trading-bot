@@ -34,10 +34,11 @@
     "test:operator-console": "npm run test -w @trading-bot/operator-console",
     "test:research-backtesting": "cargo test -p trading-bot-research-backtesting",
     "test:secrets:gitleaks": "./scripts/precommit-gitleaks.sh",
-    "typecheck": "npm run typecheck -w @trading-bot/control-plane && npm run typecheck -w @trading-bot/operator-console"
+    "typecheck": "npm run typecheck -w @trading-bot/control-plane && npm run typecheck -w @trading-bot/operator-console",
+    "audit:prod:gate": "node ./scripts/audit-prod-gate.mjs"
   },
   "engines": {
-    "node": ">=20.19.0 <21",
+    "node": ">=24 <25",
     "npm": ">=10"
   },
   "devDependencies": {
@@ -45,5 +46,13 @@
     "@commitlint/config-conventional": "^20.4.2",
     "husky": "^9.1.7",
     "prettier": "^3.6.2"
+  },
+  "overrides": {
+    "postcss": "8.5.24",
+    "sharp": "0.35.4",
+    "nanoid": "6.0.1",
+    "brace-expansion": "5.0.9",
+    "ws": "8.21.0",
+    "@fastify/static": "10.1.3"
   }
 }

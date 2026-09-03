@@ -123,21 +123,44 @@ pub struct DependencyStatus {
     pub last_error: Option<String>,
 }
 
+/// One dependency's state, in the estate-wide health shape:
+/// `{ "components": { "<name>": { "status": "up" } } }`. The nesting looks
+/// redundant for a bare up/down, but it is what lets a component grow a
+/// `latencyMs` or a `lastSeenAt` later without breaking every consumer.
+#[derive(Clone, Debug, Serialize)]
+pub struct ComponentStatus {
+    pub status: String,
+}
+
+impl From<&str> for ComponentStatus {
+    fn from(status: &str) -> Self {
+        Self {
+            status: status.to_string(),
+        }
+    }
+}
+
+impl From<String> for ComponentStatus {
+    fn from(status: String) -> Self {
+        Self { status }
+    }
+}
+
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReadinessPayload {
     pub status: String,
     pub service: String,
-    pub checks: ReadinessChecks,
+    pub components: HealthComponents,
 }
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ReadinessChecks {
-    pub control_plane: String,
-    pub market_data: String,
-    pub execution_context: String,
-    pub exchange: String,
+pub struct HealthComponents {
+    pub control_plane: ComponentStatus,
+    pub market_data: ComponentStatus,
+    pub execution_context: ComponentStatus,
+    pub exchange: ComponentStatus,
 }
 
 impl ExecutionService {
@@ -235,20 +258,25 @@ impl ExecutionService {
             status: if control_plane_ok && market_data_ok && execution_context_ok && exchange_ok {
                 "ok".to_string()
             } else {
-                "degraded".to_string()
+                "error".to_string()
             },
             service: self.inner.config.service_name.clone(),
-            checks: ReadinessChecks {
-                control_plane: if control_plane_ok { "up" } else { "down" }.to_string(),
-                market_data: if market_data_ok { "up" } else { "down" }.to_string(),
-                execution_context: if execution_context_ok { "up" } else { "down" }.to_string(),
-                exchange: if exchange_ok { "up" } else { "down" }.to_string(),
+            components: HealthComponents {
+                control_plane: if control_plane_ok { "up" } else { "down" }.into(),
+                market_data: if market_data_ok { "up" } else { "down" }.into(),
+                execution_context: if execution_context_ok { "up" } else { "down" }.into(),
+                exchange: if exchange_ok { "up" } else { "down" }.into(),
             },
         }
     }
 
     pub fn metrics_text(&self) -> Result<String> {
         self.inner.metrics.encode()
+    }
+
+    /// The shared HTTP metrics, for the router's middleware layer.
+    pub fn http_metrics(&self) -> trading_bot_observability::HttpMetrics {
+        self.inner.metrics.http.clone()
     }
 
     pub async fn active_promotion(&self) -> Option<ExecutionPromotionRecord> {

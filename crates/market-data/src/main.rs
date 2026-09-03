@@ -10,7 +10,6 @@ use axum::{
 };
 use serde::Deserialize;
 use serde_json::json;
-use tracing_subscriber::{EnvFilter, fmt};
 use trading_bot_market_data::{config::load_config, service::MarketDataService};
 
 #[derive(Clone)]
@@ -46,29 +45,18 @@ struct DataReadinessQuery {
     period_ms: i64,
 }
 
-fn init_tracing() {
-    let filter =
-        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info,rdkafka=warn"));
-
-    fmt()
-        .with_env_filter(filter)
-        .json()
-        .with_current_span(true)
-        .with_span_list(false)
-        .init();
-}
-
 #[tokio::main]
 async fn main() -> Result<()> {
-    init_tracing();
+    // Logs and traces, in the estate's shared shape. The guard flushes
+    // buffered spans on the way out; dropping it early loses them.
+    let _telemetry = trading_bot_observability::tracing_setup::init("info,rdkafka=warn");
 
     let config = load_config()?;
     let service = MarketDataService::new(config.clone()).await?;
     let state = AppState { service };
 
     let router = Router::new()
-        .route("/health/liveness", get(liveness))
-        .route("/health/readiness", get(readiness))
+        .route("/health", get(health))
         .route("/metrics", get(metrics))
         .route(
             "/v1/readiness/backtest/{pair_code}/{timeframe_code}",
@@ -84,6 +72,10 @@ async fn main() -> Result<()> {
             get(replay_klines),
         )
         .route("/v1/replay/trades/{pair_code}", get(replay_trades))
+        .layer(axum::middleware::from_fn_with_state(
+            state.service.http_metrics(),
+            trading_bot_observability::track_http_metrics,
+        ))
         .with_state(state.clone());
 
     let address = SocketAddr::from(([0, 0, 0, 0], config.port));
@@ -127,15 +119,7 @@ async fn shutdown_signal(service: MarketDataService) {
     service.stop().await;
 }
 
-async fn liveness(State(state): State<AppState>) -> Json<serde_json::Value> {
-    let config = state.service.config_snapshot();
-    Json(json!({
-        "status": "ok",
-        "service": config.service_name
-    }))
-}
-
-async fn readiness(State(state): State<AppState>) -> Response {
+async fn health(State(state): State<AppState>) -> Response {
     let payload = state.service.readiness().await;
     let status_code = if payload.status == "ok" {
         StatusCode::OK

@@ -18,6 +18,7 @@ import { TopbarSlotProvider } from '@/components/layout/topbar-slot-context';
 const THEME_INIT_SCRIPT = `try{var t=localStorage.getItem('operator-console-theme');var d=t==='dark'||(!t&&window.matchMedia('(prefers-color-scheme: dark)').matches);if(d){document.documentElement.setAttribute('data-mode','dark');}}catch(e){}`;
 
 import './globals.css';
+import { RumProvider } from '@/observability/RumProvider';
 
 const inter = Inter({
   variable: '--font-inter',
@@ -40,6 +41,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html data-theme="operator-console">
       <body className={`${inter.variable} ${geistMono.variable}`}>
+        <RumProvider />
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
         <PreferencesProvider>
           <NuqsAdapter>

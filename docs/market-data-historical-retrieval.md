@@ -234,7 +234,7 @@ This removes inactive `ReplacingMergeTree` parts from completed merges, so those
 Useful operational endpoints:
 
 - `GET /v1/status` and `GET /v1/subscriptions` (service view)
-- `GET /health/readiness` (degraded when dependencies/config stale)
+- `GET /health` (`error`, 503, when dependencies or config are stale)
 
 Useful quick validation queries (against ClickHouse):
 

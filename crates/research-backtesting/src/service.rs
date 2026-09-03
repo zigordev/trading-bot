@@ -86,19 +86,42 @@ pub struct DependencyStatus {
     pub last_error: Option<String>,
 }
 
+/// One dependency's state, in the estate-wide health shape:
+/// `{ "components": { "<name>": { "status": "up" } } }`. The nesting looks
+/// redundant for a bare up/down, but it is what lets a component grow a
+/// `latencyMs` or a `lastSeenAt` later without breaking every consumer.
+#[derive(Clone, Debug, Serialize)]
+pub struct ComponentStatus {
+    pub status: String,
+}
+
+impl From<&str> for ComponentStatus {
+    fn from(status: &str) -> Self {
+        Self {
+            status: status.to_string(),
+        }
+    }
+}
+
+impl From<String> for ComponentStatus {
+    fn from(status: String) -> Self {
+        Self { status }
+    }
+}
+
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReadinessPayload {
     pub status: String,
     pub service: String,
-    pub checks: ReadinessChecks,
+    pub components: HealthComponents,
 }
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ReadinessChecks {
-    pub control_plane: String,
-    pub historical_store: String,
+pub struct HealthComponents {
+    pub control_plane: ComponentStatus,
+    pub historical_store: ComponentStatus,
 }
 
 #[derive(Clone, Debug)]
@@ -619,6 +642,11 @@ impl ResearchBacktestingService {
         self.inner.metrics.encode()
     }
 
+    /// The shared HTTP metrics, for the router's middleware layer.
+    pub fn http_metrics(&self) -> trading_bot_observability::HttpMetrics {
+        self.inner.metrics.http.clone()
+    }
+
     pub async fn status(&self) -> RuntimeStatus {
         self.inner.status.read().await.clone()
     }
@@ -652,15 +680,15 @@ impl ResearchBacktestingService {
         let status = if control_plane == "up" && historical_store == "up" {
             "ok"
         } else {
-            "degraded"
+            "error"
         };
 
         ReadinessPayload {
             status: status.to_string(),
             service: self.inner.config.service_name.clone(),
-            checks: ReadinessChecks {
-                control_plane,
-                historical_store,
+            components: HealthComponents {
+                control_plane: control_plane.into(),
+                historical_store: historical_store.into(),
             },
         }
     }
@@ -1644,7 +1672,7 @@ impl ResearchBacktestingService {
             .inner
             .control_plane_client
             .get(format!(
-                "{}/health/readiness",
+                "{}/health",
                 self.inner.config.control_plane_base_url
             ))
             .send()

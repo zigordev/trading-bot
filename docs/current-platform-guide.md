@@ -443,9 +443,9 @@ npm run local:up
 ### 2. Check health
 
 ```bash
-curl -fsS http://localhost:3020/health/readiness | jq
-curl -fsS http://localhost:3030/health/readiness | jq
-curl -fsS http://localhost:3050/health/readiness | jq
+curl -fsS http://localhost:3020/health | jq
+curl -fsS http://localhost:3030/health | jq
+curl -fsS http://localhost:3050/health | jq
 ```
 
 Expected:

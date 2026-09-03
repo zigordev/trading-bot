@@ -392,6 +392,9 @@ function getError(errors: Record<string, unknown>, path: string): string | undef
   let cursor: unknown = errors;
   for (const part of parts) {
     if (!cursor || typeof cursor !== 'object') return undefined;
+    // Own properties only: a path of `constructor.name` would otherwise walk
+    // onto the prototype chain and return a value that is not row data.
+    if (!Object.prototype.hasOwnProperty.call(cursor, part)) return undefined;
     cursor = (cursor as Record<string, unknown>)[part];
   }
   if (cursor && typeof cursor === 'object' && 'message' in cursor) {

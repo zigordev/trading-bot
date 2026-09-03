@@ -1,12 +1,18 @@
+// FIRST, above every other import. OpenTelemetry instruments by patching
+// modules as they load, so anything required before this line goes untraced.
+// Do not let a formatter or an import sorter move it.
+import './observability/tracing.js';
+
 import fastifyCors from '@fastify/cors';
 import fastifyHelmet from '@fastify/helmet';
 import fastifySwagger from '@fastify/swagger';
 import fastifySwaggerUi from '@fastify/swagger-ui';
 import fastifyWebsocket from '@fastify/websocket';
 import Fastify from 'fastify';
-import { collectDefaultMetrics, Gauge, Registry } from 'prom-client';
+import { Gauge } from 'prom-client';
 
 import { loadConfig } from './config.js';
+import { fastifyLoggerOptions, registerHttpMetrics, registry } from './observability/index.js';
 import { createConfigStores, ensureControlPlaneSchema } from './features/config-resources.js';
 import { ensureOpsSchema } from './features/ops.js';
 import { HttpError } from './http-error.js';
@@ -23,20 +29,16 @@ import { registerRuntimeConfigRoutes } from './routes/runtime-config.js';
 
 const config = loadConfig();
 
-const metricsRegistry = new Registry();
-collectDefaultMetrics({ register: metricsRegistry, prefix: 'trading_bot_' });
-
+// The shared registry from the kit, so the default metrics carry the same
+// names here as on the Nest services. They used to be prefixed `trading_bot_`,
+// which made every cross-service query need a special case for this one.
 const databaseReadinessGauge = new Gauge({
   name: 'trading_bot_control_plane_database_ready',
   help: 'Whether the control-plane can reach PostgreSQL',
-  registers: [metricsRegistry],
+  registers: [registry],
 });
 
-const app = Fastify({
-  logger: {
-    level: 'info',
-  },
-});
+const app = Fastify({ logger: fastifyLoggerOptions });
 const pool = createPool(config);
 await ensureControlPlaneSchema(pool);
 await ensureOpsSchema(pool);
@@ -115,18 +117,10 @@ await backtestRunProjectionConsumer.start();
 await backtestProgressConsumer.start();
 await dataReadinessProjectionConsumer.start();
 
-app.get(
-  '/metrics',
-  {
-    schema: {
-      hide: true,
-    },
-  },
-  async (_request, reply) => {
-    reply.header('content-type', metricsRegistry.contentType);
-    return metricsRegistry.metrics();
-  }
-);
+// Registers `/metrics` and the `http_requests_total` /
+// `http_request_duration_seconds` pair every alert in platform-ops aggregates
+// on. Without it this service was scraped but produced nothing alertable.
+registerHttpMetrics(app);
 
 app.setErrorHandler((error, _request, reply) => {
   const statusCode =

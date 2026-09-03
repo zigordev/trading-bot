@@ -4,10 +4,10 @@ import type { ReactNode } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
-import { AppShell as DsAppShell } from '@/design-system/components/navigation/AppShell.jsx';
-import { Icon } from '@/design-system/components/icons/Icon.jsx';
-import { Logo } from '@/design-system/components/navigation/Logo.jsx';
-import type { AppShellNavItem } from '@/design-system/components/navigation/AppShell';
+import { AppShell as DsAppShell } from '@ds/components/navigation/AppShell.jsx';
+import { Icon } from '@ds/components/icons/Icon.jsx';
+import { Logo } from '@ds/components/navigation/Logo.jsx';
+import type { AppShellNavItem } from '@ds/components/navigation/AppShell';
 import { WsStatusDot } from '@/components/shared/ws-status-dot';
 import { useTopbarSlot } from '@/components/layout/topbar-slot-context';
 import { usePreferences, type Translate } from '@/components/providers/preferences-provider';
