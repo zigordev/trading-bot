@@ -1,9 +1,12 @@
 use anyhow::Result;
 use prometheus::{Encoder, IntCounter, IntCounterVec, IntGauge, Registry, TextEncoder};
+use trading_bot_observability::HttpMetrics;
 
 #[derive(Clone)]
 pub struct Metrics {
     registry: Registry,
+    /// The estate-wide HTTP metrics every shared alert is built on.
+    pub http: HttpMetrics,
     pub runtime_config_loaded: IntGauge,
     pub kafka_producer_connected: IntGauge,
     pub kafka_consumer_connected: IntGauge,
@@ -143,8 +146,11 @@ impl Metrics {
         registry.register(Box::new(kline_store_failures_total.clone()))?;
         registry.register(Box::new(trade_store_failures_total.clone()))?;
 
+        let http = HttpMetrics::register(&registry)?;
+
         Ok(Self {
             registry,
+            http,
             runtime_config_loaded,
             kafka_producer_connected,
             kafka_consumer_connected,

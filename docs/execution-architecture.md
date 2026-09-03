@@ -27,8 +27,7 @@ The service currently reads:
 
 The service currently exposes:
 
-- `/health/liveness`
-- `/health/readiness`
+- `/health`
 - `/metrics`
 - `/v1/status`
 - `/v1/promotion`

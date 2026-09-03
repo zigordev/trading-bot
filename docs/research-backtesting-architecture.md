@@ -40,8 +40,7 @@ Explicit non-responsibilities:
 
 Current surface on `http://localhost:3050`:
 
-- `/health/liveness`
-- `/health/readiness`
+- `/health`
 - `/metrics`
 - `/v1/info`
 - `/v1/status`

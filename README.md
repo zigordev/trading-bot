@@ -62,8 +62,7 @@ No live order execution has been added yet.
 `control-plane` on `http://localhost:3020`:
 
 - `/docs`
-- `/health/liveness`
-- `/health/readiness`
+- `/health`
 - `/metrics`
 - `/v1/info`
 - `/v1/pairs`
@@ -76,8 +75,7 @@ No live order execution has been added yet.
 
 `market-data` on `http://localhost:3030`:
 
-- `/health/liveness`
-- `/health/readiness`
+- `/health`
 - `/metrics`
 - `/v1/info`
 - `/v1/subscriptions`
@@ -89,8 +87,7 @@ No live order execution has been added yet.
 
 `research-backtesting` on `http://localhost:3050`:
 
-- `/health/liveness`
-- `/health/readiness`
+- `/health`
 - `/metrics`
 - `/v1/info`
 - `/v1/status`

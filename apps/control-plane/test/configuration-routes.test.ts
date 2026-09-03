@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import { onTestFinished, test } from 'vitest';
 
 import type { ConfigStore, ConfigStores } from '../src/features/config-resources.js';
 import { registerConfigurationRoutes } from '../src/routes/configuration.js';
-import { createAppWithErrorHandler, testConfig } from './helpers.ts';
+import { createAppWithErrorHandler, testConfig } from './helpers.js';
 
 const createStore = <TInput, TRecord>(
   overrides: Partial<ConfigStore<TInput, TRecord>> = {}
@@ -33,9 +33,9 @@ const createStores = (overrides: Partial<ConfigStores> = {}): ConfigStores =>
 const createPgError = (code: string): Error =>
   Object.assign(new Error(`postgres ${code}`), { code });
 
-test('POST /v1/analysis-settings maps foreign-key violations to 409', async (t) => {
+test('POST /v1/analysis-settings maps foreign-key violations to 409', async () => {
   const app = createAppWithErrorHandler();
-  t.after(() => app.close());
+  onTestFinished(() => app.close());
 
   registerConfigurationRoutes(
     app,
@@ -69,9 +69,9 @@ test('POST /v1/analysis-settings maps foreign-key violations to 409', async (t) 
   );
 });
 
-test('POST /v1/timeframes rejects bodies without periodMs', async (t) => {
+test('POST /v1/timeframes rejects bodies without periodMs', async () => {
   const app = createAppWithErrorHandler();
-  t.after(() => app.close());
+  onTestFinished(() => app.close());
 
   registerConfigurationRoutes(app, testConfig, createStores());
 

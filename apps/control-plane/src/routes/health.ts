@@ -4,6 +4,7 @@ import type { Pool } from 'pg';
 
 import type { AppConfig } from '../config.js';
 import { checkDatabaseReadiness } from '../infrastructure/database.js';
+import { recordHealth } from '../observability/index.js';
 
 export const registerHealthRoutes = (
   app: FastifyInstance,
@@ -12,32 +13,10 @@ export const registerHealthRoutes = (
   config: AppConfig
 ): void => {
   app.get(
-    '/health/liveness',
+    '/health',
     {
       schema: {
-        summary: 'Liveness probe',
-        response: {
-          200: {
-            type: 'object',
-            properties: {
-              status: { type: 'string' },
-              service: { type: 'string' },
-            },
-          },
-        },
-      },
-    },
-    async () => ({
-      status: 'ok',
-      service: config.serviceName,
-    })
-  );
-
-  app.get(
-    '/health/readiness',
-    {
-      schema: {
-        summary: 'Readiness probe',
+        summary: 'Health check',
         response: {
           200: {
             type: 'object',
@@ -79,25 +58,21 @@ export const registerHealthRoutes = (
         await checkDatabaseReadiness(pool);
         databaseReadinessGauge.set(1);
 
-        return {
-          status: 'ok',
-          service: config.serviceName,
-          components: {
-            db: { status: 'up' },
-          },
-        };
+        const components = { db: { status: 'up' as const } };
+        // The same judgement the response carries, as a metric — otherwise no
+        // rule can read the health contract.
+        recordHealth('ok', components);
+
+        return { status: 'ok', service: config.serviceName, components };
       } catch (error) {
         databaseReadinessGauge.set(0);
         app.log.error(error, 'Database readiness check failed');
         reply.code(503);
 
-        return {
-          status: 'error',
-          service: config.serviceName,
-          components: {
-            db: { status: 'down' },
-          },
-        };
+        const components = { db: { status: 'down' as const } };
+        recordHealth('error', components);
+
+        return { status: 'error', service: config.serviceName, components };
       }
     }
   );

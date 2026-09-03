@@ -13,6 +13,7 @@ futures-util = "0.3.31"
 bytes = "1.11.0"
 lru = "0.16.2"
 prometheus = "0.14.0"
+trading-bot-observability = { path = "../observability" }
 rdkafka = { version = "0.38.0", features = ["cmake-build", "tokio"] }
 reqwest = { version = "0.12.24", default-features = false, features = ["brotli", "gzip", "http2", "json", "rustls-tls", "stream"] }
 serde = { version = "1.0.228", features = ["derive"] }
@@ -22,7 +23,6 @@ tokio-stream = { version = "0.1.17", features = ["io-util"] }
 tokio-util = { version = "0.7.18", features = ["codec"] }
 tokio-tungstenite = { version = "0.28.0", features = ["rustls-tls-webpki-roots"] }
 tracing = "0.1.41"
-tracing-subscriber = { version = "0.3.20", features = ["env-filter", "fmt", "json"] }
 url = "2.5.7"
 uuid = { version = "1.18.1", features = ["v4"] }
 

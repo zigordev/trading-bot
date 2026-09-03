@@ -63,7 +63,7 @@ For backtests:
    - `market_data_klines`: historical candle backfill from Binance (`/klines`) using stored checkpoints.
    - `market_data_trades`: historical aggregate-trade backfill (`/aggTrades`) using stored checkpoints.
 
-Both writers persist to ClickHouse and emit status via `/v1/status` and `/health/readiness`.
+Both writers persist to ClickHouse and emit status via `/v1/status` and `/health`.
 
 ## 3. How replay reads are assembled
 

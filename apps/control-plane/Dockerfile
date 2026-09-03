@@ -1,4 +1,4 @@
-FROM node:20-alpine AS base
+FROM node:24-alpine AS base
 WORKDIR /app
 
 FROM base AS deps
@@ -15,13 +15,17 @@ COPY apps/control-plane /app/apps/control-plane
 WORKDIR /app/apps/control-plane
 RUN npm run build
 
-FROM node:20-alpine AS prod
+FROM node:24-alpine AS prod
 WORKDIR /app/apps/control-plane
 ENV NODE_ENV=production
 COPY --from=deps /app/node_modules /app/node_modules
 COPY --from=build /app/apps/control-plane/dist /app/apps/control-plane/dist
 COPY apps/control-plane/package.json /app/apps/control-plane/package.json
 COPY scripts/openbao-run.mjs /app/scripts/openbao-run.mjs
+# The node image ships an unprivileged `node` user; every other Node image in
+# the estate already runs as it.
+USER node
+
 EXPOSE 8080
 CMD ["node", "dist/main.js"]
 

@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import { test } from 'vitest';
 
 import { loadConfig } from '../src/config.js';
-import { withEnv } from './helpers.ts';
+import { withEnv } from './helpers.js';
 
 test('loadConfig returns defaults for optional config', async () => {
   await withEnv(

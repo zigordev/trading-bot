@@ -206,16 +206,14 @@ docker compose --env-file docker/.env.app.local -f docker/compose.app.local.yml 
 
 Useful endpoints from the shared stack:
 
-- Control-plane liveness: `http://localhost:3020/health/liveness`
-- Control-plane readiness: `http://localhost:3020/health/readiness`
+- Control-plane health: `http://localhost:3020/health`
 - Control-plane metrics: `http://localhost:3020/metrics`
 - Control-plane docs: `http://localhost:3020/docs`
 - Control-plane pairs: `http://localhost:3020/v1/pairs`
 - Control-plane timeframes: `http://localhost:3020/v1/timeframes`
 - Control-plane strategies: `http://localhost:3020/v1/strategies`
 - Control-plane risk profiles: `http://localhost:3020/v1/risk-profiles`
-- Market-data liveness: `http://localhost:3030/health/liveness`
-- Market-data readiness: `http://localhost:3030/health/readiness`
+- Market-data health: `http://localhost:3030/health`
 - Market-data metrics: `http://localhost:3030/metrics`
 - Market-data info: `http://localhost:3030/v1/info`
 - Market-data subscriptions: `http://localhost:3030/v1/subscriptions`
@@ -224,8 +222,7 @@ Useful endpoints from the shared stack:
 - Market-data recent trades example: `http://localhost:3030/v1/trades/BTCUSDT`
 - Market-data replay klines example: `http://localhost:3030/v1/replay/klines/BTCUSDT/1m?limit=100`
 - Market-data replay trades example: `http://localhost:3030/v1/replay/trades/BTCUSDT?limit=100`
-- Research-backtesting liveness: `http://localhost:3050/health/liveness`
-- Research-backtesting readiness: `http://localhost:3050/health/readiness`
+- Research-backtesting health: `http://localhost:3050/health`
 - Research-backtesting metrics: `http://localhost:3050/metrics`
 - Research-backtesting info: `http://localhost:3050/v1/info`
 - Research-backtesting runtime status: `http://localhost:3050/v1/status`

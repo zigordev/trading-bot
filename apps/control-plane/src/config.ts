@@ -63,7 +63,9 @@ export const loadConfig = (): AppConfig => {
 
   return {
     appEnv: process.env.APP_ENV ?? 'local',
-    serviceName: process.env.SERVICE_NAME ?? 'trading-bot-control-plane',
+    // `OTEL_SERVICE_NAME` is the estate-wide name: it is what health
+    // reports, what OTel tags spans with, and what every log line carries.
+    serviceName: process.env.OTEL_SERVICE_NAME ?? 'trading-bot-control-plane',
     port: Number(process.env.PORT ?? '8080'),
     dbHost: process.env.DB_HOST ?? 'trading-bot-postgres',
     dbPort: Number(process.env.DB_PORT ?? '5432'),

@@ -158,7 +158,7 @@ pub fn load_config() -> Result<AppConfig> {
 
     Ok(AppConfig {
         app_env: env_or_default("APP_ENV", "local"),
-        service_name: env_or_default("SERVICE_NAME", "trading-bot-research-backtesting"),
+        service_name: env_or_default("OTEL_SERVICE_NAME", "trading-bot-research-backtesting"),
         port: parse_u16("PORT", 8110)?,
         kafka_bootstrap_servers: env_or_default(
             "KAFKA_BOOTSTRAP_SERVERS",
@@ -232,8 +232,12 @@ mod tests {
 
     #[test]
     fn load_config_uses_defaults() {
+        // Test-only. Rust 2024 made `std::env::remove_var` unsafe because it
+        // is not thread-safe, so a test that clears an env var has no other
+        // way to do it. Nothing here dereferences a pointer.
+        // nosemgrep: rust.lang.security.unsafe-usage.unsafe-usage
         unsafe {
-            std::env::remove_var("SERVICE_NAME");
+            std::env::remove_var("OTEL_SERVICE_NAME");
             std::env::remove_var("BACKTEST_WARMUP_CANDLES");
             std::env::remove_var("BACKTEST_TIMERANGE_MS_BY_TIMEFRAME");
         }
