@@ -12,10 +12,10 @@ env:
 jobs:
   analyze:
     name: Analyze
-    # CodeQL requires GitHub Advanced Security on a private repository. This
-    # guard keeps the workflow green rather than failing every run — but it also
-    # means the job does not analyse anything until the repo is public or GHAS
-    # is enabled. Every repo in this estate is currently private.
+    # Code scanning upload needs GitHub Advanced Security, a paid add-on on a
+    # private repo. Without this guard the job runs the full analysis and only
+    # fails at the very last step ("Code scanning is not enabled for this
+    # repository") — every other repo in the estate already skips instead.
     if: ${{ !github.event.repository.private }}
     runs-on: ubuntu-latest
     permissions:
