@@ -1,0 +1,8 @@
+while read -r local_ref local_sha remote_ref remote_sha; do
+  if [ "$remote_ref" = "refs/heads/main" ]; then
+    echo "" >&2
+    echo "Direct pushes to main are blocked. Open a PR instead." >&2
+    echo "" >&2
+    exit 1
+  fi
+done
