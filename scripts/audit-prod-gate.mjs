@@ -193,7 +193,7 @@ for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
   }
 
   console.error(
-    `npm audit registry call failed (attempt ${attempt}/${MAX_ATTEMPTS}): ${errorMessage} — retrying in ${RETRY_DELAY_MS / 1000}s`,
+    `npm audit registry call failed (attempt ${attempt}/${MAX_ATTEMPTS}): ${errorMessage} — retrying in ${RETRY_DELAY_MS / 1000}s`
   );
   await sleep(RETRY_DELAY_MS);
 }
