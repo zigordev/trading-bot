@@ -142,37 +142,60 @@ function printIssues(header, issues) {
   }
 }
 
-const audit = spawnSync('npm', ['audit', '--omit=dev', '--json'], {
-  encoding: 'utf8',
-  maxBuffer: 10 * 1024 * 1024,
-});
+function runNpmAudit() {
+  const audit = spawnSync('npm', ['audit', '--omit=dev', '--json'], {
+    encoding: 'utf8',
+    maxBuffer: 10 * 1024 * 1024,
+  });
 
-if (audit.error) {
-  console.error(`npm audit execution failed: ${audit.error.message}`);
-  process.exit(1);
+  if (audit.error) {
+    console.error(`npm audit execution failed: ${audit.error.message}`);
+    process.exit(1);
+  }
+
+  const stdout = audit.stdout?.trim() ?? '';
+  if (!stdout) {
+    console.error('npm audit produced no JSON output.');
+    if (audit.stderr?.trim()) console.error(audit.stderr.trim());
+    process.exit(audit.status ?? 1);
+  }
+
+  try {
+    return JSON.parse(stdout);
+  } catch (error) {
+    console.error('Failed to parse npm audit JSON output.');
+    console.error(stdout);
+    if (audit.stderr?.trim()) console.error(audit.stderr.trim());
+    process.exit(audit.status ?? 1);
+  }
 }
 
-const stdout = audit.stdout?.trim() ?? '';
-if (!stdout) {
-  console.error('npm audit produced no JSON output.');
-  if (audit.stderr?.trim()) console.error(audit.stderr.trim());
-  process.exit(audit.status ?? 1);
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
+
+// registry.npmjs.org's advisories-bulk endpoint (what `npm audit` calls
+// under the hood) is occasionally unavailable for a few minutes at a time.
+// A report.error here means that call failed, not that the dependency tree
+// is clean or dirty — worth a couple of retries before failing the build.
+const MAX_ATTEMPTS = 3;
+const RETRY_DELAY_MS = 20_000;
 
 let report;
-try {
-  report = JSON.parse(stdout);
-} catch (error) {
-  console.error('Failed to parse npm audit JSON output.');
-  console.error(stdout);
-  if (audit.stderr?.trim()) console.error(audit.stderr.trim());
-  process.exit(audit.status ?? 1);
-}
+for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
+  report = runNpmAudit();
+  if (!report?.error) break;
 
-if (report?.error) {
   const errorMessage = report.error.message ?? report.message ?? 'unknown error';
-  console.error(`npm audit returned an error: ${errorMessage}`);
-  process.exit(1);
+  if (attempt === MAX_ATTEMPTS) {
+    console.error(`npm audit returned an error: ${errorMessage}`);
+    process.exit(1);
+  }
+
+  console.error(
+    `npm audit registry call failed (attempt ${attempt}/${MAX_ATTEMPTS}): ${errorMessage} — retrying in ${RETRY_DELAY_MS / 1000}s`,
+  );
+  await sleep(RETRY_DELAY_MS);
 }
 
 const result = report.vulnerabilities ? evaluateModernAudit(report) : evaluateLegacyAudit(report);
