@@ -12,7 +12,7 @@ chrono = "0.4.42"
 futures-util = "0.3.31"
 hmac = "0.12.1"
 hex = "0.4.3"
-rdkafka = { version = "0.38.0", features = ["cmake-build", "tokio"] }
+rdkafka = { version = "0.39.0", features = ["cmake-build", "tokio"] }
 prometheus = "0.14.0"
 trading-bot-observability = { path = "../observability" }
 reqwest = { version = "0.12.24", default-features = false, features = ["brotli", "gzip", "http2", "json", "rustls-tls"] }
