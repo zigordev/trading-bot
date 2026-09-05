@@ -10,8 +10,8 @@ env:
   HUSKY: '0'
 
 jobs:
-  analyze:
-    name: Analyze
+  analyze-js:
+    name: Analyze (javascript-typescript)
     # Code scanning upload needs GitHub Advanced Security, a paid add-on on a
     # private repo. Without this guard the job runs the full analysis and only
     # fails at the very last step ("Code scanning is not enabled for this
@@ -23,17 +23,12 @@ jobs:
       contents: read
       security-events: write
 
-    strategy:
-      fail-fast: false
-      matrix:
-        language: ['javascript-typescript']
-
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
       - uses: github/codeql-action/init@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4
         with:
-          languages: ${{ matrix.language }}
+          languages: javascript-typescript
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
         with:
@@ -41,5 +36,41 @@ jobs:
           cache: npm
 
       - run: npm install
+
+      - uses: github/codeql-action/analyze@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4
+
+  analyze-rust:
+    name: Analyze (rust)
+    if: ${{ !github.event.repository.private }}
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+
+      - uses: github/codeql-action/init@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4
+        with:
+          languages: rust
+
+      # Rust is compiled, so CodeQL needs an actual build to trace through —
+      # same toolchain setup as ci.yml's rust job, so the workspace builds the
+      # same way here as it does everywhere else.
+      - name: Install toolchain
+        run: rustup show
+
+      # rdkafka's cmake-build feature compiles librdkafka from source, and its
+      # SASL OAUTHBEARER/OIDC support includes curl.h unconditionally even with
+      # -DWITH_CURL=0 passed — the dev headers just need to be present, whether
+      # or not curl ends up linked. Not on the runner by default.
+      - name: Install librdkafka build dependencies
+        run: sudo apt-get update && sudo apt-get install -y libcurl4-openssl-dev
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+
+      - name: Build
+        run: cargo build --workspace --all-targets
 
       - uses: github/codeql-action/analyze@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4
