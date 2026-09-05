@@ -10,7 +10,7 @@ anyhow = "1.0.100"
 axum = { version = "0.8.4", features = ["http1", "json", "tokio"] }
 chrono = "0.4.42"
 futures-util = "0.3.31"
-hmac = "0.12.1"
+hmac = "0.13.0"
 hex = "0.4.3"
 rdkafka = { version = "0.39.0", features = ["cmake-build", "tokio"] }
 prometheus = "0.14.0"
