@@ -4,8 +4,8 @@
 /* Shared design system, copy-pasted in. Defines the --ds-* custom
    properties that the @theme block below aliases: one source of truth for
    colour, radius and shadow, in both light and dark. */
-@import "../../design-system/styles.css";
-@import "../../design-system/themes/operator-console.css";
+@import "design-system/styles.css";
+@import "design-system/themes/operator-console.css";
 
 @theme {
   /* Colour is aliased to the design system rather than restated. These were
