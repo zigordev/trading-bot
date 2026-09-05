@@ -7,7 +7,9 @@ updates:
     directory: /
     schedule:
       interval: weekly
-      day: monday
+      day: tuesday
+      time: '06:00'
+      timezone: 'Europe/Madrid'
     # Wait a week before proposing a newly published version. A compromised
     # release is usually caught and yanked within days, and nothing here is
     # urgent enough to be worth being the first to install it.
@@ -28,7 +30,9 @@ updates:
     directory: /
     schedule:
       interval: weekly
-      day: monday
+      day: tuesday
+      time: '06:00'
+      timezone: 'Europe/Madrid'
     # Wait a week before proposing a newly published version. A compromised
     # release is usually caught and yanked within days, and nothing here is
     # urgent enough to be worth being the first to install it.
@@ -42,7 +46,9 @@ updates:
     directory: /
     schedule:
       interval: weekly
-      day: monday
+      day: tuesday
+      time: '06:00'
+      timezone: 'Europe/Madrid'
     # Wait a week before proposing a newly published version. A compromised
     # release is usually caught and yanked within days, and nothing here is
     # urgent enough to be worth being the first to install it.
