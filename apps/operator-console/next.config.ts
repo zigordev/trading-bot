@@ -32,6 +32,9 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  // design-system ships raw .jsx rather than a build output, so Next has to
+  // transpile it like first-party source instead of skipping node_modules.
+  transpilePackages: ['design-system'],
   reactStrictMode: true,
   output: 'standalone',
   outputFileTracingRoot: path.resolve(__dirname, '../..'),

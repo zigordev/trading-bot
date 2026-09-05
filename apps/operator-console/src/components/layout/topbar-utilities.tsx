@@ -1,10 +1,10 @@
 'use client';
 
 import { usePreferences } from '@/components/providers/preferences-provider';
-import { Button } from '@ds/components/core/Button.jsx';
-import { Flag } from '@ds/components/icons/Flag.jsx';
-import { Icon } from '@ds/components/icons/Icon.jsx';
-import { Menu, MenuItem } from '@ds/components/overlay/Menu.jsx';
+import { Button } from 'design-system/components/core/Button.jsx';
+import { Flag } from 'design-system/components/icons/Flag.jsx';
+import { Icon } from 'design-system/components/icons/Icon.jsx';
+import { Menu, MenuItem } from 'design-system/components/overlay/Menu.jsx';
 
 const ICON_STYLE: React.CSSProperties = { lineHeight: 1 };
 

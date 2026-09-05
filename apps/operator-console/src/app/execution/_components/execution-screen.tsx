@@ -8,7 +8,7 @@ import type { SortingState } from '@tanstack/react-table';
 
 import { useTopbarSlot } from '@/components/layout/topbar-slot-context';
 import { usePreferences, type Translate } from '@/components/providers/preferences-provider';
-import { SegmentedControl } from '@ds/components/navigation/SegmentedControl.jsx';
+import { SegmentedControl } from 'design-system/components/navigation/SegmentedControl.jsx';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { ErrorState } from '@/components/shared/error-state';
