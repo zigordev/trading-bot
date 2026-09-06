@@ -1,0 +1,61 @@
+name: Dependency Review
+
+# Every other dependency check in this estate inspects the *state* of the tree:
+# `npm audit` scans everything installed, Trivy scans what ended up in the
+# image, check-licences.mjs walks the production dependencies. All of them
+# answer "is the tree currently bad?".
+#
+# None of them answers "does this pull request make it worse", which is a
+# different question with a different failure mode:
+#
+#   - A whole-tree audit that is already red for an unrelated reason hides the
+#     new problem. This is silent until *your* change adds something, so a red
+#     here always means this PR.
+#   - `npm audit` runs with --omit=dev, so a PR adding a compromised build-time
+#     package passes every gate that exists today. That is the shape of most
+#     recent npm supply-chain attacks: the payload runs in postinstall, on
+#     developer machines and CI runners, and never reaches the image Trivy
+#     scans.
+#   - Trivy catches it eventually, but only after it is merged and built.
+#     Dependabot does not catch it at all — it proposes upgrades to packages
+#     already present, and has nothing to say about one a human just added.
+#
+# pull_request only, by construction: the action diffs the dependency graph
+# between base and head, so there is nothing for it to compare on a push.
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dependency-review-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dependency-review:
+    name: Dependency Review
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          # Matches the `npm audit --audit-level=high` gate already in ci.yml,
+          # so the two agree on what counts as serious enough to block.
+          fail-on-severity: high
+
+          # Deliberately wider than `npm audit --omit=dev`. Development
+          # dependencies are the gap that gate leaves open, and they are the
+          # ones that execute on a runner holding cloud credentials.
+          fail-on-scopes: runtime, development
+
+          # Licences are intentionally not configured here. check-licences.mjs
+          # already owns that policy — production scope only, with a named
+          # exception list and the reasoning written beside each entry. Two
+          # licence policies would drift, and the one that drifts quietly is
+          # the one nobody reads.
