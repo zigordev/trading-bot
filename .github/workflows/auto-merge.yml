@@ -54,6 +54,7 @@ jobs:
     name: Auto-merge (Dependabot, patch/minor only)
     if: github.actor == 'dependabot[bot]' && github.event.pull_request.draft == false
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       # Reads PR metadata only — no reason to spend the PAT on it.
       - name: Fetch Dependabot metadata
@@ -78,6 +79,7 @@ jobs:
     name: Auto-merge
     if: github.actor != 'dependabot[bot]' && github.event.pull_request.draft == false
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Enable auto-merge
         env:
