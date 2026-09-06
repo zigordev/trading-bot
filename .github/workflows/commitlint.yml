@@ -5,6 +5,12 @@ on:
     branches: [main]
     types: [opened, edited, synchronize, reopened]
 
+# A superseded run tells you about a commit nobody is waiting on, while
+# holding a runner the current commit needs.
+concurrency:
+  group: commitlint-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   HUSKY: '0'
 
@@ -14,6 +20,7 @@ permissions:
 jobs:
   pr-title:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
