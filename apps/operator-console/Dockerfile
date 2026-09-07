@@ -45,3 +45,16 @@ EXPOSE 3000
 HEALTHCHECK --interval=10s --timeout=3s --retries=12 \
   CMD wget -qO- http://127.0.0.1:3000/ >/dev/null 2>&1 || exit 1
 CMD ["node", "apps/operator-console/server.js"]
+
+FROM node:26-alpine AS dev
+WORKDIR /repo
+ENV NODE_ENV=development
+ENV NEXT_TELEMETRY_DISABLED=1
+RUN apk add --no-cache libc6-compat
+COPY --from=deps /repo/node_modules ./node_modules
+COPY package.json package-lock.json* ./
+COPY apps/control-plane/package.json apps/control-plane/package.json
+COPY apps/operator-console ./apps/operator-console
+WORKDIR /repo/apps/operator-console
+EXPOSE 3000
+CMD ["npm", "exec", "--", "next", "dev", "-H", "0.0.0.0", "-p", "3000"]
