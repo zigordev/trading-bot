@@ -1,4 +1,4 @@
-FROM node:24-alpine AS base
+FROM node:26-alpine AS base
 WORKDIR /app
 
 FROM base AS deps
@@ -15,7 +15,7 @@ COPY apps/control-plane /app/apps/control-plane
 WORKDIR /app/apps/control-plane
 RUN npm run build
 
-FROM node:24-alpine AS prod
+FROM node:26-alpine AS prod
 WORKDIR /app/apps/control-plane
 ENV NODE_ENV=production
 # Pull the latest Alpine security patches at build time rather than waiting on
