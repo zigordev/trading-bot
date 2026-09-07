@@ -30,6 +30,14 @@ updates:
       production-patch:
         dependency-type: production
         update-types: [patch]
+    # design-system is a git dependency pinned by tag, and Dependabot cannot
+    # order those tags reliably — it proposed "v0.1.42 -> v0.1.38", a
+    # downgrade past four releases. Beyond that, taking a new design system
+    # is a deliberate decision about how the product looks, not a routine
+    # dependency update, so it belongs in a pull request someone opened on
+    # purpose.
+    ignore:
+      - dependency-name: design-system
     commit-message:
       prefix: chore
       include: scope
