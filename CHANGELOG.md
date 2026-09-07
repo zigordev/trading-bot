@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.3](https://github.com/zigordev/trading-bot/compare/v0.1.2...v0.1.3) (2026-09-07)
+
+
+### Features
+
+* **docker:** run every service under compose watch for local development ([#78](https://github.com/zigordev/trading-bot/issues/78)) ([3aa0589](https://github.com/zigordev/trading-bot/commit/3aa05891b23e397495d8b3bc688742190c190f0c))
+
 ## [0.1.2](https://github.com/zigordev/trading-bot/compare/v0.1.1...v0.1.2) (2026-09-07)
 
 
