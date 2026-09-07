@@ -20,6 +20,7 @@ jobs:
   secrets-scan:
     name: Secrets Scan (Gitleaks)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     # gitleaks-action calls GET /pulls/{n}/commits to scope its scan to the PR's
     # own commits. The workflow-level `contents: read` above doesn't cover that
     # call, and Dependabot-triggered runs get no implicit permissions beyond
@@ -44,6 +45,7 @@ jobs:
   rust:
     name: Rust (fmt + clippy + test)
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
@@ -73,6 +75,7 @@ jobs:
   typescript:
     name: TypeScript (format + typecheck + build + test)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
@@ -99,6 +102,7 @@ jobs:
   compose-validation:
     name: Compose Manifests
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
@@ -186,6 +190,7 @@ jobs:
   sast:
     name: SAST (Semgrep)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     # Semgrep rather than CodeQL: CodeQL code scanning on a *private* repository
     # requires GitHub Code Security, a paid add-on. The CodeQL workflow beside
     # this one is gated on `!repository.private` for that reason and never runs.
