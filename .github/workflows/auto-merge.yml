@@ -1,45 +1,5 @@
 name: Auto-merge
 
-# main requires a PR and every check green — nothing merges without that,
-# regardless of who or what opened the PR. This workflow is what makes that
-# not mean "someone has to remember to click merge": it schedules GitHub's
-# native auto-merge the moment a PR is ready, and GitHub itself still holds
-# it until the branch ruleset's required checks actually pass.
-#
-# Dependabot gets one exception: a major version bump still needs a human,
-# since this estate has hit several this year that passed CI green and
-# still broke something a type-check or a build step didn't catch.
-#
-# ---------------------------------------------------------------------------
-# Why this does not merge with GITHUB_TOKEN
-#
-# A push made by GITHUB_TOKEN triggers no workflow. That is GitHub's
-# anti-recursion rule and it is not configurable. Since auto-merge performs
-# the merge, merging with GITHUB_TOKEN means the push to main fires nothing —
-# and this estate has real work hanging off `on: push`:
-#
-#   - release-please              no push, no release PR, no tag
-#   - codeql                      the main-branch baseline goes stale
-#   - promote-prod-translations   (gpool) translations never reach prod Tolgee
-#
-# That is exactly what happened between 2026-09-04 and 2026-09-06: auto-merge
-# landed, and from that moment not one push-triggered run occurred in any of
-# the seven repositories. Nothing errored. The runs simply never existed,
-# which is why it took two days to notice.
-#
-# So the merge is authenticated with a personal access token instead. The
-# merge is then attributed to a real account, the push is an ordinary push,
-# and everything downstream of it runs.
-#
-# The secret is named RELEASE_PLEASE_TOKEN for historical reasons — it was
-# added for release-please first. It is the estate's automation PAT, used
-# here and by release-please, and wants contents + pull-requests write on
-# these repositories and nothing else.
-#
-# The fallback below is deliberate: without the secret this still merges,
-# just without triggering anything, and says so in the run log. A missing
-# secret should degrade, not wedge the merge queue.
-
 on:
   pull_request_target:
     branches: [main]
@@ -56,7 +16,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      # Reads PR metadata only — no reason to spend the PAT on it.
       - name: Fetch Dependabot metadata
         id: metadata
         uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0

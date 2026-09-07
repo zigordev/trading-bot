@@ -21,23 +21,16 @@ jobs:
     name: Secrets Scan (Gitleaks)
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    # gitleaks-action calls GET /pulls/{n}/commits to scope its scan to the PR's
-    # own commits. The workflow-level `contents: read` above doesn't cover that
-    # call, and Dependabot-triggered runs get no implicit permissions beyond
-    # what's declared here — every Dependabot PR failed this job with a 403
-    # until this was added.
     permissions:
       contents: read
       pull-requests: read
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          # Full history: a secret committed months ago and deleted last week is
-          # still in the pack file and still leaked.
           fetch-depth: 0
 
       - name: Run gitleaks
-        uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
+        uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITLEAKS_ENABLE_UPLOAD_ARTIFACT: false
@@ -191,34 +184,12 @@ jobs:
     name: SAST (Semgrep)
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    # Semgrep rather than CodeQL: CodeQL code scanning on a *private* repository
-    # requires GitHub Code Security, a paid add-on. The CodeQL workflow beside
-    # this one is gated on `!repository.private` for that reason and never runs.
-    # Semgrep needs no add-on, so this is the job that actually scans.
-    #
-    # Findings fail the build and appear in the job log. Uploading SARIF to the
-    # Security tab needs the same paid add-on, so the log is the report.
-    #
-    # Excluded rules, each reviewed rather than waved through:
-    #   missing-user: container hardening — backlog
-    #   missing-user-entrypoint: container hardening — backlog
-    #   writable-filesystem-service: container hardening — backlog
-    #   no-new-privileges: container hardening — backlog
-    #   ifs-tampering: IFS is saved and restored around the loop
-    #   detected-generic-secret: entropy heuristic; gitleaks already covers secrets
-    #   prototype-pollution-loop: read-only tree walks, guarded with hasOwnProperty; no assignment
-    #   incomplete-sanitization: stripping '%' from a formatted percentage, not sanitisation
-    #   detect-non-literal-regexp: locale comes from a fixed list, in a build script
-    #   aws-subnet-has-public-ip-address: single public host by design; there is no NAT gateway
     container:
       image: semgrep/semgrep:1.99.0
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
       - name: Scan
-        # `semgrep scan`, not `semgrep ci`: the latter expects a Semgrep AppSec
-        # Platform token and behaves differently without one. `--error` is what
-        # turns a finding into a failed job rather than a printed note.
         run: |
           semgrep scan \
             --config p/default \
