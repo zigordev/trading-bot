@@ -299,3 +299,51 @@ pub fn api_key_header(headers: &HeaderMap) -> Option<&str> {
         .get("X-MBX-APIKEY")
         .and_then(|value| value.to_str().ok())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        BinanceAccountInformation, BinanceBalance, BinanceOpenOrder, ensure_no_open_orders,
+        has_any_free_balance,
+    };
+
+    fn open_order() -> BinanceOpenOrder {
+        BinanceOpenOrder {
+            symbol: Some("BTCUSDT".to_string()),
+            order_id: Some(1),
+            client_order_id: None,
+            status: Some("NEW".to_string()),
+            side: Some("BUY".to_string()),
+            price: Some("50000".to_string()),
+            orig_qty: Some("0.002".to_string()),
+            executed_qty: Some("0".to_string()),
+        }
+    }
+
+    fn account(free_amounts: &[&str]) -> BinanceAccountInformation {
+        BinanceAccountInformation {
+            balances: free_amounts
+                .iter()
+                .map(|free| BinanceBalance {
+                    asset: "USDT".to_string(),
+                    free: (*free).to_string(),
+                    locked: "0".to_string(),
+                })
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn live_startup_refuses_while_an_order_is_still_open() {
+        assert!(ensure_no_open_orders(&[]).is_ok());
+        assert!(ensure_no_open_orders(&[open_order()]).is_err());
+    }
+
+    #[test]
+    fn free_balance_needs_a_positive_parseable_amount() {
+        assert!(!has_any_free_balance(&account(&[])));
+        assert!(!has_any_free_balance(&account(&["0.00000000"])));
+        assert!(!has_any_free_balance(&account(&["not-a-number"])));
+        assert!(has_any_free_balance(&account(&["0.00000000", "0.5"])));
+    }
+}

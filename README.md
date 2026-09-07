@@ -34,7 +34,6 @@ No live order execution has been added yet.
 ## Planned structure
 
 - `apps/control-plane/`
-- `contracts/proto/`
 - `crates/market-data/`
 - `crates/research-backtesting/`
 - `crates/strategy-engine/`
