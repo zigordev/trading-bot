@@ -1103,36 +1103,62 @@ mod tests {
     }
 
     #[test]
-    fn strategy1_requires_longer_and_operating_windows() {
-        let record = record_with_kind(
-            "strategy1",
-            json!({
-                "longerTimeframeEmaPeriods": 200,
-                "macdFastPeriods": 12,
-                "macdSlowPeriods": 26,
-                "macdSignalPeriods": 9,
-                "stochasticPeriods": 14,
-                "stochasticSignalPeriods": 3
-            }),
-        );
-        let spec = build_analysis_spec(&record)
-            .expect("spec build should succeed")
-            .expect("strategy1 should be supported");
-        let mut evaluator = AnalysisEvaluator::new(spec);
-        for index in 0..LEGACY_WINDOW_CANDLES {
-            let open_time_5m = (index as i64) * 300_000;
-            let open_time_1m = (index as i64) * 60_000;
-            evaluator.warm_from_klines(&[
-                persisted_row("5m", open_time_5m, 100.0 + index as f64),
-                persisted_row("1m", open_time_1m, 100.0 + index as f64),
-            ]);
+    fn strategy1_emits_nothing_until_both_windows_are_warm() {
+        let build_spec = || {
+            let record = record_with_kind(
+                "strategy1",
+                json!({
+                    "longerTimeframeEmaPeriods": 200,
+                    "macdFastPeriods": 12,
+                    "macdSlowPeriods": 26,
+                    "macdSignalPeriods": 9,
+                    "stochasticPeriods": 14,
+                    "stochasticSignalPeriods": 3
+                }),
+            );
+            build_analysis_spec(&record)
+                .expect("spec build should succeed")
+                .expect("strategy1 should be supported")
+        };
+
+        let spec = build_spec();
+        assert_eq!(spec.max_warmup_candles(), LEGACY_WINDOW_CANDLES);
+        for requirement in spec.required_kline_requirements() {
+            assert_eq!(
+                requirement.warmup_candles, LEGACY_WINDOW_CANDLES,
+                "{} window",
+                requirement.timeframe_code
+            );
         }
 
-        let signal = evaluator.process_live_kline(&live_closed_event(
-            "1m",
-            (LEGACY_WINDOW_CANDLES as i64) * 60_000,
-            1100.0,
-        ));
-        assert!(signal.is_some() || signal.is_none());
+        let warm = |evaluator: &mut AnalysisEvaluator, timeframe: &str, candles: usize| {
+            let period_ms = if timeframe == "5m" { 300_000 } else { 60_000 };
+            for index in 0..candles {
+                evaluator.warm_from_klines(&[persisted_row(
+                    timeframe,
+                    (index as i64) * period_ms,
+                    100.0 + index as f64,
+                )]);
+            }
+        };
+        let live_close_time = (LEGACY_WINDOW_CANDLES as i64) * 60_000;
+
+        let mut longer_window_short = AnalysisEvaluator::new(build_spec());
+        warm(&mut longer_window_short, "5m", LEGACY_WINDOW_CANDLES - 1);
+        warm(&mut longer_window_short, "1m", LEGACY_WINDOW_CANDLES);
+        assert!(
+            longer_window_short
+                .process_live_kline(&live_closed_event("1m", live_close_time, 1100.0))
+                .is_none()
+        );
+
+        let mut operating_window_short = AnalysisEvaluator::new(build_spec());
+        warm(&mut operating_window_short, "5m", LEGACY_WINDOW_CANDLES);
+        warm(&mut operating_window_short, "1m", LEGACY_WINDOW_CANDLES - 2);
+        assert!(
+            operating_window_short
+                .process_live_kline(&live_closed_event("1m", live_close_time, 1100.0))
+                .is_none()
+        );
     }
 }
