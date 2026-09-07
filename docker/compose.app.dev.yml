@@ -1,0 +1,80 @@
+x-rust-dev: &rust-dev
+  build:
+    context: ..
+    dockerfile: crates/Dockerfile.dev
+    target: dev
+  volumes:
+    - dev-cargo-target:/cargo-target
+  healthcheck:
+    start_period: 900s
+  develop:
+    watch:
+      - action: sync
+        path: ../crates
+        target: /app/crates
+      - action: rebuild
+        path: ../Cargo.lock
+      - action: rebuild
+        path: ../Cargo.toml
+
+services:
+  trading_bot_api:
+    build:
+      target: dev
+    environment:
+      NODE_ENV: development
+    command: ['node', '/app/scripts/openbao-run.mjs', '--', 'npm', 'run', 'start:dev']
+    healthcheck:
+      start_period: 60s
+    develop:
+      watch:
+        - action: sync
+          path: ../apps/control-plane/src
+          target: /app/apps/control-plane/src
+        - action: sync+restart
+          path: ../apps/control-plane/tsconfig.json
+          target: /app/apps/control-plane/tsconfig.json
+        - action: rebuild
+          path: ../package-lock.json
+        - action: rebuild
+          path: ../apps/control-plane/package.json
+
+  trading_bot_market_data:
+    <<: *rust-dev
+    command: ['cargo', 'watch', '-x', 'run -p trading-bot-market-data']
+
+  trading_bot_research_backtesting:
+    <<: *rust-dev
+    command: ['cargo', 'watch', '-x', 'run -p trading-bot-research-backtesting']
+
+  trading_bot_execution:
+    <<: *rust-dev
+    command: ['cargo', 'watch', '-x', 'run -p trading-bot-execution']
+
+  trading_bot_operator-console:
+    build:
+      target: dev
+    environment:
+      NODE_ENV: development
+      NEXT_PUBLIC_CONTROL_PLANE_BASE_URL: ${OPERATOR_CONSOLE_CONTROL_PLANE_BASE_URL:-http://localhost:3020}
+    command: ['npm', 'exec', '--', 'next', 'dev', '-H', '0.0.0.0', '-p', '3000']
+    healthcheck:
+      start_period: 60s
+    develop:
+      watch:
+        - action: sync
+          path: ../apps/operator-console/src
+          target: /repo/apps/operator-console/src
+        - action: sync
+          path: ../apps/operator-console/public
+          target: /repo/apps/operator-console/public
+        - action: sync+restart
+          path: ../apps/operator-console/next.config.ts
+          target: /repo/apps/operator-console/next.config.ts
+        - action: rebuild
+          path: ../package-lock.json
+        - action: rebuild
+          path: ../apps/operator-console/package.json
+
+volumes:
+  dev-cargo-target:

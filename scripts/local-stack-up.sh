@@ -157,6 +157,13 @@ if [ $i -gt 60 ]; then
   exit 1
 fi
 
+if [ "${LOCAL_STACK_MODE:-}" = "dev" ]; then
+  echo "Starting the trading-bot stack in watch mode."
+  exec docker compose --env-file "$APP_ENV_FILE" \
+    -f "$APP_COMPOSE_FILE" -f docker/compose.app.dev.yml \
+    up --build --remove-orphans --watch
+fi
+
 docker compose --env-file "$APP_ENV_FILE" -f "$APP_COMPOSE_FILE" up -d --build --force-recreate --remove-orphans
 
 echo "trading-bot local stack started."
