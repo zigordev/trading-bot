@@ -31,6 +31,7 @@
     "test": "npm run test:control-plane && npm run test:operator-console && npm run test:execution && npm run test:market-data && npm run test:research-backtesting",
     "test:control-plane": "npm run test -w @trading-bot/control-plane",
     "test:execution": "cargo test -p trading-bot-execution",
+    "test:integration": "bash ./scripts/ci-integration.sh",
     "test:market-data": "cargo test -p trading-bot-market-data",
     "test:operator-console": "npm run test -w @trading-bot/operator-console",
     "test:research-backtesting": "cargo test -p trading-bot-research-backtesting",

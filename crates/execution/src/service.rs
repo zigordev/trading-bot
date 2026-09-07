@@ -888,7 +888,9 @@ impl ExecutionService {
             bail!("live mode active but Binance private client is not configured");
         };
 
-        let quantity = (self.inner.config.default_position_notional_usd / fill_price).max(0.000001);
+        let quantity =
+            position_quantity(self.inner.config.default_position_notional_usd, fill_price)?
+                .max(0.000001);
         let side = if signal.signal_direction == "long" {
             "BUY"
         } else {
@@ -942,23 +944,20 @@ impl ExecutionService {
         signal: &EmittedSignal,
         fill_price: f64,
     ) -> Result<()> {
-        let quantity = self.inner.config.default_position_notional_usd / fill_price;
+        let quantity =
+            position_quantity(self.inner.config.default_position_notional_usd, fill_price)?;
         let risk = &context.analysis.risk_profile;
-        let stop_distance = risk
-            .swing_gap
-            .max(risk.minimum_stop_loss)
-            .min(risk.maximum_stop_loss);
-        let (stop_loss_price, take_profit_price) = if signal.signal_direction == "long" {
-            (
-                fill_price * (1.0 - stop_distance / 100.0),
-                fill_price * (1.0 + ((stop_distance * risk.rrr) / 100.0)),
-            )
-        } else {
-            (
-                fill_price * (1.0 + stop_distance / 100.0),
-                fill_price * (1.0 - ((stop_distance * risk.rrr) / 100.0)),
-            )
-        };
+        let stop_distance = clamp_stop_distance(
+            risk.swing_gap,
+            risk.minimum_stop_loss,
+            risk.maximum_stop_loss,
+        );
+        let (stop_loss_price, take_profit_price) = risk_exit_prices(
+            &signal.signal_direction,
+            fill_price,
+            stop_distance,
+            risk.rrr,
+        );
 
         let trade_id = format!(
             "paper:{}:{}",
@@ -1263,6 +1262,41 @@ fn current_timestamp() -> String {
     chrono::Utc::now().to_rfc3339()
 }
 
+fn position_quantity(notional_usd: f64, fill_price: f64) -> Result<f64> {
+    if !notional_usd.is_finite() || notional_usd <= 0.0 {
+        bail!("position notional must be a positive finite number, got {notional_usd}");
+    }
+    if !fill_price.is_finite() || fill_price <= 0.0 {
+        bail!("fill price must be a positive finite number, got {fill_price}");
+    }
+    Ok(notional_usd / fill_price)
+}
+
+fn clamp_stop_distance(swing_gap: f64, minimum_stop_loss: f64, maximum_stop_loss: f64) -> f64 {
+    swing_gap.max(minimum_stop_loss).min(maximum_stop_loss)
+}
+
+fn risk_exit_prices(
+    side: &str,
+    fill_price: f64,
+    stop_distance_percent: f64,
+    rrr: f64,
+) -> (f64, f64) {
+    let stop_fraction = stop_distance_percent / 100.0;
+    let take_profit_fraction = (stop_distance_percent * rrr) / 100.0;
+    if side == "long" {
+        (
+            fill_price * (1.0 - stop_fraction),
+            fill_price * (1.0 + take_profit_fraction),
+        )
+    } else {
+        (
+            fill_price * (1.0 + stop_fraction),
+            fill_price * (1.0 - take_profit_fraction),
+        )
+    }
+}
+
 fn normalize_close_reason(
     position: &LocalPaperPosition,
     exit_price: f64,
@@ -1380,5 +1414,136 @@ mod tests {
             timestamp_from_millis(timestamp_ms),
             "2026-03-31T15:26:00+00:00"
         );
+    }
+
+    fn paper_position(
+        side: &str,
+        entry: f64,
+        stop_loss: f64,
+        take_profit: f64,
+    ) -> LocalPaperPosition {
+        LocalPaperPosition {
+            promotion_id: "promotion-1".to_string(),
+            trade_id: "paper:promotion-1:1".to_string(),
+            analysis_setting_id: "analysis-1".to_string(),
+            symbol_code: "BTCUSDT".to_string(),
+            timeframe_code: "1m".to_string(),
+            strategy_name: "strategy1".to_string(),
+            risk_profile_name: "default-risk".to_string(),
+            side: side.to_string(),
+            opened_at: "2026-03-28T00:00:00Z".to_string(),
+            opened_at_ms: 0,
+            entry_price: entry,
+            quantity: 0.002,
+            notional_usd: 100.0,
+            stop_loss_price: stop_loss,
+            take_profit_price: take_profit,
+            source_backtest_id: None,
+        }
+    }
+
+    fn assert_close(actual: f64, expected: f64) {
+        assert!(
+            (actual - expected).abs() < 1e-9,
+            "expected {expected}, got {actual}"
+        );
+    }
+
+    #[test]
+    fn quantity_is_notional_over_fill_price() {
+        assert_close(position_quantity(100.0, 50_000.0).unwrap(), 0.002);
+    }
+
+    #[test]
+    fn quantity_refuses_a_price_that_cannot_size_an_order() {
+        for price in [0.0, -1.0, f64::NAN, f64::INFINITY] {
+            assert!(position_quantity(100.0, price).is_err(), "price {price}");
+        }
+        assert!(position_quantity(0.0, 50_000.0).is_err());
+    }
+
+    #[test]
+    fn stop_distance_is_held_inside_the_profile_bounds() {
+        assert_close(clamp_stop_distance(0.5, 1.0, 5.0), 1.0);
+        assert_close(clamp_stop_distance(9.0, 1.0, 5.0), 5.0);
+        assert_close(clamp_stop_distance(2.0, 1.0, 5.0), 2.0);
+    }
+
+    #[test]
+    fn risk_exits_bracket_the_entry_on_each_side() {
+        let (stop_loss, take_profit) = risk_exit_prices("long", 100.0, 2.0, 2.0);
+        assert_close(stop_loss, 98.0);
+        assert_close(take_profit, 104.0);
+
+        let (stop_loss, take_profit) = risk_exit_prices("short", 100.0, 2.0, 2.0);
+        assert_close(stop_loss, 102.0);
+        assert_close(take_profit, 96.0);
+    }
+
+    #[test]
+    fn close_reason_resolves_stop_and_take_profit_at_the_boundary() {
+        let long = paper_position("long", 100.0, 98.0, 104.0);
+        assert_eq!(normalize_close_reason(&long, 98.0, "riskExit"), "stopLoss");
+        assert_eq!(
+            normalize_close_reason(&long, 104.0, "riskExit"),
+            "takeProfit"
+        );
+        assert_eq!(normalize_close_reason(&long, 100.0, "riskExit"), "riskExit");
+        assert_eq!(normalize_close_reason(&long, 50.0, "reversal"), "reversal");
+
+        let short = paper_position("short", 100.0, 102.0, 96.0);
+        assert_eq!(
+            normalize_close_reason(&short, 102.0, "riskExit"),
+            "stopLoss"
+        );
+        assert_eq!(
+            normalize_close_reason(&short, 96.0, "riskExit"),
+            "takeProfit"
+        );
+        assert_eq!(
+            normalize_close_reason(&short, 100.0, "riskExit"),
+            "riskExit"
+        );
+    }
+
+    mod invariants {
+        use proptest::prelude::*;
+
+        use super::super::{clamp_stop_distance, position_quantity, risk_exit_prices};
+
+        proptest! {
+            #[test]
+            fn quantity_recovers_the_notional(
+                notional in 1.0f64..1.0e7,
+                price in 1.0e-6f64..1.0e7,
+            ) {
+                let quantity = position_quantity(notional, price).unwrap();
+                prop_assert!(quantity.is_finite() && quantity > 0.0);
+                prop_assert!((quantity * price - notional).abs() <= notional * 1e-9);
+            }
+
+            #[test]
+            fn stop_distance_stays_inside_the_profile(
+                swing_gap in 0.0f64..100.0,
+                minimum in 0.0f64..50.0,
+                span in 0.0f64..50.0,
+            ) {
+                let maximum = minimum + span;
+                let distance = clamp_stop_distance(swing_gap, minimum, maximum);
+                prop_assert!(distance >= minimum && distance <= maximum);
+            }
+
+            #[test]
+            fn exits_bracket_the_entry(
+                price in 1.0e-3f64..1.0e6,
+                distance in 0.01f64..50.0,
+                rrr in 0.1f64..10.0,
+            ) {
+                let (stop_loss, take_profit) = risk_exit_prices("long", price, distance, rrr);
+                prop_assert!(stop_loss < price && price < take_profit);
+                let (stop_loss, take_profit) = risk_exit_prices("short", price, distance, rrr);
+                prop_assert!(take_profit < price && price < stop_loss);
+            }
+        }
     }
 }
