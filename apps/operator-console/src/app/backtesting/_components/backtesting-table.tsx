@@ -1,7 +1,8 @@
 'use client';
 
 import * as React from 'react';
-import type { ColumnDef, SortingState, VisibilityState } from '@tanstack/react-table';
+import type { ColumnVisibilityState, SortingState } from '@tanstack/react-table';
+import type { LegacyColumnDef } from '@tanstack/react-table/legacy';
 import { MoreHorizontal } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
@@ -27,8 +28,8 @@ interface BacktestingTableProps {
   isLoading?: boolean;
   sorting: SortingState;
   onSortingChange: (next: SortingState) => void;
-  columnVisibility: VisibilityState;
-  onColumnVisibilityChange: (next: VisibilityState) => void;
+  columnVisibility: ColumnVisibilityState;
+  onColumnVisibilityChange: (next: ColumnVisibilityState) => void;
   onRowSelect: (row: BacktestRow) => void;
   toolbar?: React.ReactNode;
 }
@@ -44,7 +45,7 @@ export function BacktestingTable({
   toolbar,
 }: BacktestingTableProps) {
   const { t } = usePreferences();
-  const columns = React.useMemo<ColumnDef<BacktestRow, unknown>[]>(
+  const columns = React.useMemo<LegacyColumnDef<BacktestRow, unknown>[]>(
     () => [
       {
         id: 'symbol',
