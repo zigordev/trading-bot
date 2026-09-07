@@ -1,5 +1,5 @@
 use anyhow::{Context, Result, bail};
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use reqwest::{Client, Method, header::HeaderMap};
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
