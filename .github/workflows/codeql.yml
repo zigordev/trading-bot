@@ -1,10 +1,10 @@
 name: CodeQL
 
 on:
-  push:
-    branches: [main]
   pull_request:
     branches: [main]
+  schedule:
+    - cron: '17 4 * * 1'
 
 # A superseded run tells you about a commit nobody is waiting on, while
 # holding a runner the current commit needs.
