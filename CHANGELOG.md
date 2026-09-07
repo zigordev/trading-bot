@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.2](https://github.com/zigordev/trading-bot/compare/v0.1.1...v0.1.2) (2026-09-07)
+
+
+### Bug Fixes
+
+* **deps:** let overrides accept patches instead of pinning exact versions ([#73](https://github.com/zigordev/trading-bot/issues/73)) ([c4ff35c](https://github.com/zigordev/trading-bot/commit/c4ff35cb381466975f56f2a94745202700959a9f)), closes [#30](https://github.com/zigordev/trading-bot/issues/30)
+
 ## [0.1.1](https://github.com/zigordev/trading-bot/compare/v0.1.0...v0.1.1) (2026-09-07)
 
 
