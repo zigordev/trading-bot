@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import type { ColumnDef } from '@tanstack/react-table';
+import type { LegacyColumnDef } from '@tanstack/react-table/legacy';
 import { Edit3, MoreHorizontal, Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -46,13 +46,13 @@ export function ConfigTable({ resource, records, isLoading, onEdit, onCreate }: 
   const [pendingDelete, setPendingDelete] = React.useState<Record<string, unknown> | null>(null);
   const remove = useDeleteConfigResource(resource.endpoint);
 
-  const columns = React.useMemo<ColumnDef<Record<string, unknown>, unknown>[]>(() => {
+  const columns = React.useMemo<LegacyColumnDef<Record<string, unknown>, unknown>[]>(() => {
     const summaryFields = resource.fields
       .filter((f) => f.kind !== 'json' && f.kind !== 'promotion-thresholds')
       .slice(0, 4);
 
     return [
-      ...summaryFields.map<ColumnDef<Record<string, unknown>, unknown>>((field) => {
+      ...summaryFields.map<LegacyColumnDef<Record<string, unknown>, unknown>>((field) => {
         const path = field.name;
         return {
           id: path,

@@ -3,18 +3,22 @@
 import * as React from 'react';
 import {
   flexRender,
+  type CellData,
+  type ColumnFiltersState,
+  type ColumnVisibilityState,
+  type RowData,
+  type SortingState,
+  type TableFeatures,
+} from '@tanstack/react-table';
+import {
   getCoreRowModel,
   getFilteredRowModel,
   getPaginationRowModel,
   getSortedRowModel,
-  useReactTable,
-  type ColumnDef,
-  type ColumnFiltersState,
-  type RowData,
-  type SortingState,
-  type Table as TanstackTable,
-  type VisibilityState,
-} from '@tanstack/react-table';
+  useLegacyTable,
+  type LegacyColumnDef,
+  type LegacyReactTable,
+} from '@tanstack/react-table/legacy';
 import { cn } from '@/lib/utils';
 import { Skeleton } from '@/components/ui/skeleton';
 import { usePreferences } from '@/components/providers/preferences-provider';
@@ -28,7 +32,14 @@ import {
 
 declare module '@tanstack/react-table' {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  interface ColumnMeta<TData extends RowData, TValue> {
+  interface ColumnMeta<
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    TFeatures extends TableFeatures,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    TData extends RowData,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    TValue extends CellData = CellData,
+  > {
     align?: 'left' | 'right' | 'center';
     sticky?: 'left';
     headerClassName?: string;
@@ -37,8 +48,8 @@ declare module '@tanstack/react-table' {
   }
 }
 
-interface DataTableProps<TData> {
-  columns: ColumnDef<TData, unknown>[];
+interface DataTableProps<TData extends RowData> {
+  columns: LegacyColumnDef<TData, unknown>[];
   data: TData[];
   rowKey?: (row: TData) => string;
   isLoading?: boolean;
@@ -50,8 +61,8 @@ interface DataTableProps<TData> {
   state?: {
     sorting?: SortingState;
     onSortingChange?: (next: SortingState) => void;
-    columnVisibility?: VisibilityState;
-    onColumnVisibilityChange?: (next: VisibilityState) => void;
+    columnVisibility?: ColumnVisibilityState;
+    onColumnVisibilityChange?: (next: ColumnVisibilityState) => void;
     columnFilters?: ColumnFiltersState;
     onColumnFiltersChange?: (next: ColumnFiltersState) => void;
     globalFilter?: string;
@@ -69,7 +80,7 @@ interface DataTableProps<TData> {
   footer?: React.ReactNode;
 }
 
-export function DataTable<TData>({
+export function DataTable<TData extends RowData>({
   columns,
   data,
   rowKey,
@@ -99,7 +110,7 @@ export function DataTable<TData>({
   });
   const pagination = isPaginationControlled ? { pageIndex, pageSize } : internalPagination;
 
-  const table = useReactTable({
+  const table = useLegacyTable({
     data,
     columns,
     getCoreRowModel: getCoreRowModel(),
@@ -238,12 +249,12 @@ export function DataTable<TData>({
   );
 }
 
-interface DataTablePaginationProps<TData> {
-  table: TanstackTable<TData>;
+interface DataTablePaginationProps<TData extends RowData> {
+  table: LegacyReactTable<TData>;
   pageSizeOptions?: number[];
 }
 
-export function DataTablePagination<TData>({
+export function DataTablePagination<TData extends RowData>({
   table,
   pageSizeOptions = [10, 25, 50, 100],
 }: DataTablePaginationProps<TData>) {

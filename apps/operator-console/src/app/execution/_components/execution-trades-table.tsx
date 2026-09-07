@@ -1,6 +1,7 @@
 'use client';
 
-import type { ColumnDef, SortingState } from '@tanstack/react-table';
+import type { SortingState } from '@tanstack/react-table';
+import type { LegacyColumnDef } from '@tanstack/react-table/legacy';
 import { ArrowDown, ArrowUp, ChevronRight, Lock, LockOpen } from 'lucide-react';
 import * as React from 'react';
 
@@ -59,7 +60,7 @@ export function ExecutionTradesTable({
   toolbar,
 }: ExecutionTradesTableProps) {
   const { t } = usePreferences();
-  const columns = React.useMemo<ColumnDef<ExecutionTrade, unknown>[]>(
+  const columns = React.useMemo<LegacyColumnDef<ExecutionTrade, unknown>[]>(
     () => [
       {
         id: 'symbolCode',
