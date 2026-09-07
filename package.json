@@ -1,7 +1,7 @@
 {
   "name": "trading-bot",
   "private": true,
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "New trading bot platform",
   "workspaces": [
     "apps/control-plane",
@@ -21,6 +21,7 @@
     "format:check": "prettier --check \"apps/**/*.{ts,tsx}\" \".github/**/*.{yml,yaml}\" \"docker/**/*.{yml,yaml}\" \"docs/**/*.md\" \"*.{json,md}\"",
     "lint": "cargo clippy --workspace --all-targets -- -D warnings",
     "lint:rust:fmt": "cargo fmt --all --check",
+    "local:dev": "./scripts/local-stack-dev.sh",
     "local:down": "./scripts/local-stack-down.sh",
     "local:reset": "./scripts/local-stack-reset.sh",
     "local:token": "bash ../platform-ops/scripts/provision-local-app-token.sh trading-bot",

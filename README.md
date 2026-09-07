@@ -99,9 +99,19 @@ No live order execution has been added yet.
 npm test
 npm run build
 npm run local:up
+npm run local:dev
 npm run local:down
 npm run local:reset
 ```
+
+`local:up` builds and runs the production images. `local:dev` builds the `dev`
+stage of each service instead and runs them under `docker compose watch`: the
+control-plane under `tsx watch`, the operator console under `next dev`, and the
+three Rust services under `cargo watch`, all fed by source synced from the host.
+The Rust services share one named volume for `CARGO_TARGET_DIR`, so their
+dependency artefacts are compiled once rather than three times — the first
+build is long, and an incremental one is a few seconds. Both modes are the same
+services on the same ports, so run one at a time.
 
 `npm test` runs the control-plane Node test suite plus the Rust `market-data`
 and `research-backtesting` test suites.
