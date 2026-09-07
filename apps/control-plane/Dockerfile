@@ -37,3 +37,13 @@ EXPOSE 8080
 CMD ["node", "dist/main.js"]
 
 FROM prod AS local
+
+FROM base AS dev
+ENV NODE_ENV=development
+COPY --from=deps /app/node_modules /app/node_modules
+COPY package.json package-lock.json /app/
+COPY scripts/openbao-run.mjs /app/scripts/openbao-run.mjs
+COPY apps/control-plane /app/apps/control-plane
+WORKDIR /app/apps/control-plane
+EXPOSE 8080
+CMD ["npm", "run", "start:dev"]
