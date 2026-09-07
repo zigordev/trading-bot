@@ -3,7 +3,7 @@
 import * as React from 'react';
 import Link from 'next/link';
 import { ArrowLeft, ChevronRight } from 'lucide-react';
-import type { ColumnDef } from '@tanstack/react-table';
+import type { LegacyColumnDef } from '@tanstack/react-table/legacy';
 
 import { useTopbarSlot } from '@/components/layout/topbar-slot-context';
 import { Badge } from '@/components/ui/badge';
@@ -73,7 +73,7 @@ function PromotionsPageInner() {
     return summary.data?.activePromotions.find((p) => p.promotionId === selectedId) ?? null;
   }, [summary.data, selectedId]);
 
-  const columns = React.useMemo<ColumnDef<ExecutionPromotion, unknown>[]>(
+  const columns = React.useMemo<LegacyColumnDef<ExecutionPromotion, unknown>[]>(
     () => [
       {
         id: 'symbol',
