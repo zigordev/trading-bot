@@ -74,7 +74,7 @@ export type ConfigResourceDefinition = {
   titleField: string;
   idField?: string;
   fields: ConfigField[];
-  schema: z.ZodSchema;
+  schema: z.ZodType<Record<string, unknown>, Record<string, unknown>>;
   defaultValues: () => Record<string, unknown>;
 };
 
@@ -128,7 +128,7 @@ const riskProfileSchema = z.object({
 const analysisSettingSchema = z.object({
   name: z.string().min(1, 'Name is required'),
   strategyName: z.string().min(1, 'Strategy is required'),
-  technicalAnalysisSettings: z.record(z.unknown()).default({}),
+  technicalAnalysisSettings: z.record(z.string(), z.unknown()).default({}),
   enabled: z.boolean(),
 });
 
