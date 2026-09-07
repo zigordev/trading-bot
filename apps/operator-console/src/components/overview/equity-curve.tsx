@@ -87,8 +87,8 @@ export function EquityCurve() {
                   fontSize: 12,
                 }}
                 labelFormatter={(value) => formatTimestamp(value as number, { style: 'full' })}
-                formatter={(value: number) => [
-                  formatUsd(value, { signed: true }),
+                formatter={(value) => [
+                  formatUsd(typeof value === 'number' ? value : undefined, { signed: true }),
                   t('overview.equity_curve.tooltip_label'),
                 ]}
               />
