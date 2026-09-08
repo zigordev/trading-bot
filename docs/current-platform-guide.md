@@ -190,23 +190,24 @@ For the currently implemented backtests, required historian retention is:
 Where:
 
 - `configured_window_ms` comes from `research_settings`
-- `warmup_ms = slowPeriod * BACKTEST_WARMUP_MULTIPLIER * periodMs`
+- `warmup_ms = warmup_candles * periodMs`, where `warmup_candles` is `BACKTEST_WARMUP_CANDLES` raised to
+  the strategy's own minimum when that is larger
 - replay safety caps come from:
   - `BACKTEST_MAX_KLINES`
   - `BACKTEST_MAX_TRADES`
 
 Default warmup behavior:
 
-- `BACKTEST_WARMUP_MULTIPLIER=5`
+- `BACKTEST_WARMUP_CANDLES=200`
 
 Examples:
 
-- `1m`, `slowPeriod=21`
-  - warmup = `105 minutes`
-- `3m`, `slowPeriod=21`
-  - warmup = `315 minutes`
-- `5m`, `slowPeriod=21`
-  - warmup = `525 minutes`
+- `1m`
+  - warmup = `200 minutes`
+- `3m`
+  - warmup = `600 minutes`
+- `5m`
+  - warmup = `1000 minutes`
 
 For quote-aware accuracy, a longer window is only useful if ClickHouse also has aggregate trades
 run becomes broader, but not more precise.

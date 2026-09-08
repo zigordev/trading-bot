@@ -159,13 +159,12 @@ In the current code:
 - replay safety caps come from:
   - `BACKTEST_MAX_KLINES`
   - `BACKTEST_MAX_TRADES`
-- warmup defaults to:
-  - `slowPeriod * BACKTEST_WARMUP_MULTIPLIER`
-  - default multiplier: `5`
+- warmup defaults to `BACKTEST_WARMUP_CANDLES` candles (`200`), raised to the strategy's own minimum
+  when that is larger
 
 So the practical formula is:
 
-`required_history_ms = research_window_ms + (slow_period * warmup_multiplier * timeframe_period_ms)`
+`required_history_ms = research_window_ms + (warmup_candles * timeframe_period_ms)`
 
 Examples with default multiplier `5`:
 

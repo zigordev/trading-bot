@@ -30,6 +30,12 @@ fn env_or_default(key: &str, default: &str) -> String {
     std::env::var(key).unwrap_or_else(|_| default.to_string())
 }
 
+fn optional_env(key: &str) -> Option<String> {
+    std::env::var(key)
+        .ok()
+        .and_then(|value| (!value.trim().is_empty()).then_some(value))
+}
+
 fn parse_u16(key: &str, default: u16) -> Result<u16> {
     let raw = env_or_default(key, &default.to_string());
     raw.parse::<u16>()
@@ -63,8 +69,8 @@ pub fn load_config() -> Result<AppConfig> {
     if default_mode != "paper" && default_mode != "live" {
         bail!("EXECUTION_DEFAULT_MODE must be either 'paper' or 'live'");
     }
-    let binance_api_key = std::env::var("BINANCE_API_KEY").ok();
-    let binance_api_secret = std::env::var("BINANCE_API_SECRET").ok();
+    let binance_api_key = optional_env("BINANCE_API_KEY");
+    let binance_api_secret = optional_env("BINANCE_API_SECRET");
     if default_mode == "live" && (binance_api_key.is_none() || binance_api_secret.is_none()) {
         bail!(
             "BINANCE_API_KEY and BINANCE_API_SECRET are required when EXECUTION_DEFAULT_MODE=live"
@@ -111,7 +117,7 @@ pub fn load_config() -> Result<AppConfig> {
         binance_rest_base_url: env_or_default("BINANCE_REST_BASE_URL", "https://api.binance.com"),
         binance_ws_base_url: env_or_default("BINANCE_WS_BASE_URL", "wss://stream.binance.com:9443"),
         binance_recv_window: parse_u64("BINANCE_RECV_WINDOW", 5000)?,
-        otel_exporter_otlp_endpoint: std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT").ok(),
+        otel_exporter_otlp_endpoint: optional_env("OTEL_EXPORTER_OTLP_ENDPOINT"),
     })
 }
 

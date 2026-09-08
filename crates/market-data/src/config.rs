@@ -318,7 +318,7 @@ pub fn load_config() -> Result<AppConfig> {
             48 * 60 * 60 * 1000,
         )?,
         backtesting_timerange_ms_by_timeframe,
-        otel_exporter_otlp_endpoint: std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT").ok(),
+        otel_exporter_otlp_endpoint: optional_env("OTEL_EXPORTER_OTLP_ENDPOINT"),
     };
 
     // Optional guardrail: only when HISTORICAL_BACKFILL_MAX_IN_FLIGHT_TRADE_ROWS is set, reduce
