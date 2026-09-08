@@ -19,7 +19,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { DetailSheet } from '@/components/shared/detail-sheet';
-import { AssetLabel } from '@/components/shared/symbol-avatar';
+import { AssetLabel } from '@/components/shared/pair-avatar';
 import { type ConfigField, type ConfigResourceDefinition } from '@/lib/configuration/schemas';
 import { useSaveConfigResource } from '@/lib/hooks/use-config-resource';
 import { usePreferences } from '@/components/providers/preferences-provider';
@@ -168,7 +168,7 @@ function FieldControl({ field }: { field: ConfigField }) {
     );
   }
 
-  if (field.kind === 'symbol') {
+  if (field.kind === 'pair') {
     return (
       <Controller
         control={form.control}

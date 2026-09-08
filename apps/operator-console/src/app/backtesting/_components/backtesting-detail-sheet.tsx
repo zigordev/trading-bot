@@ -16,7 +16,7 @@ import { DetailSheet } from '@/components/shared/detail-sheet';
 import { MetricGate, MetricGateLegend } from '@/components/shared/metric-gate';
 import { ReadinessBar } from '@/components/shared/readiness-bar';
 import { ScoreCell } from '@/components/shared/score-cell';
-import { SymbolAvatar } from '@/components/shared/symbol-avatar';
+import { PairAvatar } from '@/components/shared/pair-avatar';
 import { ProgressCell } from '@/components/shared/progress-cell';
 import { usePreferences } from '@/components/providers/preferences-provider';
 
@@ -48,9 +48,9 @@ export function BacktestingDetailSheet({
       size="md"
       title={
         <div className="flex items-center gap-2">
-          <SymbolAvatar baseAsset={row.baseAsset} quoteAsset={row.quoteAsset} size={28} />
+          <PairAvatar baseAsset={row.baseAsset} quoteAsset={row.quoteAsset} size={28} />
           <div>
-            <div>{row.symbol}</div>
+            <div>{row.pairCode}</div>
             <div className="text-[12px] font-normal text-[var(--color-fg-muted)]">
               {row.timeframeCode} · {row.strategyName}
             </div>

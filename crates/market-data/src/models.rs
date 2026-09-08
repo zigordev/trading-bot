@@ -57,8 +57,7 @@ pub struct RiskProfileRecord {
 #[serde(rename_all = "camelCase")]
 pub struct ResolvedAnalysisSettingsRecord {
     pub id: String,
-    #[serde(rename = "symbolCode")]
-    pub symbol: String,
+    pub pair_code: String,
     pub timeframe_code: String,
     pub strategy_name: String,
     pub risk_profile_name: String,
@@ -66,8 +65,7 @@ pub struct ResolvedAnalysisSettingsRecord {
     pub enabled: bool,
     pub created_at: String,
     pub updated_at: String,
-    #[serde(rename = "symbol")]
-    pub symbol_entity: PairRecord,
+    pub pair: PairRecord,
     pub timeframe: TimeframeRecord,
     pub strategy: StrategyRecord,
     pub risk_profile: RiskProfileRecord,
@@ -86,7 +84,7 @@ pub struct ActiveSubscriptions {
 pub struct KlineSubscription {
     pub subscription_id: String,
     pub pair_code: String,
-    pub symbol: String,
+    pub binance_symbol: String,
     pub timeframe_code: String,
     pub binance_interval: String,
     pub period_ms: i64,
@@ -99,7 +97,7 @@ pub struct KlineSubscription {
 #[serde(rename_all = "camelCase")]
 pub struct PairStreamSubscription {
     pub pair_code: String,
-    pub symbol: String,
+    pub binance_symbol: String,
     pub trade_stream_name: String,
     pub analysis_setting_ids: Vec<String>,
     pub strategy_names: Vec<String>,
@@ -108,7 +106,7 @@ pub struct PairStreamSubscription {
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct PersistedKlineRecord {
-    pub symbol: String,
+    pub pair_code: String,
     pub timeframe_code: String,
     pub period_ms: i64,
     pub open_time: i64,
@@ -130,7 +128,7 @@ pub struct PersistedKlineRecord {
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct PersistedTradeRecord {
-    pub symbol: String,
+    pub pair_code: String,
     pub aggregate_trade_id: i64,
     pub price: String,
     pub trade_time: i64,
@@ -147,7 +145,7 @@ pub struct NormalizedKlineEvent {
     pub ingestion_mode: String,
     pub stream_name: String,
     pub pair_code: String,
-    pub symbol: String,
+    pub binance_symbol: String,
     pub timeframe_code: String,
     pub period_ms: i64,
     pub open_time: i64,
@@ -176,7 +174,7 @@ pub struct NormalizedTradeEvent {
     pub ingestion_mode: String,
     pub stream_name: String,
     pub pair_code: String,
-    pub symbol: String,
+    pub binance_symbol: String,
     pub aggregate_trade_id: i64,
     pub price: String,
     pub quantity: String,

@@ -33,7 +33,7 @@ const SORT_FIELDS = new Set<ExecutionTradesQuery['sortBy']>([
   'openedAt',
   'closedAt',
   'realizedPnlPercent',
-  'symbolCode',
+  'pairCode',
   'notionalUsd',
 ]);
 
@@ -72,7 +72,7 @@ function ExecutionScreenInner({ mode }: ExecutionScreenProps) {
   const { setTopbarSlot } = useTopbarSlot();
   const { t } = usePreferences();
   const [search, setSearch] = useStringFilter('q', '');
-  const [selectedSymbol, setSelectedSymbol] = useStringFilter('sym', 'all');
+  const [selectedPair, setSelectedPair] = useStringFilter('pair', 'all');
   const [selectedTimeframe, setSelectedTimeframe] = useStringFilter('tf', 'all');
   const [selectedStrategy, setSelectedStrategy] = useStringFilter('strategy', 'all');
   const [selectedSide, setSelectedSide] = useEnumState(
@@ -141,7 +141,7 @@ function ExecutionScreenInner({ mode }: ExecutionScreenProps) {
     sortBy,
     sortDirection,
     search: search || undefined,
-    symbolCode: selectedSymbol !== 'all' ? selectedSymbol : undefined,
+    pairCode: selectedPair !== 'all' ? selectedPair : undefined,
     timeframeCode: selectedTimeframe !== 'all' ? selectedTimeframe : undefined,
     strategyName: selectedStrategy !== 'all' ? selectedStrategy : undefined,
     side: selectedSide !== 'all' ? selectedSide : undefined,
@@ -161,13 +161,13 @@ function ExecutionScreenInner({ mode }: ExecutionScreenProps) {
     return trades.data.items.filter((trade) => statusSet.has(trade.status));
   }, [trades.data, selectedStatuses]);
 
-  const symbolOptions = React.useMemo(() => {
+  const pairOptions = React.useMemo(() => {
     const seen = new Set<string>();
     for (const trade of summary.data?.recentTrades ?? []) {
-      seen.add(trade.symbolCode);
+      seen.add(trade.pairCode);
     }
     for (const trade of trades.data?.items ?? []) {
-      seen.add(trade.symbolCode);
+      seen.add(trade.pairCode);
     }
     return Array.from(seen).sort();
   }, [summary.data, trades.data]);
@@ -205,7 +205,7 @@ function ExecutionScreenInner({ mode }: ExecutionScreenProps) {
 
   const hasActiveFilters =
     !!search ||
-    selectedSymbol !== 'all' ||
+    selectedPair !== 'all' ||
     selectedTimeframe !== 'all' ||
     selectedStrategy !== 'all' ||
     selectedSide !== 'all' ||
@@ -214,7 +214,7 @@ function ExecutionScreenInner({ mode }: ExecutionScreenProps) {
 
   const handleClearAll = () => {
     setSearch('');
-    setSelectedSymbol('all');
+    setSelectedPair('all');
     setSelectedTimeframe('all');
     setSelectedStrategy('all');
     setSelectedSide('all');
@@ -249,10 +249,10 @@ function ExecutionScreenInner({ mode }: ExecutionScreenProps) {
         />
 
         <ExecutionFilters
-          symbols={symbolOptions}
-          selectedSymbol={selectedSymbol}
-          onSymbolChange={(next) => {
-            setSelectedSymbol(next);
+          pairs={pairOptions}
+          selectedPair={selectedPair}
+          onPairChange={(next) => {
+            setSelectedPair(next);
             setPageIndex(0);
           }}
           timeframes={timeframeOptions}

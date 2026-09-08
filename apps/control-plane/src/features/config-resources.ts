@@ -7,14 +7,14 @@ import {
   type ConfigChangeEventPublisher,
 } from '../infrastructure/config-change-events.js';
 
-export type SymbolInput = {
+export type PairInput = {
   code: string;
   active: boolean;
   baseAsset: string;
   destinationAsset: string;
 };
 
-export type SymbolRecord = SymbolInput & {
+export type PairRecord = PairInput & {
   id: string;
   createdAt: string;
   updatedAt: string;
@@ -94,7 +94,7 @@ export type ExecutionSettingsRecord = ExecutionSettingsInput & {
 export type ResolvedAnalysisSettingsRecord = {
   id: string;
   name: string;
-  symbolCode: string;
+  pairCode: string;
   timeframeCode: string;
   strategyName: string;
   riskProfileName: string;
@@ -102,7 +102,7 @@ export type ResolvedAnalysisSettingsRecord = {
   enabled: boolean;
   createdAt: string;
   updatedAt: string;
-  symbol: SymbolRecord;
+  pair: PairRecord;
   timeframe: TimeframeRecord;
   strategy: StrategyRecord;
   riskProfile: RiskProfileRecord;
@@ -152,7 +152,7 @@ const parseJsonObject = (value: unknown): Record<string, unknown> => {
   return {};
 };
 
-const deriveAssetsFromSymbolCode = (
+const deriveAssetsFromPairCode = (
   code: string
 ): { baseAsset: string; destinationAsset: string } | null => {
   const normalized = code.trim().toUpperCase();
@@ -210,7 +210,7 @@ const deriveTimeframePeriodMs = (code: string): number | null => {
   return magnitude * unitMultiplier[match[2].toLowerCase() as keyof typeof unitMultiplier];
 };
 
-const mapSymbolRow = (row: QueryResultRow): SymbolRecord => ({
+const mapPairRow = (row: QueryResultRow): PairRecord => ({
   id: String(row.id),
   code: String(row.code),
   active: Boolean(row.active),
@@ -292,7 +292,7 @@ const mapExecutionSettingsRow = (row: QueryResultRow): ExecutionSettingsRecord =
 const mapResolvedAnalysisSettingsRow = (row: QueryResultRow): ResolvedAnalysisSettingsRecord => ({
   id: String(row.analysis_id),
   name: String(row.analysis_name),
-  symbolCode: String(row.analysis_symbol_code),
+  pairCode: String(row.analysis_symbol_code),
   timeframeCode: String(row.analysis_timeframe_code),
   strategyName: String(row.analysis_strategy_name),
   riskProfileName: String(row.analysis_risk_profile_name),
@@ -300,14 +300,14 @@ const mapResolvedAnalysisSettingsRow = (row: QueryResultRow): ResolvedAnalysisSe
   enabled: Boolean(row.analysis_enabled),
   createdAt: toIsoString(row.analysis_created_at),
   updatedAt: toIsoString(row.analysis_updated_at),
-  symbol: mapSymbolRow({
-    id: row.symbol_id,
-    code: row.symbol_entity_code,
-    active: row.symbol_active,
-    base_asset: row.symbol_base_asset,
-    destination_asset: row.symbol_destination_asset,
-    created_at: row.symbol_created_at,
-    updated_at: row.symbol_updated_at,
+  pair: mapPairRow({
+    id: row.pair_id,
+    code: row.pair_entity_code,
+    active: row.pair_active,
+    base_asset: row.pair_base_asset,
+    destination_asset: row.pair_destination_asset,
+    created_at: row.pair_created_at,
+    updated_at: row.pair_updated_at,
   } as QueryResultRow),
   timeframe: mapTimeframeRow({
     id: row.timeframe_id,
@@ -505,11 +505,11 @@ class PostgresCrudStore<TInput, TRecord> implements CrudStore<TInput, TRecord> {
   }
 }
 
-const symbolDefinition: ResourceDefinition<SymbolInput, SymbolRecord> = {
-  tableName: 'symbols',
-  resourceType: 'symbols',
+const pairDefinition: ResourceDefinition<PairInput, PairRecord> = {
+  tableName: 'pairs',
+  resourceType: 'pairs',
   createTableSql: `
-    CREATE TABLE IF NOT EXISTS symbols (
+    CREATE TABLE IF NOT EXISTS pairs (
       id TEXT PRIMARY KEY,
       code TEXT NOT NULL UNIQUE,
       active BOOLEAN NOT NULL DEFAULT FALSE,
@@ -533,7 +533,7 @@ const symbolDefinition: ResourceDefinition<SymbolInput, SymbolRecord> = {
   uniqueFieldName: 'code',
   uniqueFieldValue: (input) => input.code,
   toInsertValues: (input) => [input.code, input.active, input.baseAsset, input.destinationAsset],
-  toRecord: mapSymbolRow,
+  toRecord: mapPairRow,
 };
 
 const timeframeDefinition: ResourceDefinition<TimeframeInput, TimeframeRecord> = {
@@ -740,7 +740,7 @@ const executionSettingsDefinition: ResourceDefinition<
       max_promotions INTEGER NOT NULL DEFAULT 1,
       selection_metric TEXT NOT NULL DEFAULT 'score',
       require_positive_pnl BOOLEAN NOT NULL DEFAULT TRUE,
-      allowed_symbols_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+      allowed_pairs_json JSONB NOT NULL DEFAULT '[]'::jsonb,
       allowed_timeframes_json JSONB NOT NULL DEFAULT '[]'::jsonb,
       replace_open_position_policy TEXT NOT NULL DEFAULT 'keep',
       created_at TIMESTAMPTZ NOT NULL,
@@ -762,7 +762,7 @@ const executionSettingsDefinition: ResourceDefinition<
     'auto_promote',
     'max_promotions',
     'selection_metric',
-    'allowed_symbols_json',
+    'allowed_pairs_json',
     'allowed_timeframes_json',
     'replace_open_position_policy',
     'created_at',
@@ -790,7 +790,7 @@ const executionSettingsDefinition: ResourceDefinition<
 };
 
 const resourceDefinitions = [
-  symbolDefinition,
+  pairDefinition,
   timeframeDefinition,
   strategyDefinition,
   riskProfileDefinition,
@@ -798,70 +798,126 @@ const resourceDefinitions = [
   executionSettingsDefinition,
 ] as const;
 
-export const ensureControlPlaneSchema = async (pool: Pool): Promise<void> => {
+export const renameTableIfExists = async (pool: Pool, from: string, to: string): Promise<void> => {
   await pool.query(`
     DO $$
     BEGIN
       IF EXISTS (
         SELECT 1 FROM information_schema.tables
-        WHERE table_schema = 'public' AND table_name = 'pairs'
+        WHERE table_schema = 'public' AND table_name = '${from}'
       ) AND NOT EXISTS (
         SELECT 1 FROM information_schema.tables
-        WHERE table_schema = 'public' AND table_name = 'symbols'
+        WHERE table_schema = 'public' AND table_name = '${to}'
       ) THEN
-        ALTER TABLE pairs RENAME TO symbols;
+        ALTER TABLE ${from} RENAME TO ${to};
       END IF;
     END $$;
   `);
+};
 
-  await pool.query(symbolDefinition.createTableSql);
+export const renameColumnIfExists = async (
+  pool: Pool,
+  table: string,
+  from: string,
+  to: string
+): Promise<void> => {
+  await pool.query(`
+    DO $$
+    BEGIN
+      IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = '${table}' AND column_name = '${from}'
+      ) AND NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = '${table}' AND column_name = '${to}'
+      ) THEN
+        ALTER TABLE ${table} RENAME COLUMN ${from} TO ${to};
+      END IF;
+    END $$;
+  `);
+};
+
+export const renameConstraintIfExists = async (
+  pool: Pool,
+  table: string,
+  from: string,
+  to: string
+): Promise<void> => {
+  await pool.query(`
+    DO $$
+    BEGIN
+      IF EXISTS (
+        SELECT 1
+        FROM pg_constraint c
+        INNER JOIN pg_class t ON t.oid = c.conrelid
+        INNER JOIN pg_namespace n ON n.oid = t.relnamespace
+        WHERE n.nspname = 'public' AND t.relname = '${table}' AND c.conname = '${from}'
+      ) AND NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint c
+        INNER JOIN pg_class t ON t.oid = c.conrelid
+        INNER JOIN pg_namespace n ON n.oid = t.relnamespace
+        WHERE n.nspname = 'public' AND t.relname = '${table}' AND c.conname = '${to}'
+      ) THEN
+        ALTER TABLE ${table} RENAME CONSTRAINT ${from} TO ${to};
+      END IF;
+    END $$;
+  `);
+};
+
+export const ensureControlPlaneSchema = async (pool: Pool): Promise<void> => {
+  await renameTableIfExists(pool, 'symbols', 'pairs');
+  await renameConstraintIfExists(pool, 'pairs', 'symbols_pkey', 'pairs_pkey');
+  await renameConstraintIfExists(pool, 'pairs', 'symbols_code_key', 'pairs_code_key');
+
+  await pool.query(pairDefinition.createTableSql);
   await pool.query(timeframeDefinition.createTableSql);
 
-  await pool.query('ALTER TABLE symbols ADD COLUMN IF NOT EXISTS base_asset TEXT');
-  await pool.query('ALTER TABLE symbols ADD COLUMN IF NOT EXISTS destination_asset TEXT');
+  await pool.query('ALTER TABLE pairs ADD COLUMN IF NOT EXISTS base_asset TEXT');
+  await pool.query('ALTER TABLE pairs ADD COLUMN IF NOT EXISTS destination_asset TEXT');
 
-  const symbolsMissingAssets = await pool.query<{
+  const pairsMissingAssets = await pool.query<{
     id: string;
     code: string;
   }>(
     `SELECT id, code
-       FROM symbols
+       FROM pairs
       WHERE base_asset IS NULL
          OR destination_asset IS NULL`
   );
 
-  for (const symbol of symbolsMissingAssets.rows) {
-    const derivedAssets = deriveAssetsFromSymbolCode(symbol.code);
+  for (const pair of pairsMissingAssets.rows) {
+    const derivedAssets = deriveAssetsFromPairCode(pair.code);
 
     if (!derivedAssets) {
       throw new Error(
-        `Unable to derive base/destination assets for existing symbol code "${symbol.code}"`
+        `Unable to derive base/destination assets for existing pair code "${pair.code}"`
       );
     }
 
     await pool.query(
-      `UPDATE symbols
+      `UPDATE pairs
           SET base_asset = COALESCE(base_asset, $1),
               destination_asset = COALESCE(destination_asset, $2)
         WHERE id = $3`,
-      [derivedAssets.baseAsset, derivedAssets.destinationAsset, symbol.id]
+      [derivedAssets.baseAsset, derivedAssets.destinationAsset, pair.id]
     );
   }
 
-  await pool.query('ALTER TABLE symbols ALTER COLUMN base_asset SET NOT NULL');
-  await pool.query('ALTER TABLE symbols ALTER COLUMN destination_asset SET NOT NULL');
+  await pool.query('ALTER TABLE pairs ALTER COLUMN base_asset SET NOT NULL');
+  await pool.query('ALTER TABLE pairs ALTER COLUMN destination_asset SET NOT NULL');
 
   await pool.query(`
     DO $$
     BEGIN
       IF EXISTS (
         SELECT 1 FROM information_schema.columns
-        WHERE table_schema = 'public' AND table_name = 'symbols' AND column_name = 'operable'
+        WHERE table_schema = 'public' AND table_name = 'pairs' AND column_name = 'operable'
       ) AND NOT EXISTS (
         SELECT 1 FROM information_schema.columns
-        WHERE table_schema = 'public' AND table_name = 'symbols' AND column_name = 'active'
+        WHERE table_schema = 'public' AND table_name = 'pairs' AND column_name = 'active'
       ) THEN
-        ALTER TABLE symbols RENAME COLUMN operable TO active;
+        ALTER TABLE pairs RENAME COLUMN operable TO active;
       END IF;
     END $$;
   `);
@@ -899,6 +955,12 @@ export const ensureControlPlaneSchema = async (pool: Pool): Promise<void> => {
   for (const definition of resourceDefinitions.slice(2)) {
     await pool.query(definition.createTableSql);
   }
+  await renameColumnIfExists(
+    pool,
+    'execution_settings',
+    'allowed_symbols_json',
+    'allowed_pairs_json'
+  );
   await pool.query(analysisSettingsDefinition.createTableSql);
   await pool.query(
     'ALTER TABLE execution_settings ADD COLUMN IF NOT EXISTS max_promotions INTEGER NOT NULL DEFAULT 1'
@@ -1030,12 +1092,12 @@ export const ensureControlPlaneSchema = async (pool: Pool): Promise<void> => {
   await pool.query('DROP TABLE IF EXISTS exchange_secret_references');
   await pool.query('ALTER TABLE analysis_settings DROP COLUMN IF EXISTS trading_defaults_name');
   await pool.query('DROP TABLE IF EXISTS trading_defaults');
-  await pool.query('ALTER TABLE symbols DROP COLUMN IF EXISTS origin_asset_needed_funds');
-  await pool.query('ALTER TABLE symbols DROP COLUMN IF EXISTS destination_asset_needed_funds');
+  await pool.query('ALTER TABLE pairs DROP COLUMN IF EXISTS origin_asset_needed_funds');
+  await pool.query('ALTER TABLE pairs DROP COLUMN IF EXISTS destination_asset_needed_funds');
 };
 
 export const createConfigStores = (pool: Pool, eventPublisher: ConfigChangeEventPublisher) => ({
-  symbols: new PostgresCrudStore(pool, symbolDefinition, eventPublisher),
+  pairs: new PostgresCrudStore(pool, pairDefinition, eventPublisher),
   timeframes: new PostgresCrudStore(pool, timeframeDefinition, eventPublisher),
   strategies: new PostgresCrudStore(pool, strategyDefinition, eventPublisher),
   riskProfiles: new PostgresCrudStore(pool, riskProfileDefinition, eventPublisher),
@@ -1050,7 +1112,7 @@ export type ConfigStore<TInput, TRecord> = CrudStore<TInput, TRecord> & {
   getUniqueFieldValue(input: TInput): string;
 };
 
-export const symbolBodySchema = {
+export const pairBodySchema = {
   type: 'object',
   additionalProperties: false,
   properties: {
@@ -1062,7 +1124,7 @@ export const symbolBodySchema = {
   required: ['code', 'active', 'baseAsset', 'destinationAsset'],
 } as const;
 
-export const symbolRecordSchema = {
+export const pairRecordSchema = {
   type: 'object',
   properties: {
     id: { type: 'string' },
@@ -1294,7 +1356,7 @@ export const resolvedAnalysisSettingsRecordSchema = {
   properties: {
     id: { type: 'string' },
     name: { type: 'string' },
-    symbolCode: { type: 'string' },
+    pairCode: { type: 'string' },
     timeframeCode: { type: 'string' },
     strategyName: { type: 'string' },
     riskProfileName: { type: 'string' },
@@ -1305,7 +1367,7 @@ export const resolvedAnalysisSettingsRecordSchema = {
     enabled: { type: 'boolean' },
     createdAt: { type: 'string', format: 'date-time' },
     updatedAt: { type: 'string', format: 'date-time' },
-    symbol: symbolRecordSchema,
+    pair: pairRecordSchema,
     timeframe: timeframeRecordSchema,
     strategy: strategyRecordSchema,
     riskProfile: riskProfileRecordSchema,
@@ -1313,7 +1375,7 @@ export const resolvedAnalysisSettingsRecordSchema = {
   required: [
     'id',
     'name',
-    'symbolCode',
+    'pairCode',
     'timeframeCode',
     'strategyName',
     'riskProfileName',
@@ -1321,7 +1383,7 @@ export const resolvedAnalysisSettingsRecordSchema = {
     'enabled',
     'createdAt',
     'updatedAt',
-    'symbol',
+    'pair',
     'timeframe',
     'strategy',
     'riskProfile',
@@ -1343,13 +1405,13 @@ export const listResolvedAnalysisSettings = async (
       a.enabled AS analysis_enabled,
       a.created_at AS analysis_created_at,
       a.updated_at AS analysis_updated_at,
-      s2.id AS symbol_id,
-      s2.code AS symbol_entity_code,
-      s2.active AS symbol_active,
-      s2.base_asset AS symbol_base_asset,
-      s2.destination_asset AS symbol_destination_asset,
-      s2.created_at AS symbol_created_at,
-      s2.updated_at AS symbol_updated_at,
+      s2.id AS pair_id,
+      s2.code AS pair_entity_code,
+      s2.active AS pair_active,
+      s2.base_asset AS pair_base_asset,
+      s2.destination_asset AS pair_destination_asset,
+      s2.created_at AS pair_created_at,
+      s2.updated_at AS pair_updated_at,
       t.id AS timeframe_id,
       t.code AS timeframe_entity_code,
       t.longer_timeframe_code AS timeframe_longer_timeframe_code,
@@ -1376,7 +1438,7 @@ export const listResolvedAnalysisSettings = async (
       r.created_at AS risk_profile_created_at,
       r.updated_at AS risk_profile_updated_at
     FROM analysis_settings a
-    INNER JOIN symbols s2 ON s2.active = TRUE
+    INNER JOIN pairs s2 ON s2.active = TRUE
     INNER JOIN timeframes t ON t.active = TRUE
     INNER JOIN strategies s ON s.name = a.strategy_name
     INNER JOIN risk_profiles r ON r.enabled = TRUE

@@ -57,7 +57,7 @@ The minimum `execution-settings` record for paper trading is:
 - `autoPromote`
 - `selectionMetric`
 - `requirePositivePnl`
-- `allowedSymbols`
+- `allowedPairs`
 - `allowedTimeframes`
 - `replaceOpenPositionPolicy`
 
@@ -68,7 +68,7 @@ Recommended first paper-trading values:
 - `autoPromote = true`
 - `selectionMetric = totalPnlPercent`
 - `requirePositivePnl = false`
-- `allowedSymbols = []`
+- `allowedPairs = []`
 - `allowedTimeframes = []`
 - `replaceOpenPositionPolicy = flatten`
 
@@ -82,7 +82,7 @@ Example payload:
   "autoPromote": true,
   "selectionMetric": "totalPnlPercent",
   "requirePositivePnl": false,
-  "allowedSymbols": [],
+  "allowedPairs": [],
   "allowedTimeframes": [],
   "replaceOpenPositionPolicy": "flatten"
 }
@@ -154,7 +154,7 @@ The default safety rules are:
 - `paper` mode may run without a currently promoted config loaded, but it should not generate
   trades until one exists
 - `live` mode should fail closed if no promoted config is available
-- symbol/timeframe allowlists from `execution-settings` should be enforced when present
+- pair/timeframe allowlists from `execution-settings` should be enforced when present
 - stale or missing control-plane state should degrade readiness
 
 ### Trade Ledger Semantics
@@ -168,7 +168,7 @@ The operator console trade table is intended to show:
 
 ## Expected Next Steps
 
-1. consume live market-data events for the promoted symbol/timeframe
+1. consume live market-data events for the promoted pair/timeframe
 2. reuse the shared `strategy-engine` evaluator for signal generation
 3. implement paper-trade generation and publish execution-trade projection events
 4. add a dedicated execution Kafka contract for promotions, orders, fills, and trades

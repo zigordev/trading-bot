@@ -9,8 +9,8 @@ import { subscribeOpsRealtimeEvent, type OpsRealtimeEvent } from '@/lib/ops-even
 import { SectionCard } from '@/components/layout/section-card';
 import { Badge } from '@/components/ui/badge';
 import { EmptyState } from '@/components/shared/empty-state';
-import { SymbolAvatar } from '@/components/shared/symbol-avatar';
-import { splitSymbol } from '@/lib/backtesting/derive-rows';
+import { PairAvatar } from '@/components/shared/pair-avatar';
+import { splitPairCode } from '@/lib/backtesting/derive-rows';
 import { usePreferences } from '@/components/providers/preferences-provider';
 
 type FeedEntry = OpsRealtimeEvent & { receivedAt: number };
@@ -41,21 +41,21 @@ const TYPE_META: Record<
   },
 };
 
-function PairList({ symbols }: { symbols: string[] }) {
-  if (symbols.length === 0) return null;
+function PairList({ pairs }: { pairs: string[] }) {
+  if (pairs.length === 0) return null;
   return (
     <span className="inline-flex flex-wrap items-center gap-1.5">
-      {symbols.slice(0, 4).map((sym) => {
-        const { base, quote } = splitSymbol(sym);
+      {pairs.slice(0, 4).map((pair) => {
+        const { base, quote } = splitPairCode(pair);
         return (
-          <span key={sym} className="inline-flex items-center gap-1">
-            <SymbolAvatar baseAsset={base} quoteAsset={quote} size={14} />
-            <span className="text-[12px] text-[var(--color-fg-muted)]">{sym}</span>
+          <span key={pair} className="inline-flex items-center gap-1">
+            <PairAvatar baseAsset={base} quoteAsset={quote} size={14} />
+            <span className="text-[12px] text-[var(--color-fg-muted)]">{pair}</span>
           </span>
         );
       })}
-      {symbols.length > 4 && (
-        <span className="text-[11px] text-[var(--color-fg-subtle)]">+{symbols.length - 4}</span>
+      {pairs.length > 4 && (
+        <span className="text-[11px] text-[var(--color-fg-subtle)]">+{pairs.length - 4}</span>
       )}
     </span>
   );
@@ -68,14 +68,14 @@ function describeEvent(
   switch (event.type) {
     case 'ops.backtests.updated':
     case 'ops.execution.updated':
-      return event.payload.symbols.length ? (
-        <PairList symbols={event.payload.symbols} />
+      return event.payload.pairs.length ? (
+        <PairList pairs={event.payload.pairs} />
       ) : (
         t('overview.activity_feed.summary_refresh')
       );
     case 'ops.data-readiness.updated':
-      return event.payload.symbols.length ? (
-        <PairList symbols={event.payload.symbols} />
+      return event.payload.pairs.length ? (
+        <PairList pairs={event.payload.pairs} />
       ) : (
         t('overview.activity_feed.readiness_refresh')
       );

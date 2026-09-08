@@ -27,7 +27,7 @@ import { DataTable } from '@/components/data-table/data-table';
 import { DataTableToolbar } from '@/components/data-table/data-table-toolbar';
 import { useDeleteConfigResource } from '@/lib/hooks/use-config-resource';
 import type { ConfigField, ConfigResourceDefinition } from '@/lib/configuration/schemas';
-import { AssetLabel, PairLabel } from '@/components/shared/symbol-avatar';
+import { AssetLabel, PairLabel } from '@/components/shared/pair-avatar';
 import { usePreferences } from '@/components/providers/preferences-provider';
 
 interface ConfigTableProps {
@@ -246,7 +246,7 @@ function formatValue(
   if (kind === 'number') {
     return <span className="num text-[12px]">{Number(value).toLocaleString()}</span>;
   }
-  if (kind === 'symbol' && typeof value === 'string') {
+  if (kind === 'pair' && typeof value === 'string') {
     return <PairLabel code={value} size={18} textClassName="text-[12px]" />;
   }
   if (kind === 'asset-display' && typeof value === 'string') {

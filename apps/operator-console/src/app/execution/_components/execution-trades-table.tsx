@@ -6,11 +6,11 @@ import { ArrowDown, ArrowUp, ChevronRight, Lock, LockOpen } from 'lucide-react';
 import * as React from 'react';
 
 import { DataTable } from '@/components/data-table/data-table';
-import { SymbolAvatar } from '@/components/shared/symbol-avatar';
+import { PairAvatar } from '@/components/shared/pair-avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import type { ExecutionTrade } from '@/lib/api';
-import { splitSymbol } from '@/lib/backtesting/derive-rows';
+import { splitPairCode } from '@/lib/backtesting/derive-rows';
 import { formatPercent, formatPrice, formatTimestamp } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { usePreferences } from '@/components/providers/preferences-provider';
@@ -63,19 +63,17 @@ export function ExecutionTradesTable({
   const columns = React.useMemo<LegacyColumnDef<ExecutionTrade, unknown>[]>(
     () => [
       {
-        id: 'symbolCode',
-        accessorKey: 'symbolCode',
+        id: 'pairCode',
+        accessorKey: 'pairCode',
         header: t('execution.trades_table.pair_header'),
         meta: { sticky: 'left' },
         cell: ({ row }) => {
-          const { base, quote } = splitSymbol(row.original.symbolCode);
+          const { base, quote } = splitPairCode(row.original.pairCode);
           return (
             <div className="flex items-center gap-2">
-              <SymbolAvatar baseAsset={base} quoteAsset={quote} size={22} />
+              <PairAvatar baseAsset={base} quoteAsset={quote} size={22} />
               <div className="flex flex-col leading-tight">
-                <span className="font-medium text-[var(--color-fg)]">
-                  {row.original.symbolCode}
-                </span>
+                <span className="font-medium text-[var(--color-fg)]">{row.original.pairCode}</span>
                 <span className="text-[11px] font-mono text-[var(--color-fg-subtle)]">
                   {row.original.timeframeCode}
                 </span>

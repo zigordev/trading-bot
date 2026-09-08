@@ -5,7 +5,7 @@ export type OpsRealtimeEvent =
       type: 'config.resource.updated';
       payload: {
         resource:
-          | 'symbols'
+          | 'pairs'
           | 'timeframes'
           | 'strategies'
           | 'risk-profiles'
@@ -20,7 +20,7 @@ export type OpsRealtimeEvent =
       occurredAt: string;
       type: 'ops.backtests.updated';
       payload: {
-        symbols: string[];
+        pairs: string[];
         timeframeCodes: string[];
       };
     }
@@ -29,7 +29,7 @@ export type OpsRealtimeEvent =
       occurredAt: string;
       type: 'ops.data-readiness.updated';
       payload: {
-        symbols: string[];
+        pairs: string[];
         timeframeCodes: string[];
         strategyNames: string[];
       };
@@ -39,7 +39,7 @@ export type OpsRealtimeEvent =
       occurredAt: string;
       type: 'ops.execution.updated';
       payload: {
-        symbols: string[];
+        pairs: string[];
         timeframeCodes: string[];
       };
     };
@@ -80,7 +80,7 @@ export const parseOpsRealtimeEvent = (raw: string): OpsRealtimeEvent | null => {
 
   if (parsed.type === 'config.resource.updated') {
     if (
-      (payload.resource === 'symbols' ||
+      (payload.resource === 'pairs' ||
         payload.resource === 'timeframes' ||
         payload.resource === 'strategies' ||
         payload.resource === 'risk-profiles' ||
@@ -105,7 +105,7 @@ export const parseOpsRealtimeEvent = (raw: string): OpsRealtimeEvent | null => {
   }
 
   if (parsed.type === 'ops.backtests.updated' || parsed.type === 'ops.execution.updated') {
-    if (!isStringArray(payload.symbols) || !isStringArray(payload.timeframeCodes)) {
+    if (!isStringArray(payload.pairs) || !isStringArray(payload.timeframeCodes)) {
       return null;
     }
     return {
@@ -113,7 +113,7 @@ export const parseOpsRealtimeEvent = (raw: string): OpsRealtimeEvent | null => {
       occurredAt: parsed.occurredAt,
       type: parsed.type,
       payload: {
-        symbols: payload.symbols,
+        pairs: payload.pairs,
         timeframeCodes: payload.timeframeCodes,
       },
     };
@@ -121,7 +121,7 @@ export const parseOpsRealtimeEvent = (raw: string): OpsRealtimeEvent | null => {
 
   if (parsed.type === 'ops.data-readiness.updated') {
     if (
-      !isStringArray(payload.symbols) ||
+      !isStringArray(payload.pairs) ||
       !isStringArray(payload.timeframeCodes) ||
       !isStringArray(payload.strategyNames)
     ) {
@@ -132,7 +132,7 @@ export const parseOpsRealtimeEvent = (raw: string): OpsRealtimeEvent | null => {
       occurredAt: parsed.occurredAt,
       type: parsed.type,
       payload: {
-        symbols: payload.symbols,
+        pairs: payload.pairs,
         timeframeCodes: payload.timeframeCodes,
         strategyNames: payload.strategyNames,
       },

@@ -7,7 +7,7 @@ export const OPS_WS_URL = `${API_BASE.replace(/^http/, 'ws')}/ws/ops`;
 
 export type BacktestBatch = {
   batchId: string;
-  symbolCode: string;
+  pairCode: string;
   timeframeCode: string;
   requestedStartTime: number;
   requestedEndTime: number;
@@ -25,7 +25,7 @@ export type BacktestJob = {
   status: 'queued' | 'running' | 'completed' | 'failed';
   analysisSettingId: string;
   riskProfileName: string | null;
-  symbolCode: string | null;
+  pairCode: string | null;
   timeframeCode: string | null;
   strategyName: string | null;
   startTime: number | null;
@@ -49,7 +49,7 @@ export type RecentBacktestRun = {
   dataRetrievalDurationMs: number;
   analysisSettingId: string;
   riskProfileName: string;
-  symbol: string;
+  pairCode: string;
   timeframeCode: string;
   strategyName: string;
   requestedStartTime: number;
@@ -118,7 +118,7 @@ export type ExecutionSettingsRecord = {
 
 export type RuntimeAnalysis = {
   id: string;
-  symbolCode: string;
+  pairCode: string;
   timeframeCode: string;
   strategyName: string;
   riskProfileName: string;
@@ -127,7 +127,7 @@ export type RuntimeAnalysis = {
 
 export type DataReadinessItem = {
   status: 'ready' | 'partial' | 'missing' | 'error';
-  symbolCode: string;
+  pairCode: string;
   timeframeCode: string;
   strategyName: string;
   analysisSettingIds: string[];
@@ -150,7 +150,7 @@ export type ExecutionPromotion = {
   executionSettingsName: string;
   analysisSettingId: string;
   sourceBacktestId: string | null;
-  symbolCode: string;
+  pairCode: string;
   timeframeCode: string;
   strategyName: string;
   riskProfileName: string;
@@ -167,7 +167,7 @@ export type ExecutionTrade = {
   sourceBacktestId: string | null;
   analysisSettingId: string;
   executionSettingsName: string | null;
-  symbolCode: string;
+  pairCode: string;
   timeframeCode: string;
   strategyName: string;
   riskProfileName: string;
@@ -213,10 +213,10 @@ export type ExecutionTradesResponse = {
 export type ExecutionTradesQuery = {
   page?: number;
   pageSize?: number;
-  sortBy?: 'openedAt' | 'closedAt' | 'realizedPnlPercent' | 'symbolCode' | 'notionalUsd';
+  sortBy?: 'openedAt' | 'closedAt' | 'realizedPnlPercent' | 'pairCode' | 'notionalUsd';
   sortDirection?: 'asc' | 'desc';
   search?: string;
-  symbolCode?: string;
+  pairCode?: string;
   timeframeCode?: string;
   strategyName?: string;
   openedFrom?: string;

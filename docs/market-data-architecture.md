@@ -181,7 +181,7 @@ Shared envelope fields across the normalized events include:
 - `exchange`
 - `streamName`
 - `pairCode`
-- `symbol`
+- `binanceSymbol`
 - `analysisSettingIds`
 - `strategyNames`
 

@@ -460,10 +460,10 @@ Set the base URL:
 BASE_URL=http://localhost:3020
 ```
 
-Create a symbol:
+Create a pair:
 
 ```bash
-curl -fsS -X POST "$BASE_URL/v1/symbols" \
+curl -fsS -X POST "$BASE_URL/v1/pairs" \
   -H 'content-type: application/json' \
   -d '{
     "code": "BTCUSDT",

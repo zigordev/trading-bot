@@ -21,7 +21,7 @@ pub struct KlineRequirement {
 #[derive(Clone, Debug)]
 pub struct AnalysisSpec {
     pub analysis_setting_id: String,
-    pub symbol: String,
+    pub pair_code: String,
     pub timeframe_code: String,
     pub strategy_name: String,
     pub strategy_kind: String,
@@ -224,7 +224,7 @@ pub fn build_analysis_spec(
     record: &ResolvedAnalysisSettingsRecord,
 ) -> Result<Option<AnalysisSpec>> {
     if !record.enabled
-        || !record.symbol_entity.active
+        || !record.pair.active
         || !record.timeframe.active
         || !record.strategy.activated
     {
@@ -345,7 +345,7 @@ pub fn build_analysis_spec(
 
     Ok(Some(AnalysisSpec {
         analysis_setting_id: record.id.clone(),
-        symbol: record.symbol.clone(),
+        pair_code: record.pair_code.clone(),
         timeframe_code: record.timeframe_code.clone(),
         strategy_name: record.strategy_name.clone(),
         strategy_kind: match &strategy_definition {
@@ -400,9 +400,9 @@ impl AnalysisEvaluator {
                 occurred_at: row.occurred_at.clone(),
                 exchange: "binance".to_string(),
                 ingestion_mode: "historical".to_string(),
-                stream_name: format!("{}:{}", row.symbol, row.timeframe_code),
+                stream_name: format!("{}:{}", row.pair_code, row.timeframe_code),
                 pair_code: row.pair_code.clone(),
-                symbol: row.symbol.clone(),
+                binance_symbol: row.pair_code.clone(),
                 timeframe_code: row.timeframe_code.clone(),
                 period_ms: row.period_ms,
                 open_time: row.open_time,
@@ -475,7 +475,7 @@ impl AnalysisEvaluator {
 
         info!(
             analysis_setting_id = %self.spec.analysis_setting_id,
-            symbol = %self.spec.symbol,
+            pair_code = %self.spec.pair_code,
             timeframe_code = %self.spec.timeframe_code,
             strategy_name = %self.spec.strategy_name,
             risk_profile_name = %self.spec.risk_profile_name,
@@ -931,7 +931,7 @@ mod tests {
     fn record_with_kind(kind: &str, settings: serde_json::Value) -> ResolvedAnalysisSettingsRecord {
         ResolvedAnalysisSettingsRecord {
             id: "analysis-1".to_string(),
-            symbol: "BTCUSDT".to_string(),
+            pair_code: "BTCUSDT".to_string(),
             timeframe_code: "1m".to_string(),
             strategy_name: kind.to_string(),
             risk_profile_name: "default-risk".to_string(),
@@ -939,7 +939,7 @@ mod tests {
             enabled: true,
             created_at: "2026-01-01T00:00:00Z".to_string(),
             updated_at: "2026-01-01T00:00:00Z".to_string(),
-            symbol_entity: PairRecord {
+            pair: PairRecord {
                 id: "pair-1".to_string(),
                 code: "BTCUSDT".to_string(),
                 active: true,
@@ -985,7 +985,6 @@ mod tests {
     fn persisted_row(timeframe_code: &str, open_time: i64, close: f64) -> PersistedKlineRecord {
         PersistedKlineRecord {
             pair_code: "BTCUSDT".to_string(),
-            symbol: "BTCUSDT".to_string(),
             timeframe_code: timeframe_code.to_string(),
             period_ms: if timeframe_code == "5m" {
                 300_000
@@ -1024,7 +1023,7 @@ mod tests {
             ingestion_mode: "live".to_string(),
             stream_name: format!("btcusdt@kline_{timeframe_code}"),
             pair_code: "BTCUSDT".to_string(),
-            symbol: "BTCUSDT".to_string(),
+            binance_symbol: "BTCUSDT".to_string(),
             timeframe_code: timeframe_code.to_string(),
             period_ms: if timeframe_code == "5m" {
                 300_000

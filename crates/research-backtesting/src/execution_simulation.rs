@@ -539,7 +539,7 @@ mod tests {
     fn analysis_record() -> ResolvedAnalysisSettingsRecord {
         ResolvedAnalysisSettingsRecord {
             id: "analysis-1".to_string(),
-            symbol: "BTCUSDT".to_string(),
+            pair_code: "BTCUSDT".to_string(),
             timeframe_code: "1m".to_string(),
             strategy_name: "emaCross".to_string(),
             risk_profile_name: "default".to_string(),
@@ -550,7 +550,7 @@ mod tests {
             enabled: true,
             created_at: "2026-01-01T00:00:00Z".to_string(),
             updated_at: "2026-01-01T00:00:00Z".to_string(),
-            symbol_entity: PairRecord {
+            pair: PairRecord {
                 id: "pair-1".to_string(),
                 code: "BTCUSDT".to_string(),
                 active: true,
@@ -617,7 +617,7 @@ mod tests {
 
     fn trade(id: i64, trade_time: i64, price: f64) -> PersistedTradeRecord {
         PersistedTradeRecord {
-            symbol: "BTCUSDT".to_string(),
+            pair_code: "BTCUSDT".to_string(),
             aggregate_trade_id: id,
             price: price.to_string(),
             trade_time,

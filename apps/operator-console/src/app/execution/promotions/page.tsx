@@ -12,10 +12,10 @@ import { ErrorState } from '@/components/shared/error-state';
 import { DataTable } from '@/components/data-table/data-table';
 import { DetailSheet } from '@/components/shared/detail-sheet';
 import { IdCell } from '@/components/shared/id-cell';
-import { SymbolAvatar } from '@/components/shared/symbol-avatar';
+import { PairAvatar } from '@/components/shared/pair-avatar';
 import { useExecutionSummary } from '@/lib/hooks/use-execution-summary';
 import { formatTimestamp } from '@/lib/format';
-import { splitSymbol } from '@/lib/backtesting/derive-rows';
+import { splitPairCode } from '@/lib/backtesting/derive-rows';
 import { useEnumState, useSelectedRow } from '@/lib/url-state';
 import type { ExecutionPromotion } from '@/lib/api';
 import { usePreferences } from '@/components/providers/preferences-provider';
@@ -76,19 +76,17 @@ function PromotionsPageInner() {
   const columns = React.useMemo<LegacyColumnDef<ExecutionPromotion, unknown>[]>(
     () => [
       {
-        id: 'symbol',
-        accessorKey: 'symbolCode',
+        id: 'pairCode',
+        accessorKey: 'pairCode',
         header: t('execution.promotions.pair_header'),
         meta: { sticky: 'left' },
         cell: ({ row }) => {
-          const { base, quote } = splitSymbol(row.original.symbolCode);
+          const { base, quote } = splitPairCode(row.original.pairCode);
           return (
             <div className="flex items-center gap-2">
-              <SymbolAvatar baseAsset={base} quoteAsset={quote} size={22} />
+              <PairAvatar baseAsset={base} quoteAsset={quote} size={22} />
               <div className="flex flex-col leading-tight">
-                <span className="font-medium text-[var(--color-fg)]">
-                  {row.original.symbolCode}
-                </span>
+                <span className="font-medium text-[var(--color-fg)]">{row.original.pairCode}</span>
                 <span className="font-mono text-[11px] text-[var(--color-fg-subtle)]">
                   {row.original.timeframeCode}
                 </span>
@@ -226,13 +224,13 @@ function PromotionsPageInner() {
         title={
           selected ? (
             <div className="flex items-center gap-2">
-              <SymbolAvatar
-                baseAsset={splitSymbol(selected.symbolCode).base}
-                quoteAsset={splitSymbol(selected.symbolCode).quote}
+              <PairAvatar
+                baseAsset={splitPairCode(selected.pairCode).base}
+                quoteAsset={splitPairCode(selected.pairCode).quote}
                 size={28}
               />
               <div>
-                <div>{selected.symbolCode}</div>
+                <div>{selected.pairCode}</div>
                 <div className="mt-0.5 text-[12px] font-normal text-[var(--color-fg-muted)]">
                   {selected.timeframeCode} · {selected.strategyName}
                 </div>

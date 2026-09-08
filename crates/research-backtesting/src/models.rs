@@ -16,7 +16,7 @@ pub struct BacktestRequest {
     pub batch_completed_count: Option<usize>,
     pub analysis_setting_id: String,
     #[serde(default)]
-    pub symbol_code: Option<String>,
+    pub pair_code: Option<String>,
     #[serde(default)]
     pub timeframe_code: Option<String>,
     #[serde(default)]
@@ -177,7 +177,7 @@ pub struct LastBacktestStatus {
     pub data_retrieval_duration_ms: i64,
     pub analysis_setting_id: String,
     pub risk_profile_name: String,
-    pub symbol: String,
+    pub pair_code: String,
     pub timeframe_code: String,
     pub replay_kline_count: usize,
     pub signal_count: usize,
@@ -193,7 +193,7 @@ pub struct PersistedBacktestRunSummary {
     pub data_retrieval_duration_ms: i64,
     pub analysis_setting_id: String,
     pub risk_profile_name: String,
-    pub symbol: String,
+    pub pair_code: String,
     pub timeframe_code: String,
     pub strategy_name: String,
     pub requested_start_time: i64,

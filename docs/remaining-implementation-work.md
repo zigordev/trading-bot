@@ -209,7 +209,7 @@ BASE_URL=http://localhost:3020
 Create extra pairs:
 
 ```bash
-curl -fsS -X POST "$BASE_URL/v1/symbols" \
+curl -fsS -X POST "$BASE_URL/v1/pairs" \
   -H 'content-type: application/json' \
   -d '{
     "code": "ETHUSDT",
@@ -220,7 +220,7 @@ curl -fsS -X POST "$BASE_URL/v1/symbols" \
     "destinationAssetNeededFunds": 1000
   }' | jq
 
-curl -fsS -X POST "$BASE_URL/v1/symbols" \
+curl -fsS -X POST "$BASE_URL/v1/pairs" \
   -H 'content-type: application/json' \
   -d '{
     "code": "SOLUSDT",

@@ -54,7 +54,7 @@ pub struct AppConfig {
     /// chunk self-contained. Defaults to 1 day.
     pub historical_trade_backfill_chunk_ms: u64,
     /// Maximum number of historical trade chunks to backfill concurrently for
-    /// the same pair. This keeps one hot symbol from overwhelming Binance with
+    /// the same pair. This keeps one hot pair from overwhelming Binance with
     /// too many simultaneous pagers.
     pub historical_trade_backfill_pair_max_concurrency: usize,
     /// Maximum number of klines to buffer per ClickHouse INSERT during

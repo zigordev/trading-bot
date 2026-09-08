@@ -72,7 +72,7 @@ export function BacktestingKpis({ rows, loading }: BacktestingKpisProps) {
             ? formatTimestamp(lastRunRow.latestRun.finishedAt, { style: 'relative' })
             : '—'
         }
-        hint={lastRunRow ? `${lastRunRow.symbol} · ${lastRunRow.timeframeCode}` : undefined}
+        hint={lastRunRow ? `${lastRunRow.pairCode} · ${lastRunRow.timeframeCode}` : undefined}
         loading={loading}
         icon={<Hourglass className="size-4" />}
       />

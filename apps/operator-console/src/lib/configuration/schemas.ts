@@ -43,7 +43,7 @@ export type ConfigField =
   | {
       name: string;
       labelKey: string;
-      kind: 'symbol';
+      kind: 'pair';
       placeholder?: string;
     }
   | {
@@ -88,7 +88,7 @@ const promotionThresholdsSchema = z
   .partial()
   .optional();
 
-const symbolSchema = z.object({
+const pairSchema = z.object({
   code: z.string().min(1, 'Pair is required'),
   baseAsset: z.string().min(1, 'Base asset is required'),
   destinationAsset: z.string().min(1, 'Destination asset is required'),
@@ -142,14 +142,14 @@ const executionSettingSchema = z.object({
 });
 
 export const configResources: Record<string, ConfigResourceDefinition> = {
-  symbols: {
-    key: 'symbols',
-    labelKey: 'configuration.resources.symbols',
-    labelSingularKey: 'configuration.resources_singular.symbols',
-    endpoint: 'symbols',
+  pairs: {
+    key: 'pairs',
+    labelKey: 'configuration.resources.pairs',
+    labelSingularKey: 'configuration.resources_singular.pairs',
+    endpoint: 'pairs',
     titleField: 'code',
     idField: 'code',
-    schema: symbolSchema,
+    schema: pairSchema,
     defaultValues: () => ({
       code: '',
       baseAsset: '',
@@ -159,23 +159,23 @@ export const configResources: Record<string, ConfigResourceDefinition> = {
     fields: [
       {
         name: 'code',
-        labelKey: 'configuration.fields.symbols.code',
-        kind: 'symbol',
+        labelKey: 'configuration.fields.pairs.code',
+        kind: 'pair',
         placeholder: 'BTCUSDT',
       },
       {
         name: 'baseAsset',
-        labelKey: 'configuration.fields.symbols.baseAsset',
+        labelKey: 'configuration.fields.pairs.baseAsset',
         kind: 'asset-display',
         placeholder: 'Auto-filled from pair',
       },
       {
         name: 'destinationAsset',
-        labelKey: 'configuration.fields.symbols.destinationAsset',
+        labelKey: 'configuration.fields.pairs.destinationAsset',
         kind: 'asset-display',
         placeholder: 'Auto-filled from pair',
       },
-      { name: 'active', labelKey: 'configuration.fields.symbols.active', kind: 'boolean' },
+      { name: 'active', labelKey: 'configuration.fields.pairs.active', kind: 'boolean' },
     ],
   },
   timeframes: {

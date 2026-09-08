@@ -57,8 +57,7 @@ pub struct RiskProfileRecord {
 #[serde(rename_all = "camelCase")]
 pub struct ResolvedAnalysisSettingsRecord {
     pub id: String,
-    #[serde(rename = "symbolCode")]
-    pub symbol: String,
+    pub pair_code: String,
     pub timeframe_code: String,
     pub strategy_name: String,
     pub risk_profile_name: String,
@@ -66,8 +65,7 @@ pub struct ResolvedAnalysisSettingsRecord {
     pub enabled: bool,
     pub created_at: String,
     pub updated_at: String,
-    #[serde(rename = "symbol")]
-    pub symbol_entity: PairRecord,
+    pub pair: PairRecord,
     pub timeframe: TimeframeRecord,
     pub strategy: StrategyRecord,
     pub risk_profile: RiskProfileRecord,
@@ -77,7 +75,6 @@ pub struct ResolvedAnalysisSettingsRecord {
 #[serde(rename_all = "camelCase")]
 pub struct PersistedKlineRecord {
     pub pair_code: String,
-    pub symbol: String,
     pub timeframe_code: String,
     pub period_ms: i64,
     pub open_time: i64,
@@ -107,7 +104,7 @@ pub struct MarketDataKlineEvent {
     pub ingestion_mode: String,
     pub stream_name: String,
     pub pair_code: String,
-    pub symbol: String,
+    pub binance_symbol: String,
     pub timeframe_code: String,
     pub period_ms: i64,
     pub open_time: i64,

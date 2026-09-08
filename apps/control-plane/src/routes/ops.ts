@@ -55,10 +55,10 @@ export const registerOpsRoutes = (
       query: {
         page: number;
         pageSize: number;
-        sortBy: 'openedAt' | 'closedAt' | 'realizedPnlPercent' | 'symbolCode' | 'notionalUsd';
+        sortBy: 'openedAt' | 'closedAt' | 'realizedPnlPercent' | 'pairCode' | 'notionalUsd';
         sortDirection: 'asc' | 'desc';
         search?: string;
-        symbolCode?: string;
+        pairCode?: string;
         timeframeCode?: string;
         strategyName?: string;
         side?: 'long' | 'short';
@@ -165,7 +165,7 @@ export const registerOpsRoutes = (
   app.get('/v1/ops/data-readiness', {
     schema: {
       tags: ['ops'],
-      summary: 'Per symbol/timeframe/strategy readiness for replay and backtesting inputs',
+      summary: 'Per pair/timeframe/strategy readiness for replay and backtesting inputs',
       querystring: {
         type: 'object',
         properties: {
@@ -196,11 +196,11 @@ export const registerOpsRoutes = (
           pageSize: { type: 'integer', minimum: 1, maximum: 100 },
           sortBy: {
             type: 'string',
-            enum: ['openedAt', 'closedAt', 'realizedPnlPercent', 'symbolCode', 'notionalUsd'],
+            enum: ['openedAt', 'closedAt', 'realizedPnlPercent', 'pairCode', 'notionalUsd'],
           },
           sortDirection: { type: 'string', enum: ['asc', 'desc'] },
           search: { type: 'string' },
-          symbolCode: { type: 'string' },
+          pairCode: { type: 'string' },
           timeframeCode: { type: 'string' },
           strategyName: { type: 'string' },
           openedFrom: { type: 'string', format: 'date-time' },
@@ -223,13 +223,13 @@ export const registerOpsRoutes = (
         sortBy:
           query.sortBy === 'closedAt' ||
           query.sortBy === 'realizedPnlPercent' ||
-          query.sortBy === 'symbolCode' ||
+          query.sortBy === 'pairCode' ||
           query.sortBy === 'notionalUsd'
             ? query.sortBy
             : 'openedAt',
         sortDirection: query.sortDirection === 'asc' ? 'asc' : 'desc',
         search: typeof query.search === 'string' ? query.search : undefined,
-        symbolCode: typeof query.symbolCode === 'string' ? query.symbolCode : undefined,
+        pairCode: typeof query.pairCode === 'string' ? query.pairCode : undefined,
         timeframeCode: typeof query.timeframeCode === 'string' ? query.timeframeCode : undefined,
         strategyName: typeof query.strategyName === 'string' ? query.strategyName : undefined,
         openedFrom: typeof query.openedFrom === 'string' ? query.openedFrom : undefined,
