@@ -20,6 +20,7 @@ import { ProgressCell } from '@/components/shared/progress-cell';
 import { ReadinessBar } from '@/components/shared/readiness-bar';
 import { ScoreCell } from '@/components/shared/score-cell';
 import { PairAvatar } from '@/components/shared/pair-avatar';
+import { StrategyName } from '@/components/shared/strategy-name';
 import type { BacktestRow } from '@/lib/backtesting/types';
 import { usePreferences } from '@/components/providers/preferences-provider';
 
@@ -74,9 +75,10 @@ export function BacktestingTable({
         accessorKey: 'strategyName',
         header: t('backtesting.table.column_strategy'),
         cell: ({ row }) => (
-          <span className="text-[12px] text-[var(--color-fg-muted)]">
-            {row.original.strategyName}
-          </span>
+          <StrategyName
+            name={row.original.strategyName}
+            className="text-[12px] text-[var(--color-fg-muted)]"
+          />
         ),
       },
       {

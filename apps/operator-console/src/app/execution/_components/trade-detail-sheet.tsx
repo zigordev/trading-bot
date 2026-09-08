@@ -17,6 +17,7 @@ import { Badge } from '@/components/ui/badge';
 import { DetailSheet } from '@/components/shared/detail-sheet';
 import { IdCell } from '@/components/shared/id-cell';
 import { PairAvatar } from '@/components/shared/pair-avatar';
+import { StrategyName } from '@/components/shared/strategy-name';
 import { splitPairCode } from '@/lib/backtesting/derive-rows';
 import { usePreferences } from '@/components/providers/preferences-provider';
 
@@ -49,7 +50,7 @@ export function TradeDetailSheet({ open, onOpenChange, trade }: TradeDetailSheet
           <div>
             <div>{trade.pairCode}</div>
             <div className="mt-0.5 text-[12px] font-normal text-[var(--color-fg-muted)]">
-              {trade.timeframeCode} · {trade.strategyName}
+              {trade.timeframeCode} · <StrategyName name={trade.strategyName} />
             </div>
           </div>
         </div>

@@ -7,6 +7,7 @@ import * as React from 'react';
 
 import { DataTable } from '@/components/data-table/data-table';
 import { PairAvatar } from '@/components/shared/pair-avatar';
+import { StrategyName } from '@/components/shared/strategy-name';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import type { ExecutionTrade } from '@/lib/api';
@@ -121,9 +122,10 @@ export function ExecutionTradesTable({
         enableSorting: false,
         meta: { hideOnNarrow: true },
         cell: ({ row }) => (
-          <span className="text-[12px] text-[var(--color-fg-muted)]">
-            {row.original.strategyName}
-          </span>
+          <StrategyName
+            name={row.original.strategyName}
+            className="text-[12px] text-[var(--color-fg-muted)]"
+          />
         ),
       },
       {

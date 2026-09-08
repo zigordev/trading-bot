@@ -55,6 +55,12 @@ export type ConfigField =
   | {
       name: string;
       labelKey: string;
+      kind: 'strategy';
+      placeholder?: string;
+    }
+  | {
+      name: string;
+      labelKey: string;
       kind: 'json';
       placeholder?: string;
       defaultValue?: string;
@@ -318,7 +324,7 @@ export const configResources: Record<string, ConfigResourceDefinition> = {
       {
         name: 'strategyName',
         labelKey: 'configuration.fields.analysis-settings.strategyName',
-        kind: 'text',
+        kind: 'strategy',
       },
       {
         name: 'technicalAnalysisSettings',

@@ -8,6 +8,7 @@ import { SectionCard } from '@/components/layout/section-card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ScoreCell } from '@/components/shared/score-cell';
 import { PairAvatar } from '@/components/shared/pair-avatar';
+import { StrategyName } from '@/components/shared/strategy-name';
 import { splitPairCode } from '@/lib/backtesting/derive-rows';
 import { usePreferences } from '@/components/providers/preferences-provider';
 
@@ -53,7 +54,7 @@ export function TopPerformers() {
                     {run.pairCode}
                   </span>
                   <span className="text-[11px] text-[var(--color-fg-subtle)]">
-                    {run.timeframeCode} · {run.strategyName}
+                    {run.timeframeCode} · <StrategyName name={run.strategyName} />
                   </span>
                 </div>
                 <span className="num text-right text-[12px] text-[var(--color-fg-muted)]">

@@ -9,6 +9,7 @@ import { DetailSheet } from '@/components/shared/detail-sheet';
 import { IdCell } from '@/components/shared/id-cell';
 import { ScoreCell } from '@/components/shared/score-cell';
 import { PairAvatar } from '@/components/shared/pair-avatar';
+import { StrategyName } from '@/components/shared/strategy-name';
 import { splitPairCode } from '@/lib/backtesting/derive-rows';
 import { usePreferences } from '@/components/providers/preferences-provider';
 
@@ -33,7 +34,7 @@ export function RunDetailSheet({ open, onOpenChange, run }: RunDetailSheetProps)
           <div>
             <div className="text-[14px]">{t('backtesting.detail.run_sheet_title')}</div>
             <div className="mt-0.5 text-[12px] font-normal text-[var(--color-fg-muted)]">
-              {run.pairCode} · {run.timeframeCode} · {run.strategyName}
+              {run.pairCode} · {run.timeframeCode} · <StrategyName name={run.strategyName} />
             </div>
           </div>
         </div>

@@ -28,6 +28,7 @@ import { DataTableToolbar } from '@/components/data-table/data-table-toolbar';
 import { useDeleteConfigResource } from '@/lib/hooks/use-config-resource';
 import type { ConfigField, ConfigResourceDefinition } from '@/lib/configuration/schemas';
 import { AssetLabel, PairLabel } from '@/components/shared/pair-avatar';
+import { StrategyName } from '@/components/shared/strategy-name';
 import { usePreferences } from '@/components/providers/preferences-provider';
 
 interface ConfigTableProps {
@@ -248,6 +249,9 @@ function formatValue(
   }
   if (kind === 'pair' && typeof value === 'string') {
     return <PairLabel code={value} size={18} textClassName="text-[12px]" />;
+  }
+  if (kind === 'strategy' && typeof value === 'string') {
+    return <StrategyName name={value} className="text-[12px] text-[var(--color-fg)]" />;
   }
   if (kind === 'asset-display' && typeof value === 'string') {
     return <AssetLabel asset={value} size={16} textClassName="text-[12px]" />;

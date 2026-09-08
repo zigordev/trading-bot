@@ -13,6 +13,7 @@ import { DataTable } from '@/components/data-table/data-table';
 import { DetailSheet } from '@/components/shared/detail-sheet';
 import { IdCell } from '@/components/shared/id-cell';
 import { PairAvatar } from '@/components/shared/pair-avatar';
+import { StrategyName } from '@/components/shared/strategy-name';
 import { useExecutionSummary } from '@/lib/hooks/use-execution-summary';
 import { formatTimestamp } from '@/lib/format';
 import { splitPairCode } from '@/lib/backtesting/derive-rows';
@@ -100,9 +101,10 @@ function PromotionsPageInner() {
         accessorKey: 'strategyName',
         header: t('execution.promotions.strategy_header'),
         cell: ({ row }) => (
-          <span className="text-[12px] text-[var(--color-fg-muted)]">
-            {row.original.strategyName}
-          </span>
+          <StrategyName
+            name={row.original.strategyName}
+            className="text-[12px] text-[var(--color-fg-muted)]"
+          />
         ),
       },
       {
@@ -232,7 +234,7 @@ function PromotionsPageInner() {
               <div>
                 <div>{selected.pairCode}</div>
                 <div className="mt-0.5 text-[12px] font-normal text-[var(--color-fg-muted)]">
-                  {selected.timeframeCode} · {selected.strategyName}
+                  {selected.timeframeCode} · <StrategyName name={selected.strategyName} />
                 </div>
               </div>
             </div>
