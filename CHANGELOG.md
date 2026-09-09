@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.6](https://github.com/zigordev/trading-bot/compare/v0.1.5...v0.1.6) (2026-09-09)
+
+
+### Bug Fixes
+
+* **market-data,research-backtesting:** build request URLs from a parsed base ([#92](https://github.com/zigordev/trading-bot/issues/92)) ([6d26aec](https://github.com/zigordev/trading-bot/commit/6d26aec5ab30af3f282b5c877238bd403466aee9))
+
 ## [0.1.5](https://github.com/zigordev/trading-bot/compare/v0.1.4...v0.1.5) (2026-09-09)
 
 

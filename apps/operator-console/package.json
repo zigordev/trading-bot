@@ -1,7 +1,7 @@
 {
   "name": "@trading-bot/operator-console",
   "private": true,
-  "version": "0.1.5",
+  "version": "0.1.6",
   "scripts": {
     "dev": "next dev --port 3030",
     "build": "next build",
