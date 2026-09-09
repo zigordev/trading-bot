@@ -2078,11 +2078,13 @@ impl Database {
             sql_ident(table_name)
         );
 
+        let url = self.query_endpoint()?;
+
         let response = self
             .send_with_retries(|| {
                 self.request(
                     self.client
-                        .post(self.base_url.clone())
+                        .post(url.clone())
                         .query(&[("query", sql.as_str())])
                         .body(payload.to_string()),
                 )
@@ -2100,11 +2102,13 @@ impl Database {
             sql_ident(table_name)
         );
 
+        let url = self.query_endpoint()?;
+
         let response = self
             .send_with_retries(|| {
                 self.request(
                     self.client
-                        .post(self.base_url.clone())
+                        .post(url.clone())
                         .query(&[("query", sql.as_str())])
                         .body(payload.to_vec()),
                 )
@@ -2116,25 +2120,23 @@ impl Database {
     }
 
     async fn execute_sql(&self, sql: &str) -> Result<()> {
+        let url = self.query_endpoint()?;
+
         let response = self
-            .send_with_retries(|| {
-                self.request(
-                    self.client
-                        .post(self.base_url.clone())
-                        .body(sql.to_string()),
-                )
-            })
+            .send_with_retries(|| self.request(self.client.post(url.clone()).body(sql.to_string())))
             .await?;
         self.ensure_success(response).await?;
         Ok(())
     }
 
     async fn query_text(&self, sql: &str) -> Result<String> {
+        let url = self.query_endpoint()?;
+
         let response = self
             .send_with_retries(|| {
                 self.request(
                     self.client
-                        .post(self.base_url.clone())
+                        .post(url.clone())
                         .query(&[("output_format_json_quote_64bit_integers", "0")])
                         .body(sql.to_string()),
                 )
@@ -2145,11 +2147,13 @@ impl Database {
     }
 
     async fn query_lines(&self, sql: &str) -> Result<LineStream> {
+        let url = self.query_endpoint()?;
+
         let response = self
             .send_with_retries(|| {
                 self.request(
                     self.client
-                        .post(self.base_url.clone())
+                        .post(url.clone())
                         .query(&[("output_format_json_quote_64bit_integers", "0")])
                         .body(sql.to_string()),
                 )
@@ -2173,14 +2177,10 @@ impl Database {
     }
 
     async fn query_bytes(&self, sql: &str) -> Result<Vec<u8>> {
+        let url = self.query_endpoint()?;
+
         let response = self
-            .send_with_retries(|| {
-                self.request(
-                    self.client
-                        .post(self.base_url.clone())
-                        .body(sql.to_string()),
-                )
-            })
+            .send_with_retries(|| self.request(self.client.post(url.clone()).body(sql.to_string())))
             .await?;
         let response = self.ensure_success(response).await?;
         Ok(response.bytes().await?.to_vec())
@@ -2249,6 +2249,11 @@ impl Database {
                 row.max_time
             },
         })
+    }
+
+    /// ClickHouse serves its HTTP interface at the server root.
+    fn query_endpoint(&self) -> Result<Url> {
+        self.endpoint("/")
     }
 
     fn endpoint(&self, path: &str) -> Result<Url> {
