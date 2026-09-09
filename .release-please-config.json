@@ -17,6 +17,16 @@
       "type": "toml",
       "path": "Cargo.toml",
       "jsonpath": "$.workspace.package.version"
+    },
+    {
+      "type": "json",
+      "path": "package-lock.json",
+      "jsonpath": "$.packages['apps/control-plane'].version"
+    },
+    {
+      "type": "json",
+      "path": "package-lock.json",
+      "jsonpath": "$.packages['apps/operator-console'].version"
     }
   ]
 }
