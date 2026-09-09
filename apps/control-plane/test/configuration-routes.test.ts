@@ -63,10 +63,16 @@ test('POST /v1/analysis-settings maps foreign-key violations to 409', async () =
   });
 
   assert.equal(response.statusCode, 409);
-  assert.equal(
-    response.json().message,
-    'analysis setting references configuration entries that do not exist'
-  );
+  assert.equal(response.headers['content-type']?.startsWith('application/problem+json'), true);
+  assert.deepEqual(response.json(), {
+    type: 'https://zigordev.com/problems/configuration-unknown-reference',
+    title: 'Conflict',
+    status: 409,
+    detail: 'analysis setting references configuration entries that do not exist',
+    instance: '/v1/analysis-settings',
+    code: 'CONFIGURATION.UNKNOWN_REFERENCE',
+    params: { entity: 'analysis setting' },
+  });
 });
 
 test('POST /v1/timeframes rejects bodies without periodMs', async () => {
@@ -87,5 +93,6 @@ test('POST /v1/timeframes rejects bodies without periodMs', async () => {
   });
 
   assert.equal(response.statusCode, 400);
-  assert.match(response.json().message, /periodMs/);
+  assert.equal(response.json().code, 'VALIDATION.FAILED');
+  assert.match(response.json().detail, /periodMs/);
 });

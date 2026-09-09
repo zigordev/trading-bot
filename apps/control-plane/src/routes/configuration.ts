@@ -31,10 +31,15 @@ const idParamsSchema = {
 const errorSchema = {
   type: 'object',
   properties: {
-    statusCode: { type: 'integer' },
-    message: { type: 'string' },
+    type: { type: 'string' },
+    title: { type: 'string' },
+    status: { type: 'integer' },
+    detail: { type: 'string' },
+    instance: { type: 'string' },
+    code: { type: 'string' },
+    params: { type: 'object', additionalProperties: true },
   },
-  required: ['statusCode', 'message'],
+  required: ['type', 'title', 'status', 'code'],
 } as const;
 
 const isUniqueViolation = (error: unknown): boolean =>
@@ -45,7 +50,10 @@ const isForeignKeyViolation = (error: unknown): boolean =>
 
 const assertFound = <T>(entity: T | null, entityName: string, id: string): T => {
   if (!entity) {
-    throw new HttpError(404, `${entityName} ${id} was not found`);
+    throw new HttpError(404, `${entityName} ${id} was not found`, 'CONFIGURATION.NOT_FOUND', {
+      entity: entityName,
+      id,
+    });
   }
 
   return entity;
@@ -111,14 +119,18 @@ const registerCrudRoutes = <TInput, TRecord>(
             409,
             `${entityName} with ${store.uniqueFieldName} "${store.getUniqueFieldValue(
               request.body as TInput
-            )}" already exists`
+            )}" already exists`,
+            'CONFIGURATION.DUPLICATE',
+            { entity: entityName, field: store.uniqueFieldName }
           );
         }
 
         if (isForeignKeyViolation(error)) {
           throw new HttpError(
             409,
-            `${entityName} references configuration entries that do not exist`
+            `${entityName} references configuration entries that do not exist`,
+            'CONFIGURATION.UNKNOWN_REFERENCE',
+            { entity: entityName }
           );
         }
 
@@ -157,14 +169,18 @@ const registerCrudRoutes = <TInput, TRecord>(
             409,
             `${entityName} with ${store.uniqueFieldName} "${store.getUniqueFieldValue(
               request.body as TInput
-            )}" already exists`
+            )}" already exists`,
+            'CONFIGURATION.DUPLICATE',
+            { entity: entityName, field: store.uniqueFieldName }
           );
         }
 
         if (isForeignKeyViolation(error)) {
           throw new HttpError(
             409,
-            `${entityName} references configuration entries that do not exist`
+            `${entityName} references configuration entries that do not exist`,
+            'CONFIGURATION.UNKNOWN_REFERENCE',
+            { entity: entityName }
           );
         }
 
@@ -192,7 +208,10 @@ const registerCrudRoutes = <TInput, TRecord>(
         const deleted = await store.delete(id);
 
         if (!deleted) {
-          throw new HttpError(404, `${entityName} ${id} was not found`);
+          throw new HttpError(404, `${entityName} ${id} was not found`, 'CONFIGURATION.NOT_FOUND', {
+            entity: entityName,
+            id,
+          });
         }
       } catch (error) {
         if (isForeignKeyViolation(error)) {

@@ -15,7 +15,7 @@ import { loadConfig } from './config.js';
 import { fastifyLoggerOptions, registerHttpMetrics, registry } from './observability/index.js';
 import { createConfigStores, ensureControlPlaneSchema } from './features/config-resources.js';
 import { ensureOpsSchema } from './features/ops.js';
-import { HttpError } from './http-error.js';
+import { registerProblemErrorHandler } from './problem-details.js';
 import { createConfigChangeEventPublisher } from './infrastructure/config-change-events.js';
 import { createBacktestRunProjectionConsumer } from './infrastructure/backtest-run-events.js';
 import { createBacktestProgressConsumer } from './infrastructure/backtest-progress-events.js';
@@ -51,12 +51,6 @@ const dataReadinessProjectionConsumer = createDataReadinessProjectionConsumer(
   pool
 );
 const stores = createConfigStores(pool, configChangePublisher);
-const hasStatusCode = (error: unknown): error is { statusCode: number } =>
-  typeof error === 'object' &&
-  error !== null &&
-  'statusCode' in error &&
-  typeof error.statusCode === 'number';
-
 // Security headers. CSP is off for the same reason as the Nest APIs: this
 // serves JSON and Swagger UI, and a default policy blocks the inline scripts
 // Swagger needs. HSTS, nosniff, frame-options and referrer-policy still apply.
@@ -122,22 +116,7 @@ await dataReadinessProjectionConsumer.start();
 // on. Without it this service was scraped but produced nothing alertable.
 registerHttpMetrics(app);
 
-app.setErrorHandler((error, _request, reply) => {
-  const statusCode =
-    error instanceof HttpError ? error.statusCode : hasStatusCode(error) ? error.statusCode : 500;
-
-  if (statusCode >= 500) {
-    app.log.error(error, 'Unhandled control-plane error');
-  } else {
-    app.log.warn({ err: error, statusCode }, 'Control-plane request failed');
-  }
-
-  reply.code(statusCode).send({
-    statusCode,
-    message:
-      error instanceof Error && error.message.trim() ? error.message : 'Internal server error',
-  });
-});
+registerProblemErrorHandler(app);
 
 const close = async () => {
   closeOpsSockets();
