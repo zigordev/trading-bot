@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.4](https://github.com/zigordev/trading-bot/compare/v0.1.3...v0.1.4) (2026-09-09)
+
+
+### Bug Fixes
+
+* **docker:** add a .dockerignore for every image build ([#87](https://github.com/zigordev/trading-bot/issues/87)) ([530683a](https://github.com/zigordev/trading-bot/commit/530683a86ee15177a474285bdf05de45082500bd))
+
 ## [0.1.3](https://github.com/zigordev/trading-bot/compare/v0.1.2...v0.1.3) (2026-09-07)
 
 
