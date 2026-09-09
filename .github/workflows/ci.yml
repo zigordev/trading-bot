@@ -62,8 +62,26 @@ jobs:
       - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
 
-      - name: Test
-        run: cargo test --workspace
+      - name: Install coverage tooling
+        uses: taiki-e/install-action@c3ec0de9ae7f1019cea21aa96aa0a895b9552063 # v2.87.9
+        with:
+          tool: cargo-llvm-cov
+
+      # cargo llvm-cov runs the suite, so this replaces `cargo test` rather
+      # than adding a second compile of every crate.
+      - name: Test with coverage
+        run: |
+          mkdir -p artifacts
+          cargo llvm-cov --workspace --lcov --output-path artifacts/lcov.info
+
+      - name: Upload rust coverage
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage-rust
+          path: artifacts/lcov.info
+          retention-days: 7
+          if-no-files-found: warn
 
   typescript:
     name: TypeScript (format + typecheck + build + test)
@@ -137,7 +155,7 @@ jobs:
           done
 
   security-supply-chain:
-    name: Security + Supply Chain
+    name: Security + Supply Chain (dependencies)
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -160,41 +178,99 @@ jobs:
       - name: Audit dependencies (prod only, high+)
         run: npm run audit:prod:gate
 
-      - name: Build prod images
+  image-supply-chain:
+    name: Image SBOM + Trivy (${{ matrix.image }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: control-plane
+            dockerfile: apps/control-plane/Dockerfile
+            target: prod
+          - image: operator-console
+            dockerfile: apps/operator-console/Dockerfile
+            target: local
+          - image: market-data
+            dockerfile: crates/market-data/Dockerfile
+            target: local
+          - image: execution
+            dockerfile: crates/execution/Dockerfile
+            target: local
+          - image: research-backtesting
+            dockerfile: crates/research-backtesting/Dockerfile
+            target: local
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+
+      # One runner per image: the three Rust images compile the whole workspace
+      # from source, so building them in sequence would cost more wall clock
+      # than the rest of CI put together.
+      #
+      # Only the control-plane names its runtime stage `prod`, which is the
+      # estate convention; the other four call it `local`.
+      - name: Build image
         run: |
-          docker build -f apps/control-plane/Dockerfile --target prod -t trading-bot-control-plane:ci . &
-          pid_0=$!
-          wait "$pid_0"
+          docker build \
+            -f ${{ matrix.dockerfile }} \
+            --target ${{ matrix.target }} \
+            -t trading-bot-${{ matrix.image }}:ci .
 
       - name: Prepare artifacts dir
         run: mkdir -p artifacts
 
-      - name: Generate SBOM (trading-bot-control-plane:ci)
+      - name: Generate SBOM
         uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0
         with:
-          image: trading-bot-control-plane:ci
+          image: trading-bot-${{ matrix.image }}:ci
           format: spdx-json
-          output-file: artifacts/sbom-trading-bot-control-plane.spdx.json
+          output-file: artifacts/sbom-trading-bot-${{ matrix.image }}.spdx.json
           upload-artifact: false
           upload-release-assets: false
 
-      - name: Validate SBOM files
+      - name: Validate SBOM
         run: |
-          test -s artifacts/sbom-trading-bot-control-plane.spdx.json
-          jq -e '.spdxVersion and (.packages | type == "array")' artifacts/sbom-trading-bot-control-plane.spdx.json
+          file=artifacts/sbom-trading-bot-${{ matrix.image }}.spdx.json
+          test -s "$file"
+          jq -e '.spdxVersion and (.packages | type == "array")' "$file"
 
-      - name: Upload SBOM artifacts
+      - name: Upload SBOM
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: sbom
-          path: |
-            artifacts/sbom-trading-bot-control-plane.spdx.json
+          name: sbom-${{ matrix.image }}
+          path: artifacts/sbom-trading-bot-${{ matrix.image }}.spdx.json
+          retention-days: 30
           if-no-files-found: error
 
-      - name: Trivy scan (trading-bot-control-plane:ci)
+      # Twice on purpose: the JSON run records what was found and never fails,
+      # so the artifact exists even when the gate below stops the build. The
+      # vulnerability database is cached after the first scan.
+      - name: Trivy report
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          image-ref: trading-bot-control-plane:ci
+          image-ref: trading-bot-${{ matrix.image }}:ci
+          format: json
+          output: artifacts/trivy-trading-bot-${{ matrix.image }}.json
+          exit-code: '0'
+          ignore-unfixed: true
+          trivyignores: .trivyignore
+          vuln-type: os,library
+          severity: HIGH,CRITICAL
+
+      - name: Upload Trivy report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: trivy-${{ matrix.image }}
+          path: artifacts/trivy-trading-bot-${{ matrix.image }}.json
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Trivy scan
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: trading-bot-${{ matrix.image }}:ci
           format: table
           exit-code: '1'
           ignore-unfixed: true
