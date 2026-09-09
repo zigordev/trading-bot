@@ -12,9 +12,11 @@ use rdkafka::{
     consumer::{Consumer, StreamConsumer},
     producer::{FutureProducer, FutureRecord},
 };
+use reqwest::Url;
 use serde::Serialize;
 use std::time::Duration as StdDuration;
 use trading_bot_market_data::db::{Database, StoredBacktestRunSummary, StoredBacktestRunWrite};
+use trading_bot_market_data::http::parse_base_url;
 use trading_bot_market_data::models::PersistedKlineRecord as HistoricalKlineRecord;
 use trading_bot_market_data::models::PersistedTradeRecord as HistoricalTradeRecord;
 use trading_bot_strategy_engine::{
@@ -55,6 +57,7 @@ struct Inner {
     config: AppConfig,
     metrics: Metrics,
     control_plane_client: reqwest::Client,
+    control_plane_base_url: Url,
     kafka_producer: FutureProducer,
     historical_store: Database,
     status: tokio::sync::RwLock<RuntimeStatus>,
@@ -409,6 +412,8 @@ impl ResearchBacktestingService {
                 config.control_plane_request_timeout_ms,
             ))
             .build()?;
+        let control_plane_base_url = parse_base_url(&config.control_plane_base_url)
+            .context("invalid CONTROL_PLANE_BASE_URL")?;
         let kafka_producer = ClientConfig::new()
             .set("bootstrap.servers", &config.kafka_bootstrap_servers)
             .set("message.timeout.ms", "5000")
@@ -429,6 +434,7 @@ impl ResearchBacktestingService {
                 config: config.clone(),
                 metrics,
                 control_plane_client,
+                control_plane_base_url,
                 kafka_producer,
                 historical_store,
                 status: tokio::sync::RwLock::new(RuntimeStatus {
@@ -620,16 +626,20 @@ impl ResearchBacktestingService {
             .collect())
     }
 
+    fn control_plane_endpoint(&self, path: &str) -> Result<Url> {
+        self.inner
+            .control_plane_base_url
+            .join(path)
+            .with_context(|| format!("invalid control-plane path: {path}"))
+    }
+
     async fn fetch_data_readiness_from_control_plane(
         &self,
     ) -> Result<Vec<ControlPlaneDataReadinessRecord>> {
         let response = self
             .inner
             .control_plane_client
-            .get(format!(
-                "{}/v1/ops/data-readiness",
-                self.inner.config.control_plane_base_url
-            ))
+            .get(self.control_plane_endpoint("v1/ops/data-readiness")?)
             .send()
             .await?;
         let response = response.error_for_status()?;
@@ -1670,10 +1680,7 @@ impl ResearchBacktestingService {
         let response = self
             .inner
             .control_plane_client
-            .get(format!(
-                "{}/health",
-                self.inner.config.control_plane_base_url
-            ))
+            .get(self.control_plane_endpoint("health")?)
             .send()
             .await?;
 
@@ -1691,10 +1698,7 @@ impl ResearchBacktestingService {
         let response = self
             .inner
             .control_plane_client
-            .get(format!(
-                "{}/v1/runtime-config/analysis-settings",
-                self.inner.config.control_plane_base_url
-            ))
+            .get(self.control_plane_endpoint("v1/runtime-config/analysis-settings")?)
             .send()
             .await?;
         let response = response.error_for_status()?;
@@ -1707,10 +1711,7 @@ impl ResearchBacktestingService {
         let response = self
             .inner
             .control_plane_client
-            .get(format!(
-                "{}/v1/risk-profiles",
-                self.inner.config.control_plane_base_url
-            ))
+            .get(self.control_plane_endpoint("v1/risk-profiles")?)
             .send()
             .await?;
         let response = response.error_for_status()?;
