@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.5](https://github.com/zigordev/trading-bot/compare/v0.1.4...v0.1.5) (2026-09-09)
+
+
+### Bug Fixes
+
+* **release:** keep workspace versions in package-lock.json in step ([#89](https://github.com/zigordev/trading-bot/issues/89)) ([845e131](https://github.com/zigordev/trading-bot/commit/845e13134483cd49ef0e6eaeb3956fa921602e8f))
+
 ## [0.1.4](https://github.com/zigordev/trading-bot/compare/v0.1.3...v0.1.4) (2026-09-09)
 
 
