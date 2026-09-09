@@ -246,9 +246,9 @@ const fetchJson = async <T>(path: string, init?: RequestInit): Promise<T> => {
   if (!response.ok) {
     let message = `request failed with status ${response.status}`;
     try {
-      const payload = (await response.json()) as { message?: string };
-      if (payload.message) {
-        message = payload.message;
+      const problem = (await response.json()) as { detail?: string };
+      if (problem.detail) {
+        message = problem.detail;
       }
     } catch {}
 
