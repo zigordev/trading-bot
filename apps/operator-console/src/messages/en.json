@@ -24,7 +24,7 @@
   },
   "configuration": {
     "resources": {
-      "symbols": "Pairs",
+      "pairs": "Pairs",
       "timeframes": "Timeframes",
       "strategies": "Strategies",
       "risk-profiles": "Risk profiles",
@@ -32,7 +32,7 @@
       "execution-settings": "Execution settings"
     },
     "resources_singular": {
-      "symbols": "Pair",
+      "pairs": "Pair",
       "timeframes": "Timeframe",
       "strategies": "Strategy",
       "risk-profiles": "Risk profile",
@@ -40,7 +40,7 @@
       "execution-settings": "Execution setting"
     },
     "fields": {
-      "symbols": {
+      "pairs": {
         "code": "Pair",
         "baseAsset": "Base asset",
         "destinationAsset": "Destination asset",

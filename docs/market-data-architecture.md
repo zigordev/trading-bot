@@ -125,10 +125,6 @@ The historian uses these storage policies:
   - daily partitioning from `tradeTime`
   - ordered by `pairCode + tradeTime + aggregateTradeId`
   - TTL controlled by `HISTORICAL_TRADE_RETENTION_DAYS`
-  - `ReplacingMergeTree`
-  - daily partitioning from `occurredAt`
-  - ordered by `pairCode + occurredAt + orderBookUpdateId`
-  - TTL controlled by `HISTORICAL_BOOK_TICKER_RETENTION_DAYS`
 
 That makes the implemented access patterns cheap:
 
@@ -181,7 +177,7 @@ Shared envelope fields across the normalized events include:
 - `exchange`
 - `streamName`
 - `pairCode`
-- `symbol`
+- `binanceSymbol`
 - `analysisSettingIds`
 - `strategyNames`
 

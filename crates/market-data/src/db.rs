@@ -31,7 +31,7 @@ const JSON_EACH_ROW_MAX_LINE_LENGTH: usize = 64 * 1024 * 1024;
 
 #[derive(Debug, Deserialize)]
 struct HistoricalKlineRow {
-    symbol: String,
+    pair_code: String,
     timeframe_code: String,
     period_ms: i64,
     open_time: i64,
@@ -197,7 +197,6 @@ struct HistoricalKlineWriteRow<'a> {
     pair_code: &'a str,
     timeframe_code: &'a str,
     open_time: i64,
-    symbol: &'a str,
     period_ms: i64,
     close_time: i64,
     event_time: i64,
@@ -382,7 +381,6 @@ impl Database {
               pair_code LowCardinality(String),
               timeframe_code LowCardinality(String),
               open_time Int64,
-              symbol LowCardinality(String),
               period_ms Int64,
               close_time Int64,
               event_time Int64,
@@ -449,6 +447,11 @@ impl Database {
         .await?;
         self.execute_sql(&format!(
             "DROP TABLE IF EXISTS {}.market_data_book_tickers",
+            sql_ident(&self.database)
+        ))
+        .await?;
+        self.execute_sql(&format!(
+            "ALTER TABLE {}.market_data_klines DROP COLUMN IF EXISTS symbol",
             sql_ident(&self.database)
         ))
         .await?;
@@ -1302,7 +1305,6 @@ impl Database {
             pair_code: &event.pair_code,
             timeframe_code: &event.timeframe_code,
             open_time: event.open_time,
-            symbol: &event.symbol,
             period_ms: event.period_ms,
             close_time: event.close_time,
             event_time: event.event_time,
@@ -1343,7 +1345,6 @@ impl Database {
                 pair_code: &event.pair_code,
                 timeframe_code: &event.timeframe_code,
                 open_time: event.open_time,
-                symbol: &event.symbol,
                 period_ms: event.period_ms,
                 close_time: event.close_time,
                 event_time: event.event_time,
@@ -1734,7 +1735,6 @@ impl Database {
             r#"
             SELECT
               pair_code,
-              argMax(symbol, updated_at_ms) AS symbol,
               timeframe_code,
               argMax(period_ms, updated_at_ms) AS period_ms,
               open_time,
@@ -1782,7 +1782,6 @@ impl Database {
             r#"
             SELECT
               pair_code,
-              argMax(symbol, updated_at_ms) AS symbol,
               timeframe_code,
               argMax(period_ms, updated_at_ms) AS period_ms,
               open_time,
@@ -1956,7 +1955,7 @@ impl Database {
             }
             let row = serde_json::from_str::<HistoricalKlineRow>(&line)?;
             records.push(PersistedKlineRecord {
-                symbol: row.symbol,
+                pair_code: row.pair_code,
                 timeframe_code: row.timeframe_code,
                 period_ms: row.period_ms,
                 open_time: row.open_time,
@@ -2359,7 +2358,7 @@ fn parse_trade_rows_row_binary(bytes: &[u8]) -> Result<Vec<PersistedTradeRecord>
         let price = parse_row_binary_string(bytes, &mut offset)?;
         let trade_time = parse_row_binary_i64(bytes, &mut offset)?;
         rows.push(PersistedTradeRecord {
-            symbol: pair_code,
+            pair_code,
             aggregate_trade_id,
             price,
             trade_time,

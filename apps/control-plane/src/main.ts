@@ -70,7 +70,7 @@ await app.register(fastifySwagger, {
       description: 'Control-plane API for trading-bot configuration, health, and runtime metadata.',
     },
     tags: [
-      { name: 'symbols', description: 'Tradable market symbols' },
+      { name: 'pairs', description: 'Tradable market pairs' },
       {
         name: 'timeframes',
         description: 'Operating and higher-order timeframes with canonical period metadata',
@@ -84,7 +84,7 @@ await app.register(fastifySwagger, {
       {
         name: 'analysis-settings',
         description:
-          'Reusable technical-analysis settings expanded across active symbols, timeframes, and risk profiles',
+          'Reusable technical-analysis settings expanded across active pairs, timeframes, and risk profiles',
       },
       {
         name: 'runtime-config',

@@ -57,9 +57,7 @@ When `market-data` starts:
 
 Refresh sources:
 
-- Config change event from `CONFIG_CHANGE_EVENTS_TOPIC`.
-- Periodic timer (`RUNTIME_CONFIG_REFRESH_INTERVAL_MS`).
-- Both can trigger `perform_refresh` in parallel; events are debounced (`CONFIG_REFRESH_DEBOUNCE_MS`).
+- Config change event from `CONFIG_CHANGE_EVENTS_TOPIC`, debounced by `CONFIG_REFRESH_DEBOUNCE_MS`.
 
 ## 3) Subscription model
 
@@ -70,7 +68,6 @@ Refresh sources:
   - stream = `{symbol}@kline_{interval}`
 - **pair subscriptions**
   - one `{symbol}@aggTrade`
-  - one `{symbol}@bookTicker`
 
 If several analysis settings share same pair/timeframe, only one live websocket channel is opened per type.
 
@@ -80,15 +77,14 @@ Subscription info is passed to websocket normalizers and used as context (`analy
 
 `market-data` connects to Binance **combined stream**:
 
-- endpoint from `BINANCE_STREAM_BASE_URL`
+- endpoint from `BINANCE_WS_BASE_URL`
 - stream names are joined as `streams=<stream1>/<stream2>/...`
 
 Per message:
 
 - parse envelope
-- detect type (kline / aggTrade / bookTicker)
+- detect type (kline / aggTrade)
 - normalize to internal models
-- deduplicate via LRU event cache (`MARKET_EVENT_DEDUP_CAPACITY`)
 - write to ClickHouse
 - publish event to Kafka for live rows only (`ingestion_mode = "live"`):
   - klines: always publish
@@ -208,12 +204,10 @@ Use these env vars from `crates/market-data/src/config.rs`:
 - `HISTORICAL_TRADE_BACKFILL_MAX_BATCHES`
   - upper bound on trade backfill batch count
 - `HISTORICAL_BACKFILL_MAX_CONCURRENCY`
-- `HISTORICAL_BOOK_TICKER_BACKFILL_INTERVAL_MS`
 - `BINANCE_REST_MAX_RETRIES`, `BINANCE_REST_RETRY_BACKOFF_MS`
 - `HISTORICAL_*_RETENTION_DAYS`
-- `MARKET_EVENT_DEDUP_CAPACITY`
-- `RUNTIME_CONFIG_REFRESH_INTERVAL_MS`, `CONFIG_REFRESH_DEBOUNCE_MS`
-- `HISTORICAL_STORE_COMPACTION_ENABLED` (default `true` in local sample)
+- `CONFIG_REFRESH_DEBOUNCE_MS`
+- `HISTORICAL_STORE_COMPACTION_ENABLED` (default `false`; the local example turns it on)
 - `HISTORICAL_STORE_COMPACTION_INTERVAL_MS` (default `180000`)
 - `HISTORICAL_STORE_COMPACTION_AFTER_REFRESH` (default `false`)  
   when `true`, runs `OPTIMIZE TABLE ... FINAL` immediately after each successful

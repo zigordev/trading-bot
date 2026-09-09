@@ -4,7 +4,7 @@ import * as React from 'react';
 import Image from 'next/image';
 
 import { cn } from '@/lib/utils';
-import { splitSymbol } from '@/lib/backtesting/derive-rows';
+import { splitPairCode } from '@/lib/backtesting/derive-rows';
 
 const GENERIC_ICON_URL =
   'https://cdn.jsdelivr.net/gh/spothq/cryptocurrency-icons@master/32/color/generic.png';
@@ -68,14 +68,14 @@ export function AssetIcon({
   );
 }
 
-interface SymbolAvatarProps {
+interface PairAvatarProps {
   baseAsset?: string | null;
   quoteAsset?: string | null;
   size?: number;
   className?: string;
 }
 
-export function SymbolAvatar({ baseAsset, quoteAsset, size = 28, className }: SymbolAvatarProps) {
+export function PairAvatar({ baseAsset, quoteAsset, size = 28, className }: PairAvatarProps) {
   const quoteSize = Math.max(14, Math.round(size * 0.5));
   return (
     <span
@@ -103,10 +103,10 @@ interface PairLabelProps {
 }
 
 export function PairLabel({ code, size = 22, className, textClassName }: PairLabelProps) {
-  const { base, quote } = splitSymbol(code);
+  const { base, quote } = splitPairCode(code);
   return (
     <span className={cn('inline-flex items-center gap-2', className)}>
-      <SymbolAvatar baseAsset={base} quoteAsset={quote} size={size} />
+      <PairAvatar baseAsset={base} quoteAsset={quote} size={size} />
       <span className={cn('font-medium text-[var(--color-fg)]', textClassName)}>{code}</span>
     </span>
   );

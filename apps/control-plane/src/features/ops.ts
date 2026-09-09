@@ -1,5 +1,5 @@
 import type { Pool, QueryResultRow } from 'pg';
-import { listResolvedAnalysisSettings } from './config-resources.js';
+import { listResolvedAnalysisSettings, renameColumnIfExists } from './config-resources.js';
 
 export type BacktestJobStatus = 'queued' | 'running' | 'completed' | 'failed';
 
@@ -8,7 +8,7 @@ export type BacktestJobRecord = {
   status: BacktestJobStatus;
   analysisSettingId: string;
   riskProfileName: string | null;
-  symbolCode: string | null;
+  pairCode: string | null;
   timeframeCode: string | null;
   strategyName: string | null;
   startTime: number | null;
@@ -46,7 +46,7 @@ export type BacktestRunProjectionRecord = {
   dataRetrievalDurationMs: number;
   analysisSettingId: string;
   riskProfileName: string;
-  symbol: string;
+  pairCode: string;
   timeframeCode: string;
   strategyName: string;
   requestedStartTime: number;
@@ -79,7 +79,7 @@ export type BacktestRunProjectionInput = Omit<
 
 export type BacktestBatchRecord = {
   batchId: string;
-  symbolCode: string;
+  pairCode: string;
   timeframeCode: string;
   requestedStartTime: number;
   requestedEndTime: number;
@@ -94,7 +94,7 @@ export type BacktestBatchRecord = {
 
 export type DataReadinessProjectionRecord = {
   status: 'ready' | 'partial' | 'missing' | 'error';
-  symbolCode: string;
+  pairCode: string;
   timeframeCode: string;
   strategyName: string;
   analysisSettingIds: string[];
@@ -121,7 +121,7 @@ export type ExecutionPromotionProjectionRecord = {
   executionSettingsName: string;
   analysisSettingId: string;
   sourceBacktestId: string | null;
-  symbolCode: string;
+  pairCode: string;
   timeframeCode: string;
   strategyName: string;
   riskProfileName: string;
@@ -148,7 +148,7 @@ export type ExecutionTradeRecord = {
   sourceBacktestId: string | null;
   analysisSettingId: string;
   executionSettingsName: string | null;
-  symbolCode: string;
+  pairCode: string;
   timeframeCode: string;
   strategyName: string;
   riskProfileName: string;
@@ -177,7 +177,7 @@ export type ExecutionTradeRecord = {
 export type ExecutionTradeInput = Omit<ExecutionTradeRecord, 'createdAt' | 'updatedAt'>;
 
 export type ExecutionTradeSortField =
-  'openedAt' | 'closedAt' | 'realizedPnlPercent' | 'symbolCode' | 'notionalUsd';
+  'openedAt' | 'closedAt' | 'realizedPnlPercent' | 'pairCode' | 'notionalUsd';
 
 export type ExecutionTradeQuery = {
   page: number;
@@ -185,7 +185,7 @@ export type ExecutionTradeQuery = {
   sortBy: ExecutionTradeSortField;
   sortDirection: 'asc' | 'desc';
   search?: string;
-  symbolCode?: string;
+  pairCode?: string;
   timeframeCode?: string;
   strategyName?: string;
   openedFrom?: string;
@@ -401,7 +401,7 @@ const mapBacktestJobRow = (row: QueryResultRow): BacktestJobRecord => ({
   status: String(row.status) as BacktestJobStatus,
   analysisSettingId: String(row.analysis_setting_id),
   riskProfileName: row.risk_profile_name === null ? null : String(row.risk_profile_name),
-  symbolCode: row.symbol_code === null ? null : String(row.symbol_code),
+  pairCode: row.pair_code === null ? null : String(row.pair_code),
   timeframeCode: row.timeframe_code === null ? null : String(row.timeframe_code),
   strategyName: row.strategy_name === null ? null : String(row.strategy_name),
   startTime: row.start_time === null ? null : Number(row.start_time),
@@ -425,7 +425,7 @@ const mapBacktestRunProjectionRow = (row: QueryResultRow): BacktestRunProjection
   dataRetrievalDurationMs: Number(row.data_retrieval_duration_ms),
   analysisSettingId: String(row.analysis_setting_id),
   riskProfileName: String(row.risk_profile_name),
-  symbol: String(row.symbol),
+  pairCode: String(row.pair_code),
   timeframeCode: String(row.timeframe_code),
   strategyName: String(row.strategy_name),
   requestedStartTime: Number(row.requested_start_time),
@@ -466,7 +466,7 @@ const mapStringArray = (value: unknown): string[] => {
 
 const mapBacktestBatchRow = (row: QueryResultRow): BacktestBatchRecord => ({
   batchId: String(row.batch_id),
-  symbolCode: String(row.symbol_code),
+  pairCode: String(row.pair_code),
   timeframeCode: String(row.timeframe_code),
   requestedStartTime: Number(row.requested_start_time),
   requestedEndTime: Number(row.requested_end_time),
@@ -487,7 +487,7 @@ const mapDataReadinessProjectionRow = (row: QueryResultRow): DataReadinessProjec
     row.status === 'error'
       ? row.status
       : 'error',
-  symbolCode: String(row.symbol_code),
+  pairCode: String(row.pair_code),
   timeframeCode: String(row.timeframe_code),
   strategyName: String(row.strategy_name),
   analysisSettingIds: mapStringArray(row.analysis_setting_ids_json),
@@ -516,7 +516,7 @@ const mapExecutionPromotionProjectionRow = (
   executionSettingsName: String(row.execution_settings_name),
   analysisSettingId: String(row.analysis_setting_id),
   sourceBacktestId: row.source_backtest_id === null ? null : String(row.source_backtest_id),
-  symbolCode: String(row.symbol_code),
+  pairCode: String(row.pair_code),
   timeframeCode: String(row.timeframe_code),
   strategyName: String(row.strategy_name),
   riskProfileName: String(row.risk_profile_name),
@@ -539,7 +539,7 @@ const mapExecutionTradeRow = (row: QueryResultRow): ExecutionTradeRecord => ({
   analysisSettingId: String(row.analysis_setting_id),
   executionSettingsName:
     row.execution_settings_name === null ? null : String(row.execution_settings_name),
-  symbolCode: String(row.symbol_code),
+  pairCode: String(row.pair_code),
   timeframeCode: String(row.timeframe_code),
   strategyName: String(row.strategy_name),
   riskProfileName: String(row.risk_profile_name),
@@ -583,7 +583,7 @@ const hasSamePromotionContext = (
     ExecutionPromotionProjectionRecord,
     | 'executionSettingsName'
     | 'analysisSettingId'
-    | 'symbolCode'
+    | 'pairCode'
     | 'timeframeCode'
     | 'strategyName'
     | 'riskProfileName'
@@ -591,14 +591,14 @@ const hasSamePromotionContext = (
   >,
   run: Pick<
     BacktestRunProjectionInput,
-    'analysisSettingId' | 'symbol' | 'timeframeCode' | 'strategyName' | 'riskProfileName'
+    'analysisSettingId' | 'pairCode' | 'timeframeCode' | 'strategyName' | 'riskProfileName'
   >,
   executionSettingsName: string,
   mode: 'paper' | 'live'
 ): boolean =>
   promotion.executionSettingsName === executionSettingsName &&
   promotion.analysisSettingId === run.analysisSettingId &&
-  promotion.symbolCode === run.symbol &&
+  promotion.pairCode === run.pairCode &&
   promotion.timeframeCode === run.timeframeCode &&
   promotion.strategyName === run.strategyName &&
   promotion.riskProfileName === run.riskProfileName &&
@@ -608,7 +608,7 @@ const supersedeActivePromotionsForContext = async (
   queryable: Pick<Pool, 'query'>,
   context: Pick<
     BacktestRunProjectionInput,
-    'analysisSettingId' | 'symbol' | 'timeframeCode' | 'strategyName' | 'riskProfileName'
+    'analysisSettingId' | 'pairCode' | 'timeframeCode' | 'strategyName' | 'riskProfileName'
   >,
   executionSettingsName: string,
   mode: 'paper' | 'live'
@@ -621,7 +621,7 @@ const supersedeActivePromotionsForContext = async (
        WHERE status = 'active'
          AND execution_settings_name = $1
          AND analysis_setting_id = $2
-         AND symbol_code = $3
+         AND pair_code = $3
          AND timeframe_code = $4
          AND strategy_name = $5
          AND risk_profile_name = $6
@@ -630,7 +630,7 @@ const supersedeActivePromotionsForContext = async (
     [
       executionSettingsName,
       context.analysisSettingId,
-      context.symbol,
+      context.pairCode,
       context.timeframeCode,
       context.strategyName,
       context.riskProfileName,
@@ -642,20 +642,12 @@ const supersedeActivePromotionsForContext = async (
 };
 
 export const ensureOpsSchema = async (pool: Pool): Promise<void> => {
-  await pool.query(`
-    DO $$
-    BEGIN
-      IF EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_schema = 'public' AND table_name = 'ops_data_readiness' AND column_name = 'pair_code'
-      ) AND NOT EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_schema = 'public' AND table_name = 'ops_data_readiness' AND column_name = 'symbol_code'
-      ) THEN
-        ALTER TABLE ops_data_readiness RENAME COLUMN pair_code TO symbol_code;
-      END IF;
-    END $$;
-  `);
+  await renameColumnIfExists(pool, 'ops_backtest_jobs', 'symbol_code', 'pair_code');
+  await renameColumnIfExists(pool, 'ops_backtest_runs', 'symbol', 'pair_code');
+  await renameColumnIfExists(pool, 'ops_backtest_batches', 'symbol_code', 'pair_code');
+  await renameColumnIfExists(pool, 'ops_data_readiness', 'symbol_code', 'pair_code');
+  await renameColumnIfExists(pool, 'ops_execution_promotions', 'symbol_code', 'pair_code');
+  await renameColumnIfExists(pool, 'ops_execution_trades', 'symbol_code', 'pair_code');
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS ops_backtest_jobs (
@@ -663,7 +655,7 @@ export const ensureOpsSchema = async (pool: Pool): Promise<void> => {
       status TEXT NOT NULL,
       analysis_setting_id TEXT NOT NULL,
       risk_profile_name TEXT,
-      symbol_code TEXT,
+      pair_code TEXT,
       timeframe_code TEXT,
       strategy_name TEXT,
       start_time BIGINT,
@@ -685,7 +677,7 @@ export const ensureOpsSchema = async (pool: Pool): Promise<void> => {
 
   await pool.query(`
     ALTER TABLE ops_backtest_jobs
-      ADD COLUMN IF NOT EXISTS symbol_code TEXT,
+      ADD COLUMN IF NOT EXISTS pair_code TEXT,
       ADD COLUMN IF NOT EXISTS timeframe_code TEXT,
       ADD COLUMN IF NOT EXISTS strategy_name TEXT,
       ADD COLUMN IF NOT EXISTS stage TEXT,
@@ -700,7 +692,7 @@ export const ensureOpsSchema = async (pool: Pool): Promise<void> => {
       data_retrieval_duration_ms BIGINT NOT NULL,
       analysis_setting_id TEXT NOT NULL,
       risk_profile_name TEXT NOT NULL,
-      symbol TEXT NOT NULL,
+      pair_code TEXT NOT NULL,
       timeframe_code TEXT NOT NULL,
       strategy_name TEXT NOT NULL,
       requested_start_time BIGINT NOT NULL,
@@ -744,7 +736,7 @@ export const ensureOpsSchema = async (pool: Pool): Promise<void> => {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS ops_backtest_batches (
       batch_id TEXT PRIMARY KEY,
-      symbol_code TEXT NOT NULL,
+      pair_code TEXT NOT NULL,
       timeframe_code TEXT NOT NULL,
       requested_start_time BIGINT NOT NULL,
       requested_end_time BIGINT NOT NULL,
@@ -760,7 +752,7 @@ export const ensureOpsSchema = async (pool: Pool): Promise<void> => {
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS ops_data_readiness (
-      symbol_code TEXT NOT NULL,
+      pair_code TEXT NOT NULL,
       timeframe_code TEXT NOT NULL,
       strategy_name TEXT NOT NULL,
       status TEXT NOT NULL,
@@ -776,7 +768,7 @@ export const ensureOpsSchema = async (pool: Pool): Promise<void> => {
       source_occurred_at TIMESTAMPTZ NOT NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      PRIMARY KEY (symbol_code, timeframe_code, strategy_name),
+      PRIMARY KEY (pair_code, timeframe_code, strategy_name),
       CONSTRAINT ops_data_readiness_status_valid
         CHECK (status IN ('ready', 'partial', 'missing', 'error'))
     );
@@ -813,7 +805,7 @@ export const ensureOpsSchema = async (pool: Pool): Promise<void> => {
 
   await pool.query(`
     ALTER TABLE ops_data_readiness
-      ADD PRIMARY KEY (symbol_code, timeframe_code, strategy_name)
+      ADD PRIMARY KEY (pair_code, timeframe_code, strategy_name)
   `);
 
   await pool.query(`
@@ -822,7 +814,7 @@ export const ensureOpsSchema = async (pool: Pool): Promise<void> => {
       execution_settings_name TEXT NOT NULL,
       analysis_setting_id TEXT NOT NULL,
       source_backtest_id TEXT,
-      symbol_code TEXT NOT NULL,
+      pair_code TEXT NOT NULL,
       timeframe_code TEXT NOT NULL,
       strategy_name TEXT NOT NULL,
       risk_profile_name TEXT NOT NULL,
@@ -850,7 +842,7 @@ export const ensureOpsSchema = async (pool: Pool): Promise<void> => {
       source_backtest_id TEXT,
       analysis_setting_id TEXT NOT NULL,
       execution_settings_name TEXT,
-      symbol_code TEXT NOT NULL,
+      pair_code TEXT NOT NULL,
       timeframe_code TEXT NOT NULL,
       strategy_name TEXT NOT NULL,
       risk_profile_name TEXT NOT NULL,
@@ -916,7 +908,7 @@ export const listBacktestJobs = async (pool: Pool, limit = 50): Promise<Backtest
         status,
         analysis_setting_id,
         risk_profile_name,
-        symbol_code,
+        pair_code,
         timeframe_code,
         strategy_name,
         start_time,
@@ -949,7 +941,7 @@ export const listBacktestBatches = async (
     `
       SELECT
         batch_id,
-        symbol_code,
+        pair_code,
         timeframe_code,
         requested_start_time,
         requested_end_time,
@@ -991,7 +983,7 @@ export const updateBacktestJobProgress = async (
         status,
         analysis_setting_id,
         risk_profile_name,
-        symbol_code,
+        pair_code,
         timeframe_code,
         strategy_name,
         start_time,
@@ -1019,7 +1011,7 @@ export const upsertBacktestJobFromProgressEvent = async (
     jobId: string;
     analysisSettingId: string;
     riskProfileName: string;
-    symbolCode: string;
+    pairCode: string;
     timeframeCode: string;
     strategyName: string;
     stage: string;
@@ -1033,7 +1025,7 @@ export const upsertBacktestJobFromProgressEvent = async (
         status,
         analysis_setting_id,
         risk_profile_name,
-        symbol_code,
+        pair_code,
         timeframe_code,
         strategy_name,
         stage,
@@ -1064,7 +1056,7 @@ export const upsertBacktestJobFromProgressEvent = async (
              END,
              analysis_setting_id = EXCLUDED.analysis_setting_id,
              risk_profile_name = EXCLUDED.risk_profile_name,
-             symbol_code = EXCLUDED.symbol_code,
+             pair_code = EXCLUDED.pair_code,
              timeframe_code = EXCLUDED.timeframe_code,
              strategy_name = EXCLUDED.strategy_name,
              stage = EXCLUDED.stage,
@@ -1076,7 +1068,7 @@ export const upsertBacktestJobFromProgressEvent = async (
         status,
         analysis_setting_id,
         risk_profile_name,
-        symbol_code,
+        pair_code,
         timeframe_code,
         strategy_name,
         start_time,
@@ -1096,7 +1088,7 @@ export const upsertBacktestJobFromProgressEvent = async (
       payload.jobId,
       payload.analysisSettingId,
       payload.riskProfileName,
-      payload.symbolCode,
+      payload.pairCode,
       payload.timeframeCode,
       payload.strategyName,
       payload.stage,
@@ -1111,7 +1103,7 @@ export const upsertBacktestBatchFromProgressEvent = async (
   pool: Pool,
   payload: {
     batchId: string;
-    symbolCode: string;
+    pairCode: string;
     timeframeCode: string;
     requestedStartTime: number;
     requestedEndTime: number;
@@ -1129,7 +1121,7 @@ export const upsertBacktestBatchFromProgressEvent = async (
     `
       INSERT INTO ops_backtest_batches (
         batch_id,
-        symbol_code,
+        pair_code,
         timeframe_code,
         requested_start_time,
         requested_end_time,
@@ -1151,7 +1143,7 @@ export const upsertBacktestBatchFromProgressEvent = async (
         NOW()
       )
       ON CONFLICT (batch_id) DO UPDATE
-         SET symbol_code = EXCLUDED.symbol_code,
+         SET pair_code = EXCLUDED.pair_code,
              timeframe_code = EXCLUDED.timeframe_code,
              requested_start_time = EXCLUDED.requested_start_time,
              requested_end_time = EXCLUDED.requested_end_time,
@@ -1163,7 +1155,7 @@ export const upsertBacktestBatchFromProgressEvent = async (
              updated_at = NOW()
       RETURNING
         batch_id,
-        symbol_code,
+        pair_code,
         timeframe_code,
         requested_start_time,
         requested_end_time,
@@ -1177,7 +1169,7 @@ export const upsertBacktestBatchFromProgressEvent = async (
     `,
     [
       payload.batchId,
-      payload.symbolCode,
+      payload.pairCode,
       payload.timeframeCode,
       payload.requestedStartTime,
       payload.requestedEndTime,
@@ -1215,7 +1207,7 @@ export const completeBacktestJobFromProjectionEvent = async (
         status,
         analysis_setting_id,
         risk_profile_name,
-        symbol_code,
+        pair_code,
         timeframe_code,
         strategy_name,
         start_time,
@@ -1250,7 +1242,7 @@ export const upsertBacktestRunProjection = async (
         data_retrieval_duration_ms,
         analysis_setting_id,
         risk_profile_name,
-        symbol,
+        pair_code,
         timeframe_code,
         strategy_name,
         requested_start_time,
@@ -1310,7 +1302,7 @@ export const upsertBacktestRunProjection = async (
         data_retrieval_duration_ms = EXCLUDED.data_retrieval_duration_ms,
         analysis_setting_id = EXCLUDED.analysis_setting_id,
         risk_profile_name = EXCLUDED.risk_profile_name,
-        symbol = EXCLUDED.symbol,
+        pair_code = EXCLUDED.pair_code,
         timeframe_code = EXCLUDED.timeframe_code,
         strategy_name = EXCLUDED.strategy_name,
         requested_start_time = EXCLUDED.requested_start_time,
@@ -1340,7 +1332,7 @@ export const upsertBacktestRunProjection = async (
         data_retrieval_duration_ms,
         analysis_setting_id,
         risk_profile_name,
-        symbol,
+        pair_code,
         timeframe_code,
         strategy_name,
         requested_start_time,
@@ -1372,7 +1364,7 @@ export const upsertBacktestRunProjection = async (
       input.dataRetrievalDurationMs,
       input.analysisSettingId,
       input.riskProfileName,
-      input.symbol,
+      input.pairCode,
       input.timeframeCode,
       input.strategyName,
       input.requestedStartTime,
@@ -1413,7 +1405,7 @@ export const listBacktestRunProjections = async (
         data_retrieval_duration_ms,
         analysis_setting_id,
         risk_profile_name,
-        symbol,
+        pair_code,
         timeframe_code,
         strategy_name,
         requested_start_time,
@@ -1460,7 +1452,7 @@ export const listLatestBacktestRunProjections = async (
         data_retrieval_duration_ms,
         analysis_setting_id,
         risk_profile_name,
-        symbol,
+        pair_code,
         timeframe_code,
         strategy_name,
         requested_start_time,
@@ -1486,7 +1478,7 @@ export const listLatestBacktestRunProjections = async (
         updated_at
       FROM (
         SELECT DISTINCT ON (
-          symbol,
+          pair_code,
           timeframe_code,
           analysis_setting_id,
           risk_profile_name,
@@ -1498,7 +1490,7 @@ export const listLatestBacktestRunProjections = async (
           data_retrieval_duration_ms,
           analysis_setting_id,
           risk_profile_name,
-          symbol,
+          pair_code,
           timeframe_code,
           strategy_name,
           requested_start_time,
@@ -1524,7 +1516,7 @@ export const listLatestBacktestRunProjections = async (
           updated_at
         FROM ops_backtest_runs
         ORDER BY
-          symbol ASC,
+          pair_code ASC,
           timeframe_code ASC,
           analysis_setting_id ASC,
           risk_profile_name ASC,
@@ -1561,7 +1553,7 @@ export const replaceDataReadinessProjections = async (
       await client.query(
         `
           INSERT INTO ops_data_readiness (
-            symbol_code,
+            pair_code,
             timeframe_code,
             strategy_name,
             status,
@@ -1592,7 +1584,7 @@ export const replaceDataReadinessProjections = async (
             $13,
             $14::timestamptz
           )
-          ON CONFLICT (symbol_code, timeframe_code, strategy_name) DO UPDATE
+          ON CONFLICT (pair_code, timeframe_code, strategy_name) DO UPDATE
              SET status = EXCLUDED.status,
                  analysis_setting_ids_json = EXCLUDED.analysis_setting_ids_json,
                  requested_start_time = EXCLUDED.requested_start_time,
@@ -1615,7 +1607,7 @@ export const replaceDataReadinessProjections = async (
              )
         `,
         [
-          item.symbolCode,
+          item.pairCode,
           item.timeframeCode,
           item.strategyName,
           item.status,
@@ -1660,7 +1652,7 @@ export const listDataReadinessProjections = async (
   const result = await pool.query(
     `
       SELECT
-        symbol_code,
+        pair_code,
         timeframe_code,
         strategy_name,
         status,
@@ -1678,7 +1670,7 @@ export const listDataReadinessProjections = async (
         updated_at
       FROM ops_data_readiness
       ${whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : ''}
-      ORDER BY symbol_code ASC, timeframe_code ASC, strategy_name ASC
+      ORDER BY pair_code ASC, timeframe_code ASC, strategy_name ASC
     `,
     values
   );
@@ -1697,7 +1689,7 @@ export const upsertExecutionPromotionProjection = async (
         execution_settings_name,
         analysis_setting_id,
         source_backtest_id,
-        symbol_code,
+        pair_code,
         timeframe_code,
         strategy_name,
         risk_profile_name,
@@ -1716,7 +1708,7 @@ export const upsertExecutionPromotionProjection = async (
          SET execution_settings_name = EXCLUDED.execution_settings_name,
              analysis_setting_id = EXCLUDED.analysis_setting_id,
              source_backtest_id = EXCLUDED.source_backtest_id,
-             symbol_code = EXCLUDED.symbol_code,
+             pair_code = EXCLUDED.pair_code,
              timeframe_code = EXCLUDED.timeframe_code,
              strategy_name = EXCLUDED.strategy_name,
              risk_profile_name = EXCLUDED.risk_profile_name,
@@ -1733,7 +1725,7 @@ export const upsertExecutionPromotionProjection = async (
         execution_settings_name,
         analysis_setting_id,
         source_backtest_id,
-        symbol_code,
+        pair_code,
         timeframe_code,
         strategy_name,
         risk_profile_name,
@@ -1752,7 +1744,7 @@ export const upsertExecutionPromotionProjection = async (
       input.executionSettingsName,
       input.analysisSettingId,
       input.sourceBacktestId,
-      input.symbolCode,
+      input.pairCode,
       input.timeframeCode,
       input.strategyName,
       input.riskProfileName,
@@ -1779,7 +1771,7 @@ export const getActiveExecutionPromotion = async (
         execution_settings_name,
         analysis_setting_id,
         source_backtest_id,
-        symbol_code,
+        pair_code,
         timeframe_code,
         strategy_name,
         risk_profile_name,
@@ -1813,7 +1805,7 @@ export const listActiveExecutionPromotions = async (
         execution_settings_name,
         analysis_setting_id,
         source_backtest_id,
-        symbol_code,
+        pair_code,
         timeframe_code,
         strategy_name,
         risk_profile_name,
@@ -1850,7 +1842,7 @@ export const upsertExecutionTradeProjection = async (
         source_backtest_id,
         analysis_setting_id,
         execution_settings_name,
-        symbol_code,
+        pair_code,
         timeframe_code,
         strategy_name,
         risk_profile_name,
@@ -1884,7 +1876,7 @@ export const upsertExecutionTradeProjection = async (
              source_backtest_id = EXCLUDED.source_backtest_id,
              analysis_setting_id = EXCLUDED.analysis_setting_id,
              execution_settings_name = EXCLUDED.execution_settings_name,
-             symbol_code = EXCLUDED.symbol_code,
+             pair_code = EXCLUDED.pair_code,
              timeframe_code = EXCLUDED.timeframe_code,
              strategy_name = EXCLUDED.strategy_name,
              risk_profile_name = EXCLUDED.risk_profile_name,
@@ -1914,7 +1906,7 @@ export const upsertExecutionTradeProjection = async (
         source_backtest_id,
         analysis_setting_id,
         execution_settings_name,
-        symbol_code,
+        pair_code,
         timeframe_code,
         strategy_name,
         risk_profile_name,
@@ -1946,7 +1938,7 @@ export const upsertExecutionTradeProjection = async (
       input.sourceBacktestId,
       input.analysisSettingId,
       input.executionSettingsName,
-      input.symbolCode,
+      input.pairCode,
       input.timeframeCode,
       input.strategyName,
       input.riskProfileName,
@@ -1995,8 +1987,8 @@ export const listExecutionTrades = async (
     );
   }
 
-  if (query.symbolCode) {
-    whereClauses.push(`symbol_code = ${pushParam(query.symbolCode)}`);
+  if (query.pairCode) {
+    whereClauses.push(`pair_code = ${pushParam(query.pairCode)}`);
   }
   if (query.timeframeCode) {
     whereClauses.push(`timeframe_code = ${pushParam(query.timeframeCode)}`);
@@ -2025,7 +2017,7 @@ export const listExecutionTrades = async (
     openedAt: 'opened_at',
     closedAt: 'closed_at',
     realizedPnlPercent: 'realized_pnl_percent',
-    symbolCode: 'symbol_code',
+    pairCode: 'pair_code',
     notionalUsd: 'notional_usd',
   };
   const sortColumn = sortColumnByField[query.sortBy] ?? 'opened_at';
@@ -2054,7 +2046,7 @@ export const listExecutionTrades = async (
         source_backtest_id,
         analysis_setting_id,
         execution_settings_name,
-        symbol_code,
+        pair_code,
         timeframe_code,
         strategy_name,
         risk_profile_name,
@@ -2142,7 +2134,7 @@ export const promoteBacktestRunIfEligible = async (
   const eligibleAnalysis = eligibleAnalyses.find(
     (analysis) =>
       analysis.id === run.analysisSettingId &&
-      analysis.symbolCode === run.symbol &&
+      analysis.pairCode === run.pairCode &&
       analysis.timeframeCode === run.timeframeCode &&
       analysis.riskProfileName === run.riskProfileName
   );
@@ -2196,7 +2188,7 @@ export const promoteBacktestRunIfEligible = async (
           execution_settings_name,
           analysis_setting_id,
           source_backtest_id,
-          symbol_code,
+          pair_code,
           timeframe_code,
           strategy_name,
           risk_profile_name,
@@ -2215,7 +2207,7 @@ export const promoteBacktestRunIfEligible = async (
           SET execution_settings_name = EXCLUDED.execution_settings_name,
               analysis_setting_id = EXCLUDED.analysis_setting_id,
               source_backtest_id = EXCLUDED.source_backtest_id,
-              symbol_code = EXCLUDED.symbol_code,
+              pair_code = EXCLUDED.pair_code,
               timeframe_code = EXCLUDED.timeframe_code,
               strategy_name = EXCLUDED.strategy_name,
               risk_profile_name = EXCLUDED.risk_profile_name,
@@ -2232,7 +2224,7 @@ export const promoteBacktestRunIfEligible = async (
           execution_settings_name,
           analysis_setting_id,
           source_backtest_id,
-          symbol_code,
+          pair_code,
           timeframe_code,
           strategy_name,
           risk_profile_name,
@@ -2251,7 +2243,7 @@ export const promoteBacktestRunIfEligible = async (
         settings.name,
         run.analysisSettingId,
         run.backtestId,
-        run.symbol,
+        run.pairCode,
         run.timeframeCode,
         run.strategyName,
         run.riskProfileName,
@@ -2272,7 +2264,7 @@ export const promoteBacktestRunIfEligible = async (
            AND promotion_id <> $1
            AND execution_settings_name = $2
            AND analysis_setting_id = $3
-           AND symbol_code = $4
+           AND pair_code = $4
            AND timeframe_code = $5
            AND strategy_name = $6
            AND risk_profile_name = $7
@@ -2282,7 +2274,7 @@ export const promoteBacktestRunIfEligible = async (
         `promotion:${settings.name}:${run.backtestId}`,
         settings.name,
         run.analysisSettingId,
-        run.symbol,
+        run.pairCode,
         run.timeframeCode,
         run.strategyName,
         run.riskProfileName,

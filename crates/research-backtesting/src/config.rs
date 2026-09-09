@@ -51,6 +51,12 @@ fn env_or_default(key: &str, default: &str) -> String {
     std::env::var(key).unwrap_or_else(|_| default.to_string())
 }
 
+fn optional_env(key: &str) -> Option<String> {
+    std::env::var(key)
+        .ok()
+        .and_then(|value| (!value.trim().is_empty()).then_some(value))
+}
+
 fn parse_u16(key: &str, default: u16) -> Result<u16> {
     let raw = env_or_default(key, &default.to_string());
     raw.parse::<u16>()
@@ -106,8 +112,8 @@ fn parse_f64(key: &str, default: f64) -> Result<f64> {
 }
 
 pub fn load_config() -> Result<AppConfig> {
-    let historical_store_user = std::env::var("HISTORICAL_STORE_USER").ok();
-    let historical_store_password = std::env::var("HISTORICAL_STORE_PASSWORD").ok();
+    let historical_store_user = optional_env("HISTORICAL_STORE_USER");
+    let historical_store_password = optional_env("HISTORICAL_STORE_PASSWORD");
 
     let default_backtesting_timerange_ms_by_timeframe = BTreeMap::from([
         ("1m".to_string(), 600_000_000),
@@ -176,15 +182,10 @@ pub fn load_config() -> Result<AppConfig> {
             "DATA_READINESS_EVENTS_TOPIC",
             "trading-bot.market-data.data-readiness-snapshot.v1",
         ),
-        data_readiness_events_consumer_group_id: std::env::var(
+        data_readiness_events_consumer_group_id: env_or_default(
             "RESEARCH_BACKTESTING_DATA_READINESS_EVENTS_CONSUMER_GROUP_ID",
-        )
-        .unwrap_or_else(|_| {
-            env_or_default(
-                "DATA_READINESS_EVENTS_CONSUMER_GROUP_ID",
-                "trading-bot-research-backtesting-data-readiness-trigger-v1",
-            )
-        }),
+            "trading-bot-research-backtesting-data-readiness-trigger-v1",
+        ),
         scheduled_backtests_enabled: parse_bool("SCHEDULED_BACKTESTS_ENABLED", true)?,
         scheduled_backtests_interval_seconds: parse_u64(
             "SCHEDULED_BACKTESTS_INTERVAL_SECONDS",
@@ -222,7 +223,7 @@ pub fn load_config() -> Result<AppConfig> {
         default_slippage_bps: parse_f64("BACKTEST_SLIPPAGE_BPS", 0.0)?,
         trade_coverage_tolerance_ms: parse_u64("BACKTEST_TRADE_COVERAGE_TOLERANCE_MS", 15_000)?,
         backtesting_timerange_ms_by_timeframe,
-        otel_exporter_otlp_endpoint: std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT").ok(),
+        otel_exporter_otlp_endpoint: optional_env("OTEL_EXPORTER_OTLP_ENDPOINT"),
     })
 }
 
@@ -240,6 +241,8 @@ mod tests {
             std::env::remove_var("OTEL_SERVICE_NAME");
             std::env::remove_var("BACKTEST_WARMUP_CANDLES");
             std::env::remove_var("BACKTEST_TIMERANGE_MS_BY_TIMEFRAME");
+            std::env::remove_var("RESEARCH_BACKTESTING_DATA_READINESS_EVENTS_CONSUMER_GROUP_ID");
+            std::env::set_var("OTEL_EXPORTER_OTLP_ENDPOINT", "  ");
         }
 
         let config = load_config().expect("config should load");
@@ -257,5 +260,10 @@ mod tests {
         assert_eq!(config.backtest_result_retention_days, 365);
         assert_eq!(config.default_fee_bps, 0.0);
         assert_eq!(config.default_slippage_bps, 0.0);
+        assert_eq!(
+            config.data_readiness_events_consumer_group_id,
+            "trading-bot-research-backtesting-data-readiness-trigger-v1"
+        );
+        assert_eq!(config.otel_exporter_otlp_endpoint, None);
     }
 }

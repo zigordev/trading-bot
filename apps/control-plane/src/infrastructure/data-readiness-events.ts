@@ -66,12 +66,7 @@ const parseEnvelope = (value: string): DataReadinessSnapshotEnvelope | null => {
         .filter((item): item is Record<string, unknown> => !!item && typeof item === 'object')
         .map((item) => ({
           status: isProjectionStatus(item.status) ? item.status : 'error',
-          symbolCode:
-            typeof item.symbolCode === 'string'
-              ? item.symbolCode
-              : typeof item.pairCode === 'string'
-                ? item.pairCode
-                : '',
+          pairCode: typeof item.pairCode === 'string' ? item.pairCode : '',
           timeframeCode: typeof item.timeframeCode === 'string' ? item.timeframeCode : '',
           strategyName: typeof item.strategyName === 'string' ? item.strategyName : '',
           analysisSettingIds: Array.isArray(item.analysisSettingIds)
@@ -96,7 +91,7 @@ const parseEnvelope = (value: string): DataReadinessSnapshotEnvelope | null => {
               ? (item.trades as Record<string, unknown>)
               : null,
         }))
-        .filter((item) => item.symbolCode && item.timeframeCode && item.strategyName),
+        .filter((item) => item.pairCode && item.timeframeCode && item.strategyName),
     },
   };
 };
@@ -178,7 +173,7 @@ export const createDataReadinessProjectionConsumer = (
             publishOpsEvent({
               type: 'ops.data-readiness.updated',
               payload: {
-                symbols: [...new Set(envelope.data.items.map((item) => item.symbolCode))],
+                pairs: [...new Set(envelope.data.items.map((item) => item.pairCode))],
                 timeframeCodes: [...new Set(envelope.data.items.map((item) => item.timeframeCode))],
                 strategyNames: [...new Set(envelope.data.items.map((item) => item.strategyName))],
               },

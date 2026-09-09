@@ -50,8 +50,8 @@ function BacktestingPageInner() {
     [strategies.data]
   );
 
-  const symbols = React.useMemo(
-    () => Array.from(new Set(rows.map((r) => r.symbol))).sort(),
+  const pairs = React.useMemo(
+    () => Array.from(new Set(rows.map((r) => r.pairCode))).sort(),
     [rows]
   );
   const timeframes = React.useMemo(
@@ -64,7 +64,7 @@ function BacktestingPageInner() {
   );
 
   const [search, setSearch] = useStringFilter('q', '');
-  const [selectedSymbols, setSelectedSymbols] = useArrayFilter('sym');
+  const [selectedPairs, setSelectedPairs] = useArrayFilter('pair');
   const [selectedTimeframe, setSelectedTimeframe] = useEnumState(
     'tf',
     ['all', ...timeframes] as const,
@@ -98,20 +98,20 @@ function BacktestingPageInner() {
 
   const filteredRows = React.useMemo(() => {
     const lowerSearch = search.trim().toLowerCase();
-    const symbolSet = new Set(selectedSymbols);
+    const pairSet = new Set(selectedPairs);
     const statusSet = new Set(selectedStatuses);
     return rows.filter((row) => {
       if (lowerSearch) {
-        const haystack = `${row.symbol} ${row.strategyName} ${row.timeframeCode}`.toLowerCase();
+        const haystack = `${row.pairCode} ${row.strategyName} ${row.timeframeCode}`.toLowerCase();
         if (!haystack.includes(lowerSearch)) return false;
       }
-      if (symbolSet.size > 0 && !symbolSet.has(row.symbol)) return false;
+      if (pairSet.size > 0 && !pairSet.has(row.pairCode)) return false;
       if (selectedTimeframe !== 'all' && row.timeframeCode !== selectedTimeframe) return false;
       if (selectedStrategy !== 'all' && row.strategyName !== selectedStrategy) return false;
       if (statusSet.size > 0 && !statusSet.has(row.status)) return false;
       return true;
     });
-  }, [rows, search, selectedSymbols, selectedTimeframe, selectedStrategy, selectedStatuses]);
+  }, [rows, search, selectedPairs, selectedTimeframe, selectedStrategy, selectedStatuses]);
 
   const selectedRow = React.useMemo(
     () => rows.find((row) => row.id === selectedRowId) ?? null,
@@ -123,7 +123,7 @@ function BacktestingPageInner() {
     return (
       summary.data?.recentRuns.filter(
         (run) =>
-          run.symbol === selectedRow.symbol &&
+          run.pairCode === selectedRow.pairCode &&
           run.timeframeCode === selectedRow.timeframeCode &&
           run.strategyName === selectedRow.strategyName
       ) ?? []
@@ -139,14 +139,14 @@ function BacktestingPageInner() {
   const hasError = summary.isError || readiness.isError;
   const hasActiveFilters =
     !!search ||
-    selectedSymbols.length > 0 ||
+    selectedPairs.length > 0 ||
     selectedTimeframe !== 'all' ||
     selectedStrategy !== 'all' ||
     selectedStatuses.length > 0;
 
   const handleClearAll = () => {
     setSearch('');
-    setSelectedSymbols([]);
+    setSelectedPairs([]);
     setSelectedTimeframe('all');
     setSelectedStrategy('all');
     setSelectedStatuses([]);
@@ -158,9 +158,9 @@ function BacktestingPageInner() {
         <BacktestingKpis rows={rows} loading={isLoading} />
 
         <BacktestingFilters
-          symbols={symbols}
-          selectedSymbols={selectedSymbols}
-          onSymbolsChange={setSelectedSymbols}
+          pairs={pairs}
+          selectedPairs={selectedPairs}
+          onPairsChange={setSelectedPairs}
           timeframes={timeframes}
           selectedTimeframe={selectedTimeframe}
           onTimeframeChange={(value) =>

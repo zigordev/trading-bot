@@ -58,7 +58,7 @@ For backtests:
 `market-data` creates subscriptions from resolved analysis settings and runs:
 
 1. Resolve active settings from control-plane (`/v1/runtime-config/analysis-settings`).
-2. Build the active symbol/timeframe set from runtime configuration.
+2. Build the active pair/timeframe set from runtime configuration.
 3. Run hourly closed-window retrieval and gap repair:
    - `market_data_klines`: historical candle backfill from Binance (`/klines`) using stored checkpoints.
    - `market_data_trades`: historical aggregate-trade backfill (`/aggTrades`) using stored checkpoints.

@@ -8,8 +8,9 @@ import { Badge } from '@/components/ui/badge';
 import { DetailSheet } from '@/components/shared/detail-sheet';
 import { IdCell } from '@/components/shared/id-cell';
 import { ScoreCell } from '@/components/shared/score-cell';
-import { SymbolAvatar } from '@/components/shared/symbol-avatar';
-import { splitSymbol } from '@/lib/backtesting/derive-rows';
+import { PairAvatar } from '@/components/shared/pair-avatar';
+import { StrategyName } from '@/components/shared/strategy-name';
+import { splitPairCode } from '@/lib/backtesting/derive-rows';
 import { usePreferences } from '@/components/providers/preferences-provider';
 
 interface RunDetailSheetProps {
@@ -21,7 +22,7 @@ interface RunDetailSheetProps {
 export function RunDetailSheet({ open, onOpenChange, run }: RunDetailSheetProps) {
   const { t } = usePreferences();
   if (!run) return null;
-  const { base, quote } = splitSymbol(run.symbol);
+  const { base, quote } = splitPairCode(run.pairCode);
   return (
     <DetailSheet
       open={open}
@@ -29,11 +30,11 @@ export function RunDetailSheet({ open, onOpenChange, run }: RunDetailSheetProps)
       size="md"
       title={
         <div className="flex items-center gap-2">
-          <SymbolAvatar baseAsset={base} quoteAsset={quote} size={24} />
+          <PairAvatar baseAsset={base} quoteAsset={quote} size={24} />
           <div>
             <div className="text-[14px]">{t('backtesting.detail.run_sheet_title')}</div>
             <div className="mt-0.5 text-[12px] font-normal text-[var(--color-fg-muted)]">
-              {run.symbol} · {run.timeframeCode} · {run.strategyName}
+              {run.pairCode} · {run.timeframeCode} · <StrategyName name={run.strategyName} />
             </div>
           </div>
         </div>

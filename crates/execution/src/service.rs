@@ -72,7 +72,7 @@ fn analysis_runtime_key(analysis: &ResolvedAnalysisSettingsRecord) -> String {
     format!(
         "{}:{}:{}:{}:{}",
         analysis.id,
-        analysis.symbol,
+        analysis.pair_code,
         analysis.timeframe_code,
         analysis.strategy_name,
         analysis.risk_profile_name
@@ -84,7 +84,7 @@ fn analysis_matches_promotion(
     promotion: &ExecutionPromotionRecord,
 ) -> bool {
     analysis.id == promotion.analysis_setting_id
-        && analysis.symbol == promotion.symbol_code
+        && analysis.pair_code == promotion.pair_code
         && analysis.timeframe_code == promotion.timeframe_code
         && analysis.strategy_name == promotion.strategy_name
         && analysis.risk_profile_name == promotion.risk_profile_name
@@ -488,13 +488,13 @@ impl ExecutionService {
             let rows = self
                 .fetch_market_json::<Vec<PersistedKlineRecord>>(&format!(
                     "/v1/klines/{}/{}?limit=1000",
-                    analysis.symbol, timeframe_code
+                    analysis.pair_code, timeframe_code
                 ))
                 .await?;
-            kline_cache.insert((analysis.symbol.clone(), timeframe_code), rows);
+            kline_cache.insert((analysis.pair_code.clone(), timeframe_code), rows);
         }
         let mut trade_cache = BTreeMap::new();
-        trade_cache.insert(analysis.symbol.clone(), Vec::new());
+        trade_cache.insert(analysis.pair_code.clone(), Vec::new());
         let snapshot = build_market_snapshot(analysis, &spec, &kline_cache, &trade_cache);
         self.rebuild_evaluator_if_needed(analysis, &spec, &snapshot)
             .await?;
@@ -624,7 +624,7 @@ impl ExecutionService {
 
         for analysis in analyses
             .into_iter()
-            .filter(|analysis| event.pair_code == analysis.symbol)
+            .filter(|analysis| event.pair_code == analysis.pair_code)
         {
             self.ensure_analysis_evaluator(&analysis).await?;
             let Some(spec) = build_analysis_spec(&analysis)? else {
@@ -655,7 +655,7 @@ impl ExecutionService {
 
                 let Some(evaluator) = state.evaluator.as_mut() else {
                     warn!(
-                        symbol = %analysis.symbol,
+                        pair_code = %analysis.pair_code,
                         timeframe = %analysis.timeframe_code,
                         analysis_setting_id = %analysis.id,
                         event_timeframe = %event.timeframe_code,
@@ -673,7 +673,7 @@ impl ExecutionService {
                     ingestion_mode: event.ingestion_mode.clone(),
                     stream_name: event.stream_name.clone(),
                     pair_code: event.pair_code.clone(),
-                    symbol: event.symbol.clone(),
+                    binance_symbol: event.binance_symbol.clone(),
                     timeframe_code: event.timeframe_code.clone(),
                     period_ms: event.period_ms,
                     open_time: event.open_time,
@@ -745,7 +745,7 @@ impl ExecutionService {
 
                     let mut closed = Vec::new();
                     state.open_positions.retain(|position| {
-                        if position.symbol_code != event.pair_code {
+                        if position.pair_code != event.pair_code {
                             return true;
                         }
                         let hit = if position.side == "long" {
@@ -757,7 +757,7 @@ impl ExecutionService {
                             closed.push((
                                 position.clone(),
                                 PersistedTradeRecord {
-                                    symbol: event.symbol.clone(),
+                                    pair_code: event.pair_code.clone(),
                                     aggregate_trade_id: event.aggregate_trade_id,
                                     price: event.price.clone(),
                                     trade_time: event.trade_time,
@@ -866,7 +866,7 @@ impl ExecutionService {
 
         for position in existing {
             let closing_trade = PersistedTradeRecord {
-                symbol: context.promotion.symbol_code.clone(),
+                pair_code: context.promotion.pair_code.clone(),
                 aggregate_trade_id: 0,
                 price: fill_price.to_string(),
                 trade_time: signal.close_time,
@@ -897,7 +897,7 @@ impl ExecutionService {
             "SELL"
         };
         let order = binance
-            .place_market_order(&context.promotion.symbol_code, side, quantity)
+            .place_market_order(&context.promotion.pair_code, side, quantity)
             .await?;
 
         let trade = ExecutionTradeRecord {
@@ -913,7 +913,7 @@ impl ExecutionService {
             source_backtest_id: context.promotion.source_backtest_id.clone(),
             analysis_setting_id: context.promotion.analysis_setting_id.clone(),
             execution_settings_name: Some(context.promotion.execution_settings_name.clone()),
-            symbol_code: context.promotion.symbol_code.clone(),
+            pair_code: context.promotion.pair_code.clone(),
             timeframe_code: context.promotion.timeframe_code.clone(),
             strategy_name: context.promotion.strategy_name.clone(),
             risk_profile_name: context.promotion.risk_profile_name.clone(),
@@ -968,7 +968,7 @@ impl ExecutionService {
             promotion_id: context.promotion.promotion_id.clone(),
             trade_id: trade_id.clone(),
             analysis_setting_id: context.promotion.analysis_setting_id.clone(),
-            symbol_code: context.promotion.symbol_code.clone(),
+            pair_code: context.promotion.pair_code.clone(),
             timeframe_code: context.promotion.timeframe_code.clone(),
             strategy_name: context.promotion.strategy_name.clone(),
             risk_profile_name: context.promotion.risk_profile_name.clone(),
@@ -990,7 +990,7 @@ impl ExecutionService {
             source_backtest_id: context.promotion.source_backtest_id.clone(),
             analysis_setting_id: context.promotion.analysis_setting_id.clone(),
             execution_settings_name: Some(context.promotion.execution_settings_name.clone()),
-            symbol_code: context.promotion.symbol_code.clone(),
+            pair_code: context.promotion.pair_code.clone(),
             timeframe_code: context.promotion.timeframe_code.clone(),
             strategy_name: context.promotion.strategy_name.clone(),
             risk_profile_name: context.promotion.risk_profile_name.clone(),
@@ -1047,7 +1047,7 @@ impl ExecutionService {
             source_backtest_id: position.source_backtest_id.clone(),
             analysis_setting_id: position.analysis_setting_id.clone(),
             execution_settings_name: None,
-            symbol_code: position.symbol_code.clone(),
+            pair_code: position.pair_code.clone(),
             timeframe_code: position.timeframe_code.clone(),
             strategy_name: position.strategy_name.clone(),
             risk_profile_name: position.risk_profile_name.clone(),
@@ -1161,7 +1161,7 @@ impl ExecutionService {
                     promotion_id,
                     trade_id: trade.trade_id,
                     analysis_setting_id: trade.analysis_setting_id,
-                    symbol_code: trade.symbol_code,
+                    pair_code: trade.pair_code,
                     timeframe_code: trade.timeframe_code,
                     strategy_name: trade.strategy_name,
                     risk_profile_name: trade.risk_profile_name,
@@ -1213,8 +1213,7 @@ impl ExecutionService {
 
 fn to_strategy_kline_record(row: &PersistedKlineRecord) -> StrategyPersistedKlineRecord {
     StrategyPersistedKlineRecord {
-        pair_code: row.symbol.clone(),
-        symbol: row.symbol.clone(),
+        pair_code: row.pair_code.clone(),
         timeframe_code: row.timeframe_code.clone(),
         period_ms: row.period_ms,
         open_time: row.open_time,
@@ -1243,7 +1242,7 @@ fn build_market_snapshot(
     let mut klines_by_timeframe = BTreeMap::new();
     for timeframe_code in spec.required_timeframe_codes() {
         let rows = kline_cache
-            .get(&(analysis.symbol.clone(), timeframe_code.clone()))
+            .get(&(analysis.pair_code.clone(), timeframe_code.clone()))
             .cloned()
             .unwrap_or_default();
         klines_by_timeframe.insert(timeframe_code, rows);
@@ -1252,7 +1251,7 @@ fn build_market_snapshot(
     crate::models::MarketSnapshot {
         klines_by_timeframe,
         trades: trade_cache
-            .get(&analysis.symbol)
+            .get(&analysis.pair_code)
             .cloned()
             .unwrap_or_default(),
     }
@@ -1426,7 +1425,7 @@ mod tests {
             promotion_id: "promotion-1".to_string(),
             trade_id: "paper:promotion-1:1".to_string(),
             analysis_setting_id: "analysis-1".to_string(),
-            symbol_code: "BTCUSDT".to_string(),
+            pair_code: "BTCUSDT".to_string(),
             timeframe_code: "1m".to_string(),
             strategy_name: "strategy1".to_string(),
             risk_profile_name: "default-risk".to_string(),

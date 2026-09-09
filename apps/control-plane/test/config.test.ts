@@ -17,6 +17,9 @@ test('loadConfig returns defaults for optional config', async () => {
       DB_NAME: undefined,
       KAFKA_BOOTSTRAP_SERVERS: undefined,
       CONFIG_CHANGE_EVENTS_TOPIC: undefined,
+      RESEARCH_BACKTESTING_BASE_URL: undefined,
+      UPSTREAM_REQUEST_TIMEOUT_MS: undefined,
+      BACKTEST_TIMERANGE_MS_BY_TIMEFRAME: undefined,
     },
     () => {
       const config = loadConfig();
@@ -46,6 +49,81 @@ test('loadConfig returns defaults for optional config', async () => {
         config.dataReadinessEventsConsumerGroupId,
         'trading-bot-control-plane-data-readiness-projection-v1'
       );
+      assert.equal(
+        config.researchBacktestingBaseUrl,
+        'http://trading-bot-research-backtesting:8110'
+      );
+      assert.equal(config.upstreamRequestTimeoutMs, 30_000);
+      assert.deepEqual(config.backtestTimerangeMsByTimeframe, {
+        '1m': 600_000_000,
+        '3m': 1_800_000_000,
+        '5m': 3_000_000_000,
+      });
+    }
+  );
+});
+
+test('loadConfig treats blank values as unset', async () => {
+  await withEnv(
+    {
+      POSTGRES_PASSWORD: 'secret',
+      PORT: '   ',
+      DB_HOST: '',
+      BACKTEST_TIMERANGE_MS_BY_TIMEFRAME: ' ',
+    },
+    () => {
+      const config = loadConfig();
+
+      assert.equal(config.port, 8080);
+      assert.equal(config.dbHost, 'trading-bot-postgres');
+      assert.equal(config.backtestTimerangeMsByTimeframe['1m'], 600_000_000);
+    }
+  );
+});
+
+test('loadConfig parses an explicit timerange map', async () => {
+  await withEnv(
+    {
+      POSTGRES_PASSWORD: 'secret',
+      BACKTEST_TIMERANGE_MS_BY_TIMEFRAME: '1m=86400000, 5m=604800000',
+    },
+    () => {
+      assert.deepEqual(loadConfig().backtestTimerangeMsByTimeframe, {
+        '1m': 86_400_000,
+        '5m': 604_800_000,
+      });
+    }
+  );
+});
+
+test('loadConfig rejects values that cannot be parsed instead of falling back', async () => {
+  await withEnv(
+    {
+      POSTGRES_PASSWORD: 'secret',
+      UPSTREAM_REQUEST_TIMEOUT_MS: 'soon',
+    },
+    () => {
+      assert.throws(() => loadConfig(), /UPSTREAM_REQUEST_TIMEOUT_MS must be a positive integer/);
+    }
+  );
+
+  await withEnv(
+    {
+      POSTGRES_PASSWORD: 'secret',
+      PORT: '0',
+    },
+    () => {
+      assert.throws(() => loadConfig(), /PORT must be a positive integer/);
+    }
+  );
+
+  await withEnv(
+    {
+      POSTGRES_PASSWORD: 'secret',
+      BACKTEST_TIMERANGE_MS_BY_TIMEFRAME: '1m=86400000,5m',
+    },
+    () => {
+      assert.throws(() => loadConfig(), /BACKTEST_TIMERANGE_MS_BY_TIMEFRAME entry "5m"/);
     }
   );
 });

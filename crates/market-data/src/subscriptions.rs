@@ -15,25 +15,25 @@ pub fn should_refresh_for_config_resource(resource_type: &str) -> bool {
 }
 
 pub fn to_binance_symbol(pair_code: &str) -> Result<String> {
-    let symbol = pair_code
+    let binance_symbol = pair_code
         .chars()
         .filter(|character| character.is_ascii_alphanumeric())
         .collect::<String>()
         .to_uppercase();
 
-    if symbol.is_empty() {
+    if binance_symbol.is_empty() {
         bail!("Pair code {pair_code} cannot be mapped to a Binance symbol");
     }
 
-    Ok(symbol)
+    Ok(binance_symbol)
 }
 
-pub fn build_kline_stream_name(symbol: &str, interval: &str) -> String {
-    format!("{}@kline_{interval}", symbol.to_lowercase())
+pub fn build_kline_stream_name(binance_symbol: &str, interval: &str) -> String {
+    format!("{}@kline_{interval}", binance_symbol.to_lowercase())
 }
 
-pub fn build_trade_stream_name(symbol: &str) -> String {
-    format!("{}@aggTrade", symbol.to_lowercase())
+pub fn build_trade_stream_name(binance_symbol: &str) -> String {
+    format!("{}@aggTrade", binance_symbol.to_lowercase())
 }
 
 pub fn derive_active_subscriptions(
@@ -49,13 +49,13 @@ pub fn derive_active_subscriptions(
         .collect::<Vec<_>>();
 
     for pair in pairs.iter().filter(|pair| pair.active) {
-        let symbol = to_binance_symbol(&pair.code)?;
+        let binance_symbol = to_binance_symbol(&pair.code)?;
         pair_groups.insert(
             pair.code.clone(),
             PairStreamSubscription {
                 pair_code: pair.code.clone(),
-                symbol: symbol.clone(),
-                trade_stream_name: build_trade_stream_name(&symbol),
+                binance_symbol: binance_symbol.clone(),
+                trade_stream_name: build_trade_stream_name(&binance_symbol),
                 analysis_setting_ids: Vec::new(),
                 strategy_names: Vec::new(),
             },
@@ -68,13 +68,13 @@ pub fn derive_active_subscriptions(
             }
 
             let kline_subscription_id = format!("{}:{}", pair.code, timeframe.code);
-            let kline_stream_name = build_kline_stream_name(&symbol, &interval);
+            let kline_stream_name = build_kline_stream_name(&binance_symbol, &interval);
             kline_groups.insert(
                 kline_subscription_id.clone(),
                 KlineSubscription {
                     subscription_id: kline_subscription_id,
                     pair_code: pair.code.clone(),
-                    symbol: symbol.clone(),
+                    binance_symbol: binance_symbol.clone(),
                     timeframe_code: timeframe.code.clone(),
                     binance_interval: interval,
                     period_ms: timeframe.period_ms,
@@ -87,10 +87,10 @@ pub fn derive_active_subscriptions(
     }
 
     for record in enabled_records {
-        let kline_subscription_id = format!("{}:{}", record.symbol, record.timeframe_code);
-        let Some(primary_symbol) = kline_groups
+        let kline_subscription_id = format!("{}:{}", record.pair_code, record.timeframe_code);
+        let Some(primary_binance_symbol) = kline_groups
             .get(&kline_subscription_id)
-            .map(|entry| entry.symbol.clone())
+            .map(|entry| entry.binance_symbol.clone())
         else {
             continue;
         };
@@ -101,7 +101,7 @@ pub fn derive_active_subscriptions(
                 .push(record.strategy_name.clone());
         }
 
-        if let Some(pair_entry) = pair_groups.get_mut(&record.symbol) {
+        if let Some(pair_entry) = pair_groups.get_mut(&record.pair_code) {
             pair_entry.analysis_setting_ids.push(record.id.clone());
             pair_entry.strategy_names.push(record.strategy_name.clone());
         }
@@ -146,14 +146,15 @@ pub fn derive_active_subscriptions(
                     .period_ms
                     .saturating_mul(record.timeframe.longer_timeframe_multiplier.max(1))
             });
-        let longer_subscription_id = format!("{}:{longer_timeframe_code}", record.symbol);
-        let longer_stream_name = build_kline_stream_name(&primary_symbol, longer_timeframe_code);
+        let longer_subscription_id = format!("{}:{longer_timeframe_code}", record.pair_code);
+        let longer_stream_name =
+            build_kline_stream_name(&primary_binance_symbol, longer_timeframe_code);
         let longer_entry = kline_groups
             .entry(longer_subscription_id.clone())
             .or_insert_with(|| KlineSubscription {
                 subscription_id: longer_subscription_id,
-                pair_code: record.symbol.clone(),
-                symbol: primary_symbol.clone(),
+                pair_code: record.pair_code.clone(),
+                binance_symbol: primary_binance_symbol.clone(),
                 timeframe_code: longer_timeframe_code.to_string(),
                 binance_interval: longer_timeframe_code.to_string(),
                 period_ms: longer_period_ms,
@@ -215,7 +216,7 @@ mod tests {
     fn resolved(id: &str, strategy_name: &str) -> ResolvedAnalysisSettingsRecord {
         ResolvedAnalysisSettingsRecord {
             id: id.to_string(),
-            symbol: "BTC/USDT".to_string(),
+            pair_code: "BTC/USDT".to_string(),
             timeframe_code: "1m".to_string(),
             strategy_name: strategy_name.to_string(),
             risk_profile_name: "default-risk".to_string(),
@@ -223,7 +224,7 @@ mod tests {
             enabled: true,
             created_at: "2026-03-12T18:00:00Z".to_string(),
             updated_at: "2026-03-12T18:00:00Z".to_string(),
-            symbol_entity: PairRecord {
+            pair: PairRecord {
                 id: "pair-1".to_string(),
                 code: "BTC/USDT".to_string(),
                 active: true,
@@ -305,7 +306,7 @@ mod tests {
 
         assert_eq!(active.kline_subscriptions.len(), 1);
         assert_eq!(active.pair_subscriptions.len(), 1);
-        assert_eq!(active.kline_subscriptions[0].symbol, "BTCUSDT");
+        assert_eq!(active.kline_subscriptions[0].binance_symbol, "BTCUSDT");
         assert_eq!(
             active.kline_subscriptions[0].analysis_setting_ids,
             vec!["analysis-1", "analysis-2"]
@@ -356,8 +357,8 @@ mod tests {
     fn derives_longer_timeframe_subscription_for_legacy_multi_timeframe_strategies() {
         let mut record = resolved("analysis-1", "strategy1");
         record.strategy.parameters = json!({ "kind": "strategy1" });
-        record.symbol = "BTCUSDT".to_string();
-        record.symbol_entity.code = "BTCUSDT".to_string();
+        record.pair_code = "BTCUSDT".to_string();
+        record.pair.code = "BTCUSDT".to_string();
         record.timeframe_code = "3m".to_string();
         record.timeframe.code = "3m".to_string();
         record.timeframe.period_ms = 180_000;

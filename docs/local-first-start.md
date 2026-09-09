@@ -110,14 +110,10 @@ Set or review these values:
   - keep the default for the local ClickHouse container unless you intentionally change it
 - `HISTORICAL_STORE_PASSWORD`
   - keep the default for the local ClickHouse container unless you intentionally change it
-- `RUNTIME_CONFIG_REFRESH_INTERVAL_MS`
-  - keep the default unless you need slower or faster runtime-config reconciliation
 - `CONFIG_REFRESH_DEBOUNCE_MS`
   - keep the default unless you need faster or slower config-change coalescing
 - `READINESS_MAX_CONFIG_AGE_MS`
   - keep the default unless you need stricter readiness staleness detection
-- `BINANCE_STREAM_BASE_URL`
-  - keep the default for local Binance public websocket connectivity
 - `BINANCE_REST_BASE_URL`
   - keep the default for local Binance public REST recovery calls
 - `BINANCE_REST_MAX_RETRIES`
@@ -136,18 +132,16 @@ Set or review these values:
   - keep the default unless you want a different ClickHouse TTL for candles
 - `HISTORICAL_TRADE_RETENTION_DAYS`
   - keep the default unless you want a different ClickHouse TTL for aggregate trades
-- `HISTORICAL_BOOK_TICKER_RETENTION_DAYS`
-- `MARKET_EVENT_DEDUP_CAPACITY`
-  - keep the default unless you need a larger in-memory dedup window
+- `HISTORICAL_STORE_COMPACTION_ENABLED`
+  - keep `true` locally; the service default is `false`, so drop it only if the periodic ClickHouse `OPTIMIZE TABLE` pass should stay off
 - `READINESS_MAX_DEPENDENCY_AGE_MS`
   - keep the default unless the research-backtesting readiness check should tolerate older dependency checks
-- `BACKTEST_WARMUP_MULTIPLIER`
-  - keep the default unless offline backtests should use a larger or smaller EMA warmup buffer
+- `BACKTEST_WARMUP_CANDLES`
+  - keep the default unless offline backtests should use a larger or smaller indicator warmup buffer
 - `BACKTEST_MAX_KLINES`
   - keep the default unless you need wider replay windows than the local safety cap allows
 - `BACKTEST_MAX_TRADES`
   - keep the default unless you need wider aggregate-trade replay windows than the local safety cap allows
-  - keep the default unless a busy pair needs a wider quote replay window for quote-aware backtests
 - `BACKTEST_RESULT_RETENTION_DAYS`
   - keep the default unless persisted backtest runs should live shorter or longer in ClickHouse
 - `BACKTEST_FEE_BPS`
@@ -434,7 +428,7 @@ docker compose --env-file docker/.env.app.local -f docker/compose.app.local.yml 
 Retention rule for this implemented slice:
 
 - required history = `BACKTEST_TIMERANGE_MS_BY_TIMEFRAME` window for the timeframe + indicator warmup +
-- default warmup = `slowPeriod * BACKTEST_WARMUP_MULTIPLIER`
+- default warmup = `BACKTEST_WARMUP_CANDLES` candles, raised to the strategy's own minimum when that is larger
 - because the window values are milliseconds and keyed by timeframe, the amount of data required
   really does vary by timeframe, just like in the legacy system
 

@@ -19,10 +19,10 @@ SET client_min_messages = warning;
 SET row_security = off;
 
 --
--- Data for Name: symbols; Type: TABLE DATA; Schema: public; Owner: -
+-- Data for Name: pairs; Type: TABLE DATA; Schema: public; Owner: -
 --
 
-INSERT INTO public.symbols (
+INSERT INTO public.pairs (
   id,
   code,
   active,

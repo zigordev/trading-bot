@@ -8,7 +8,7 @@ import { useBacktestsSummary } from '@/lib/hooks/use-backtests-summary';
 import { useDataReadiness } from '@/lib/hooks/use-data-readiness';
 import { useExecutionSummary } from '@/lib/hooks/use-execution-summary';
 import { KpiTile } from '@/components/shared/kpi-tile';
-import { PairLabel } from '@/components/shared/symbol-avatar';
+import { PairLabel } from '@/components/shared/pair-avatar';
 import { usePreferences } from '@/components/providers/preferences-provider';
 
 function readinessRatio(
@@ -68,9 +68,9 @@ export function OverviewKpiStrip() {
         label={t('overview.kpi.active_promotions')}
         value={activePromotions.toLocaleString()}
         hint={
-          execution.data?.activePromotion?.symbolCode ? (
+          execution.data?.activePromotion?.pairCode ? (
             <PairLabel
-              code={execution.data.activePromotion.symbolCode}
+              code={execution.data.activePromotion.pairCode}
               size={16}
               textClassName="text-[12px] text-[var(--color-fg-subtle)]"
             />

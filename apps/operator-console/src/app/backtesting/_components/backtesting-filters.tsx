@@ -14,8 +14,8 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { StickyFiltersBar } from '@/components/layout/sticky-filters-bar';
-import { SymbolAvatar } from '@/components/shared/symbol-avatar';
-import { splitSymbol } from '@/lib/backtesting/derive-rows';
+import { PairAvatar } from '@/components/shared/pair-avatar';
+import { splitPairCode } from '@/lib/backtesting/derive-rows';
 import type { RowStatus } from '@/lib/backtesting/types';
 import { usePreferences } from '@/components/providers/preferences-provider';
 
@@ -27,9 +27,9 @@ const STATUS_OPTIONS: { value: RowStatus; labelKey: string }[] = [
 ];
 
 interface BacktestingFiltersProps {
-  symbols: string[];
-  selectedSymbols: string[];
-  onSymbolsChange: (next: string[]) => void;
+  pairs: string[];
+  selectedPairs: string[];
+  onPairsChange: (next: string[]) => void;
 
   timeframes: string[];
   selectedTimeframe: string;
@@ -52,9 +52,9 @@ interface BacktestingFiltersProps {
 }
 
 export function BacktestingFilters({
-  symbols,
-  selectedSymbols,
-  onSymbolsChange,
+  pairs,
+  selectedPairs,
+  onPairsChange,
   timeframes,
   selectedTimeframe,
   onTimeframeChange,
@@ -71,12 +71,12 @@ export function BacktestingFilters({
   topOffset,
 }: BacktestingFiltersProps) {
   const { t } = usePreferences();
-  const symbolOptions: MultiSelectOption[] = symbols.map((symbol) => {
-    const { base, quote } = splitSymbol(symbol);
+  const pairOptions: MultiSelectOption[] = pairs.map((pairCode) => {
+    const { base, quote } = splitPairCode(pairCode);
     return {
-      value: symbol,
-      label: symbol,
-      icon: <SymbolAvatar baseAsset={base} quoteAsset={quote} size={16} />,
+      value: pairCode,
+      label: pairCode,
+      icon: <PairAvatar baseAsset={base} quoteAsset={quote} size={16} />,
     };
   });
   const statusOptions: MultiSelectOption[] = STATUS_OPTIONS.map((opt) => ({
@@ -113,18 +113,18 @@ export function BacktestingFilters({
       />
     );
   }
-  for (const sym of selectedSymbols) {
-    const { base, quote } = splitSymbol(sym);
+  for (const pair of selectedPairs) {
+    const { base, quote } = splitPairCode(pair);
     chips.push(
       <FilterChip
-        key={`sym-${sym}`}
+        key={`pair-${pair}`}
         label={
           <span className="inline-flex items-center gap-1.5">
-            <SymbolAvatar baseAsset={base} quoteAsset={quote} size={14} />
-            {sym}
+            <PairAvatar baseAsset={base} quoteAsset={quote} size={14} />
+            {pair}
           </span>
         }
-        onClear={() => onSymbolsChange(selectedSymbols.filter((s) => s !== sym))}
+        onClear={() => onPairsChange(selectedPairs.filter((s) => s !== pair))}
       />
     );
   }
@@ -168,9 +168,9 @@ export function BacktestingFilters({
       </div>
       <div className="w-[220px]">
         <MultiSelect
-          options={symbolOptions}
-          value={selectedSymbols}
-          onChange={onSymbolsChange}
+          options={pairOptions}
+          value={selectedPairs}
+          onChange={onPairsChange}
           placeholder={t('backtesting.filters.pairs.placeholder')}
           searchPlaceholder={t('backtesting.filters.pairs.search_placeholder')}
           triggerLabel={t('backtesting.filters.pairs.trigger_label')}

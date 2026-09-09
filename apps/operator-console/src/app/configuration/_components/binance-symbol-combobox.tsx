@@ -3,7 +3,7 @@
 import * as React from 'react';
 
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
-import { SymbolAvatar } from '@/components/shared/symbol-avatar';
+import { PairAvatar } from '@/components/shared/pair-avatar';
 import { useBinanceSymbols } from '@/lib/hooks/use-binance-symbols';
 import { usePreferences } from '@/components/providers/preferences-provider';
 
@@ -29,9 +29,7 @@ export function BinanceSymbolCombobox({
       value: item.symbol,
       label: item.symbol,
       description: `${item.baseAsset} → ${item.destinationAsset}`,
-      icon: (
-        <SymbolAvatar baseAsset={item.baseAsset} quoteAsset={item.destinationAsset} size={16} />
-      ),
+      icon: <PairAvatar baseAsset={item.baseAsset} quoteAsset={item.destinationAsset} size={16} />,
     }));
     if (value && !next.some((opt) => opt.value === value)) {
       next.unshift({ value, label: value });

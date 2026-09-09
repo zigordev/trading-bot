@@ -181,15 +181,14 @@ In milliseconds:
 - `3m = 43_200_000`
 - `5m = 86_400_000`
 
-With the current `emaCross` defaults of `fastPeriod=9`, `slowPeriod=21`, and
-`BACKTEST_WARMUP_MULTIPLIER=5`, the approximate required retained history is:
+With the default `BACKTEST_WARMUP_CANDLES=200`, the approximate required retained history is:
 
 - `1m`
-  - `6h + 105m warmup`
+  - `6h + 200m warmup`
 - `3m`
-  - `12h + 315m warmup`
+  - `12h + 600m warmup`
 - `5m`
-  - `24h + 525m warmup`
+  - `24h + 1000m warmup`
 
 That fits the current bounded kline historian. For quote-aware accuracy, the real constraint is
 legacy-sized default windows to work without explicit shorter requests, increase
@@ -209,7 +208,7 @@ BASE_URL=http://localhost:3020
 Create extra pairs:
 
 ```bash
-curl -fsS -X POST "$BASE_URL/v1/symbols" \
+curl -fsS -X POST "$BASE_URL/v1/pairs" \
   -H 'content-type: application/json' \
   -d '{
     "code": "ETHUSDT",
@@ -220,7 +219,7 @@ curl -fsS -X POST "$BASE_URL/v1/symbols" \
     "destinationAssetNeededFunds": 1000
   }' | jq
 
-curl -fsS -X POST "$BASE_URL/v1/symbols" \
+curl -fsS -X POST "$BASE_URL/v1/pairs" \
   -H 'content-type: application/json' \
   -d '{
     "code": "SOLUSDT",

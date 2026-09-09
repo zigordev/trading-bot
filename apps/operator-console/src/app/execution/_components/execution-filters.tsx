@@ -16,8 +16,8 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { StickyFiltersBar } from '@/components/layout/sticky-filters-bar';
-import { SymbolAvatar } from '@/components/shared/symbol-avatar';
-import { splitSymbol } from '@/lib/backtesting/derive-rows';
+import { PairAvatar } from '@/components/shared/pair-avatar';
+import { splitPairCode } from '@/lib/backtesting/derive-rows';
 import type { ExecutionTrade } from '@/lib/api';
 import { usePreferences } from '@/components/providers/preferences-provider';
 
@@ -29,9 +29,9 @@ const STATUS_OPTIONS: { value: ExecutionTrade['status']; labelKey: string }[] = 
 ];
 
 interface ExecutionFiltersProps {
-  symbols: string[];
-  selectedSymbol: string;
-  onSymbolChange: (next: string) => void;
+  pairs: string[];
+  selectedPair: string;
+  onPairChange: (next: string) => void;
 
   timeframes: string[];
   selectedTimeframe: string;
@@ -60,9 +60,9 @@ interface ExecutionFiltersProps {
 }
 
 export function ExecutionFilters({
-  symbols,
-  selectedSymbol,
-  onSymbolChange,
+  pairs,
+  selectedPair,
+  onPairChange,
   timeframes,
   selectedTimeframe,
   onTimeframeChange,
@@ -98,18 +98,18 @@ export function ExecutionFilters({
       />
     );
   }
-  if (selectedSymbol !== 'all') {
-    const { base, quote } = splitSymbol(selectedSymbol);
+  if (selectedPair !== 'all') {
+    const { base, quote } = splitPairCode(selectedPair);
     chips.push(
       <FilterChip
-        key="sym"
+        key="pair"
         label={
           <span className="inline-flex items-center gap-1.5">
-            <SymbolAvatar baseAsset={base} quoteAsset={quote} size={14} />
-            {selectedSymbol}
+            <PairAvatar baseAsset={base} quoteAsset={quote} size={14} />
+            {selectedPair}
           </span>
         }
-        onClear={() => onSymbolChange('all')}
+        onClear={() => onPairChange('all')}
       />
     );
   }
@@ -189,19 +189,19 @@ export function ExecutionFilters({
           className="h-9 w-full rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-[13px] outline-none transition-colors placeholder:text-[var(--color-fg-faint)] focus:border-[var(--color-accent)] focus:ring-2 focus:ring-[var(--color-accent)]"
         />
       </div>
-      <Select value={selectedSymbol} onValueChange={onSymbolChange}>
+      <Select value={selectedPair} onValueChange={onPairChange}>
         <SelectTrigger className="h-9 w-[180px]">
           <SelectValue placeholder={t('execution.filters.pair_placeholder')} />
         </SelectTrigger>
         <SelectContent>
           <SelectItem value="all">{t('execution.filters.all_pairs')}</SelectItem>
-          {symbols.map((symbol) => {
-            const { base, quote } = splitSymbol(symbol);
+          {pairs.map((pairCode) => {
+            const { base, quote } = splitPairCode(pairCode);
             return (
-              <SelectItem key={symbol} value={symbol}>
+              <SelectItem key={pairCode} value={pairCode}>
                 <span className="inline-flex items-center gap-2">
-                  <SymbolAvatar baseAsset={base} quoteAsset={quote} size={16} />
-                  {symbol}
+                  <PairAvatar baseAsset={base} quoteAsset={quote} size={16} />
+                  {pairCode}
                 </span>
               </SelectItem>
             );

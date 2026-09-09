@@ -12,6 +12,7 @@ import { WsStatusDot } from '@/components/shared/ws-status-dot';
 import { useTopbarSlot } from '@/components/layout/topbar-slot-context';
 import { usePreferences, type Translate } from '@/components/providers/preferences-provider';
 import { ThemeButton, LanguageButton } from '@/components/layout/topbar-utilities';
+import { API_BASE } from '@/lib/api';
 import { configResources } from '@/lib/configuration/schemas';
 
 /**
@@ -88,7 +89,7 @@ function SidebarFooter() {
         {t('shell.control_plane')}
       </div>
       <div className="truncate font-mono text-[11px] text-[var(--ds-color-fg-muted)]">
-        {process.env.NEXT_PUBLIC_CONTROL_PLANE_BASE_URL ?? 'http://localhost:3020'}
+        {API_BASE}
       </div>
     </div>
   );

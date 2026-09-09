@@ -1320,11 +1320,11 @@ impl MarketDataService {
 
     async fn perform_refresh(&self, reason: &str) -> Result<()> {
         let _maintenance = self.inner.maintenance_gate.lock().await;
-        let symbols = self.fetch_symbols().await?;
+        let pairs = self.fetch_pairs().await?;
         let timeframes = self.fetch_timeframes().await?;
         let records = self.fetch_resolved_analysis_settings().await?;
         let readiness_targets = self.derive_data_readiness_targets(&records);
-        let active = derive_active_subscriptions(&symbols, &timeframes, &records)?;
+        let active = derive_active_subscriptions(&pairs, &timeframes, &records)?;
         let required_history_plan = self.build_required_history_plan(&records, &active);
 
         {
@@ -1498,8 +1498,8 @@ impl MarketDataService {
             .await
     }
 
-    async fn fetch_symbols(&self) -> Result<Vec<crate::models::PairRecord>> {
-        self.fetch_control_plane_records("/v1/symbols").await
+    async fn fetch_pairs(&self) -> Result<Vec<crate::models::PairRecord>> {
+        self.fetch_control_plane_records("/v1/pairs").await
     }
 
     async fn fetch_timeframes(&self) -> Result<Vec<crate::models::TimeframeRecord>> {
@@ -1561,7 +1561,7 @@ impl MarketDataService {
                 .unwrap_or(record.timeframe.period_ms);
             let required_history_ms = configured_duration_ms.saturating_add(warmup_ms);
             let key = (
-                record.symbol.clone(),
+                record.pair_code.clone(),
                 record.timeframe_code.clone(),
                 record.strategy_name.clone(),
             );
@@ -1576,7 +1576,7 @@ impl MarketDataService {
                     }
                 })
                 .or_insert_with(|| DataReadinessTarget {
-                    pair_code: record.symbol.clone(),
+                    pair_code: record.pair_code.clone(),
                     timeframe_code: record.timeframe_code.clone(),
                     strategy_name: record.strategy_name.clone(),
                     analysis_setting_ids: vec![record.id.clone()],
@@ -1937,7 +1937,7 @@ impl MarketDataService {
                 let required_kline_history_ms = configured_duration_ms
                     .saturating_add(max_required_warmup_ms)
                     .saturating_add(kline_headroom_ms);
-                let kline_key = (record.symbol.clone(), requirement.timeframe_code.clone());
+                let kline_key = (record.pair_code.clone(), requirement.timeframe_code.clone());
                 kline_by_key
                     .entry(kline_key)
                     .and_modify(|current| *current = (*current).max(required_kline_history_ms))
@@ -1945,7 +1945,7 @@ impl MarketDataService {
             }
 
             trade_by_pair_code
-                .entry(record.symbol.clone())
+                .entry(record.pair_code.clone())
                 .and_modify(|current| *current = (*current).max(required_trade_history_ms))
                 .or_insert(required_trade_history_ms);
         }
@@ -2208,7 +2208,7 @@ impl MarketDataService {
                 let missing_ranges = service
                     .missing_trade_id_ranges_for_pair(
                         &subscription.pair_code,
-                        &subscription.symbol,
+                        &subscription.binance_symbol,
                         window_start_ms,
                         window_end_ms,
                     )
@@ -2339,12 +2339,12 @@ impl MarketDataService {
     async fn missing_trade_id_ranges_for_pair(
         &self,
         pair_code: &str,
-        symbol: &str,
+        binance_symbol: &str,
         window_start: i64,
         window_end: i64,
     ) -> Result<Vec<AggregateTradeIdRange>> {
         let Some(true_boundaries) = self
-            .fetch_true_trade_window_boundaries_cached(symbol, window_start, window_end)
+            .fetch_true_trade_window_boundaries_cached(binance_symbol, window_start, window_end)
             .await?
         else {
             return Ok(Vec::new());
@@ -2502,7 +2502,7 @@ impl MarketDataService {
                 .fetch_binance_json::<Vec<Vec<Value>>>(
                     "/api/v3/klines",
                     &[
-                        ("symbol", subscription.symbol.clone()),
+                        ("symbol", subscription.binance_symbol.clone()),
                         ("interval", subscription.binance_interval.clone()),
                         ("limit", batch_limit.to_string()),
                         ("startTime", next_start_ms.to_string()),
@@ -2872,7 +2872,7 @@ impl MarketDataService {
             let missing_ranges = self
                 .missing_trade_id_ranges_for_pair(
                     &subscription.pair_code,
-                    &subscription.symbol,
+                    &subscription.binance_symbol,
                     window_start,
                     window_end,
                 )
@@ -2991,7 +2991,7 @@ impl MarketDataService {
                 .fetch_binance_json::<Vec<Value>>(
                     "/api/v3/aggTrades",
                     &[
-                        ("symbol", subscription.symbol.clone()),
+                        ("symbol", subscription.binance_symbol.clone()),
                         ("fromId", page_start.to_string()),
                         ("limit", page_rows.to_string()),
                     ],
@@ -3211,7 +3211,7 @@ impl MarketDataService {
 
     async fn fetch_first_agg_trade_in_window(
         &self,
-        symbol: &str,
+        binance_symbol: &str,
         start_time: i64,
         end_time: i64,
     ) -> Result<Option<BinanceAggTradeBoundaryRow>> {
@@ -3223,7 +3223,7 @@ impl MarketDataService {
             .fetch_binance_json::<Vec<BinanceAggTradeBoundaryRow>>(
                 "/api/v3/aggTrades",
                 &[
-                    ("symbol", symbol.to_string()),
+                    ("symbol", binance_symbol.to_string()),
                     ("startTime", start_time.to_string()),
                     ("endTime", end_time.saturating_sub(1).to_string()),
                     ("limit", "1".to_string()),
@@ -3236,7 +3236,7 @@ impl MarketDataService {
 
     async fn fetch_last_agg_trade_in_window(
         &self,
-        symbol: &str,
+        binance_symbol: &str,
         start_time: i64,
         end_time: i64,
     ) -> Result<Option<BinanceAggTradeBoundaryRow>> {
@@ -3251,7 +3251,7 @@ impl MarketDataService {
         while low <= high {
             let mid = low + (high.saturating_sub(low) / 2);
             match self
-                .fetch_first_agg_trade_in_window(symbol, mid, end_time)
+                .fetch_first_agg_trade_in_window(binance_symbol, mid, end_time)
                 .await?
             {
                 Some(candidate) => {
@@ -3283,7 +3283,7 @@ impl MarketDataService {
                 .fetch_binance_json::<Vec<BinanceAggTradeBoundaryRow>>(
                     "/api/v3/aggTrades",
                     &[
-                        ("symbol", symbol.to_string()),
+                        ("symbol", binance_symbol.to_string()),
                         ("fromId", next_from_id.to_string()),
                         ("limit", "1000".to_string()),
                     ],
@@ -3316,15 +3316,15 @@ impl MarketDataService {
 
     async fn fetch_true_trade_window_boundaries(
         &self,
-        symbol: &str,
+        binance_symbol: &str,
         start_time: i64,
         end_time: i64,
     ) -> Result<Option<TrueTradeWindowBoundaries>> {
         let first = self
-            .fetch_first_agg_trade_in_window(symbol, start_time, end_time)
+            .fetch_first_agg_trade_in_window(binance_symbol, start_time, end_time)
             .await?;
         let last = self
-            .fetch_last_agg_trade_in_window(symbol, start_time, end_time)
+            .fetch_last_agg_trade_in_window(binance_symbol, start_time, end_time)
             .await?;
 
         match (first, last) {
@@ -3344,11 +3344,11 @@ impl MarketDataService {
 
     async fn fetch_true_trade_window_boundaries_cached(
         &self,
-        symbol: &str,
+        binance_symbol: &str,
         start_time: i64,
         end_time: i64,
     ) -> Result<Option<TrueTradeWindowBoundaries>> {
-        let key = (symbol.to_string(), start_time, end_time);
+        let key = (binance_symbol.to_string(), start_time, end_time);
         if let Some(boundaries) = self
             .inner
             .trade_window_boundaries_cache
@@ -3361,7 +3361,7 @@ impl MarketDataService {
         }
 
         let boundaries = self
-            .fetch_true_trade_window_boundaries(symbol, start_time, end_time)
+            .fetch_true_trade_window_boundaries(binance_symbol, start_time, end_time)
             .await?;
         self.inner
             .trade_window_boundaries_cache
@@ -3615,8 +3615,8 @@ mod tests {
     fn required_trade_history_ignores_auxiliary_longer_timeframe_kline_subscriptions() {
         let mut record = resolved("analysis-1", "strategy1");
         record.strategy.parameters = json!({ "kind": "strategy1" });
-        record.symbol = "BTCUSDT".to_string();
-        record.symbol_entity.code = "BTCUSDT".to_string();
+        record.pair_code = "BTCUSDT".to_string();
+        record.pair.code = "BTCUSDT".to_string();
         record.timeframe_code = "3m".to_string();
         record.timeframe.code = "3m".to_string();
         record.timeframe.period_ms = 180_000;
@@ -3657,7 +3657,7 @@ mod tests {
     fn resolved(id: &str, strategy_name: &str) -> ResolvedAnalysisSettingsRecord {
         ResolvedAnalysisSettingsRecord {
             id: id.to_string(),
-            symbol: "BTC/USDT".to_string(),
+            pair_code: "BTC/USDT".to_string(),
             timeframe_code: "1m".to_string(),
             strategy_name: strategy_name.to_string(),
             risk_profile_name: "default-risk".to_string(),
@@ -3665,7 +3665,7 @@ mod tests {
             enabled: true,
             created_at: "2026-03-12T18:00:00Z".to_string(),
             updated_at: "2026-03-12T18:00:00Z".to_string(),
-            symbol_entity: PairRecord {
+            pair: PairRecord {
                 id: "pair-1".to_string(),
                 code: "BTC/USDT".to_string(),
                 active: true,

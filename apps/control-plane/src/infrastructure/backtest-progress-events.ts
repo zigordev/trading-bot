@@ -25,7 +25,7 @@ export type BacktestProgressEventEnvelope = {
     controlPlaneJobId: string;
     analysisSettingId: string;
     riskProfileName: string;
-    symbol: string;
+    pairCode: string;
     timeframeCode: string;
     strategyName: string;
     stage: string;
@@ -40,7 +40,7 @@ export type BacktestBatchProgressEventEnvelope = {
   occurredAt: string;
   data: {
     batchId: string;
-    symbol: string;
+    pairCode: string;
     timeframeCode: string;
     requestedStartTime: number;
     requestedEndTime: number;
@@ -86,7 +86,7 @@ const parseEnvelope = (
       typeof data.controlPlaneJobId !== 'string' ||
       typeof data.analysisSettingId !== 'string' ||
       typeof data.riskProfileName !== 'string' ||
-      typeof data.symbol !== 'string' ||
+      typeof data.pairCode !== 'string' ||
       typeof data.timeframeCode !== 'string' ||
       typeof data.strategyName !== 'string' ||
       typeof data.stage !== 'string'
@@ -103,7 +103,7 @@ const parseEnvelope = (
         controlPlaneJobId: data.controlPlaneJobId,
         analysisSettingId: data.analysisSettingId,
         riskProfileName: data.riskProfileName,
-        symbol: data.symbol,
+        pairCode: data.pairCode,
         timeframeCode: data.timeframeCode,
         strategyName: data.strategyName,
         stage: data.stage,
@@ -114,7 +114,7 @@ const parseEnvelope = (
 
   if (
     typeof data.batchId !== 'string' ||
-    typeof data.symbol !== 'string' ||
+    typeof data.pairCode !== 'string' ||
     typeof data.timeframeCode !== 'string' ||
     typeof data.stage !== 'string'
   ) {
@@ -128,7 +128,7 @@ const parseEnvelope = (
     occurredAt: parsed.occurredAt,
     data: {
       batchId: data.batchId,
-      symbol: data.symbol,
+      pairCode: data.pairCode,
       timeframeCode: data.timeframeCode,
       requestedStartTime: Number(data.requestedStartTime ?? 0),
       requestedEndTime: Number(data.requestedEndTime ?? 0),
@@ -213,7 +213,7 @@ export const createBacktestProgressConsumer = (
                 jobId: envelope.data.controlPlaneJobId,
                 analysisSettingId: envelope.data.analysisSettingId,
                 riskProfileName: envelope.data.riskProfileName,
-                symbolCode: envelope.data.symbol,
+                pairCode: envelope.data.pairCode,
                 timeframeCode: envelope.data.timeframeCode,
                 strategyName: envelope.data.strategyName,
                 stage: envelope.data.stage,
@@ -222,14 +222,14 @@ export const createBacktestProgressConsumer = (
               publishOpsEvent({
                 type: 'ops.backtests.updated',
                 payload: {
-                  symbols: [envelope.data.symbol],
+                  pairs: [envelope.data.pairCode],
                   timeframeCodes: [envelope.data.timeframeCode],
                 },
               });
             } else {
               await upsertBacktestBatchFromProgressEvent(pool, {
                 batchId: envelope.data.batchId,
-                symbolCode: envelope.data.symbol,
+                pairCode: envelope.data.pairCode,
                 timeframeCode: envelope.data.timeframeCode,
                 requestedStartTime: envelope.data.requestedStartTime,
                 requestedEndTime: envelope.data.requestedEndTime,
@@ -242,7 +242,7 @@ export const createBacktestProgressConsumer = (
               publishOpsEvent({
                 type: 'ops.backtests.updated',
                 payload: {
-                  symbols: [envelope.data.symbol],
+                  pairs: [envelope.data.pairCode],
                   timeframeCodes: [envelope.data.timeframeCode],
                 },
               });

@@ -77,7 +77,7 @@ const parseEnvelope = (value: string): BacktestCompletedEventEnvelope | null => 
     'finishedAt',
     'analysisSettingId',
     'riskProfileName',
-    'symbol',
+    'pairCode',
     'timeframeCode',
     'strategyName',
   ] as const;
@@ -110,7 +110,7 @@ const parseEnvelope = (value: string): BacktestCompletedEventEnvelope | null => 
       dataRetrievalDurationMs: Number(data.dataRetrievalDurationMs ?? 0),
       analysisSettingId: data.analysisSettingId as string,
       riskProfileName: data.riskProfileName as string,
-      symbol: data.symbol as string,
+      pairCode: data.pairCode as string,
       timeframeCode: data.timeframeCode as string,
       strategyName: data.strategyName as string,
       requestedStartTime: Number(data.requestedStartTime ?? 0),
@@ -232,7 +232,7 @@ export const createBacktestRunProjectionConsumer = (
           typeof run.finishedAt !== 'string' ||
           typeof run.analysisSettingId !== 'string' ||
           typeof run.riskProfileName !== 'string' ||
-          typeof run.symbol !== 'string' ||
+          typeof run.pairCode !== 'string' ||
           typeof run.timeframeCode !== 'string' ||
           typeof run.strategyName !== 'string'
         ) {
@@ -246,7 +246,7 @@ export const createBacktestRunProjectionConsumer = (
           dataRetrievalDurationMs: Number(run.dataRetrievalDurationMs ?? 0),
           analysisSettingId: run.analysisSettingId,
           riskProfileName: run.riskProfileName,
-          symbol: run.symbol,
+          pairCode: run.pairCode,
           timeframeCode: run.timeframeCode,
           strategyName: run.strategyName,
           requestedStartTime: Number(run.requestedStartTime ?? 0),
@@ -330,7 +330,7 @@ export const createBacktestRunProjectionConsumer = (
             publishOpsEvent({
               type: 'ops.backtests.updated',
               payload: {
-                symbols: [envelope.data.symbol],
+                pairs: [envelope.data.pairCode],
                 timeframeCodes: [envelope.data.timeframeCode],
               },
             });
@@ -338,7 +338,7 @@ export const createBacktestRunProjectionConsumer = (
               publishOpsEvent({
                 type: 'ops.execution.updated',
                 payload: {
-                  symbols: [envelope.data.symbol],
+                  pairs: [envelope.data.pairCode],
                   timeframeCodes: [envelope.data.timeframeCode],
                 },
               });

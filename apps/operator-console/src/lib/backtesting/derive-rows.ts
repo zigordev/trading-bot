@@ -8,9 +8,9 @@ import type {
 
 import type { BacktestRow, ProgressTotals, RowStatus } from './types';
 
-export function splitSymbol(symbol: string): { base: string; quote: string } {
+export function splitPairCode(pairCode: string): { base: string; quote: string } {
   const known = ['USDT', 'USDC', 'BUSD', 'USD', 'BTC', 'ETH'];
-  const upper = symbol.toUpperCase();
+  const upper = pairCode.toUpperCase();
   for (const quote of known) {
     if (upper.endsWith(quote)) {
       return { base: upper.slice(0, -quote.length), quote };
@@ -19,8 +19,8 @@ export function splitSymbol(symbol: string): { base: string; quote: string } {
   return { base: upper.slice(0, -3), quote: upper.slice(-3) };
 }
 
-function rowKey(symbol: string, timeframeCode: string, strategyName: string): string {
-  return `${symbol}::${timeframeCode}::${strategyName}`;
+function rowKey(pairCode: string, timeframeCode: string, strategyName: string): string {
+  return `${pairCode}::${timeframeCode}::${strategyName}`;
 }
 
 function emptyProgress(): ProgressTotals {
@@ -86,14 +86,18 @@ interface DeriveInput {
 export function deriveBacktestRows({ summary, readiness }: DeriveInput): BacktestRow[] {
   const rowMap = new Map<string, BacktestRow>();
 
-  const ensureRow = (symbol: string, timeframeCode: string, strategyName: string): BacktestRow => {
-    const key = rowKey(symbol, timeframeCode, strategyName);
+  const ensureRow = (
+    pairCode: string,
+    timeframeCode: string,
+    strategyName: string
+  ): BacktestRow => {
+    const key = rowKey(pairCode, timeframeCode, strategyName);
     let row = rowMap.get(key);
     if (!row) {
-      const { base, quote } = splitSymbol(symbol);
+      const { base, quote } = splitPairCode(pairCode);
       row = {
         id: key,
-        symbol,
+        pairCode,
         baseAsset: base,
         quoteAsset: quote,
         timeframeCode,
@@ -116,7 +120,7 @@ export function deriveBacktestRows({ summary, readiness }: DeriveInput): Backtes
   };
 
   for (const item of readiness?.items ?? []) {
-    const row = ensureRow(item.symbolCode, item.timeframeCode, item.strategyName);
+    const row = ensureRow(item.pairCode, item.timeframeCode, item.strategyName);
     row.readiness = item;
 
     const klineCoverage = item.kline?.coveragePercent ?? null;
@@ -138,41 +142,41 @@ export function deriveBacktestRows({ summary, readiness }: DeriveInput): Backtes
     row.tradesRowCount = item.trades?.rowCount ?? null;
   }
 
-  const jobsBySymbolTfStrat = new Map<string, BacktestJob[]>();
+  const jobsByPairTfStrat = new Map<string, BacktestJob[]>();
   for (const job of summary?.jobs ?? []) {
-    if (!job.symbolCode || !job.timeframeCode || !job.strategyName) continue;
-    const key = rowKey(job.symbolCode, job.timeframeCode, job.strategyName);
-    const list = jobsBySymbolTfStrat.get(key);
+    if (!job.pairCode || !job.timeframeCode || !job.strategyName) continue;
+    const key = rowKey(job.pairCode, job.timeframeCode, job.strategyName);
+    const list = jobsByPairTfStrat.get(key);
     if (list) list.push(job);
-    else jobsBySymbolTfStrat.set(key, [job]);
+    else jobsByPairTfStrat.set(key, [job]);
   }
 
-  for (const [key, jobs] of jobsBySymbolTfStrat) {
-    const [symbol, timeframeCode, strategyName] = key.split('::');
-    const row = ensureRow(symbol, timeframeCode, strategyName);
+  for (const [key, jobs] of jobsByPairTfStrat) {
+    const [pairCode, timeframeCode, strategyName] = key.split('::');
+    const row = ensureRow(pairCode, timeframeCode, strategyName);
     row.jobs = jobs;
     row.progress = rollupProgress(jobs);
   }
 
-  const recentBySymbolTfStrat = new Map<string, RecentBacktestRun[]>();
+  const recentByPairTfStrat = new Map<string, RecentBacktestRun[]>();
   for (const run of summary?.recentRuns ?? []) {
-    const key = rowKey(run.symbol, run.timeframeCode, run.strategyName);
-    const list = recentBySymbolTfStrat.get(key);
+    const key = rowKey(run.pairCode, run.timeframeCode, run.strategyName);
+    const list = recentByPairTfStrat.get(key);
     if (list) list.push(run);
-    else recentBySymbolTfStrat.set(key, [run]);
+    else recentByPairTfStrat.set(key, [run]);
   }
 
   for (const run of summary?.latestRuns ?? []) {
-    const key = rowKey(run.symbol, run.timeframeCode, run.strategyName);
-    const row = ensureRow(run.symbol, run.timeframeCode, run.strategyName);
+    const key = rowKey(run.pairCode, run.timeframeCode, run.strategyName);
+    const row = ensureRow(run.pairCode, run.timeframeCode, run.strategyName);
     if (!row.latestRun || new Date(run.finishedAt) > new Date(row.latestRun.finishedAt)) {
       row.latestRun = run;
     }
   }
 
-  for (const [key, runs] of recentBySymbolTfStrat) {
-    const [symbol, timeframeCode, strategyName] = key.split('::');
-    const row = ensureRow(symbol, timeframeCode, strategyName);
+  for (const [key, runs] of recentByPairTfStrat) {
+    const [pairCode, timeframeCode, strategyName] = key.split('::');
+    const row = ensureRow(pairCode, timeframeCode, strategyName);
     if (!row.latestRun) row.latestRun = pickLatestRun(runs);
     row.scoreHistory = scoreHistoryFor(runs);
   }
@@ -182,7 +186,7 @@ export function deriveBacktestRows({ summary, readiness }: DeriveInput): Backtes
   }
 
   return Array.from(rowMap.values()).sort((a, b) => {
-    if (a.symbol !== b.symbol) return a.symbol.localeCompare(b.symbol);
+    if (a.pairCode !== b.pairCode) return a.pairCode.localeCompare(b.pairCode);
     if (a.timeframeCode !== b.timeframeCode) return a.timeframeCode.localeCompare(b.timeframeCode);
     return a.strategyName.localeCompare(b.strategyName);
   });
