@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import Fastify, { type FastifyBaseLogger, type FastifyInstance } from 'fastify';
 
 import type { AppConfig } from '../src/config.js';
-import { HttpError } from '../src/http-error.js';
+import { registerProblemErrorHandler } from '../src/problem-details.js';
 
 export const testConfig: AppConfig = {
   appEnv: 'test',
@@ -77,26 +77,6 @@ export const createNoopLogger = (): FastifyBaseLogger =>
 
 export const createAppWithErrorHandler = (): FastifyInstance => {
   const app = Fastify({ logger: false });
-  const hasStatusCode = (error: unknown): error is { statusCode: number } =>
-    typeof error === 'object' &&
-    error !== null &&
-    'statusCode' in error &&
-    typeof error.statusCode === 'number';
-
-  app.setErrorHandler((error, _request, reply) => {
-    const statusCode =
-      error instanceof HttpError ? error.statusCode : hasStatusCode(error) ? error.statusCode : 500;
-
-    reply.code(statusCode).send({
-      statusCode,
-      message:
-        error instanceof Error && error.message.trim() ? error.message : 'Internal server error',
-    });
-  });
-
+  registerProblemErrorHandler(app);
   return app;
-};
-
-export const assertStatus = (actual: number, expected: number, bodyText: string): void => {
-  assert.equal(actual, expected, bodyText);
 };
