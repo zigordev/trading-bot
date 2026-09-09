@@ -10,6 +10,7 @@ RUN HUSKY=0 npm ci -w @trading-bot/control-plane --ignore-scripts
 
 FROM base AS build
 COPY --from=deps /app/node_modules /app/node_modules
+COPY --from=deps /app/apps/control-plane/node_modules /app/apps/control-plane/node_modules
 COPY package.json package-lock.json /app/
 COPY apps/control-plane /app/apps/control-plane
 WORKDIR /app/apps/control-plane
