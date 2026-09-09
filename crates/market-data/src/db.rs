@@ -7,9 +7,11 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::time::Duration;
 use tokio_util::codec::{FramedRead, LinesCodec};
 use tracing::warn;
+use url::Url;
 
 use crate::{
     config::AppConfig,
+    http::parse_base_url,
     models::{
         NormalizedKlineEvent, NormalizedTradeEvent, PersistedKlineRecord, PersistedTradeRecord,
     },
@@ -18,7 +20,7 @@ use crate::{
 #[derive(Clone)]
 pub struct Database {
     client: reqwest::Client,
-    base_url: String,
+    base_url: Url,
     database: String,
     user: Option<String>,
     password: Option<String>,
@@ -330,6 +332,8 @@ impl Database {
             reqwest::header::HeaderValue::from_static("gzip, br"),
         );
 
+        let base_url = parse_base_url(&base_url)?;
+
         Ok(Self {
             // Use a generous timeout because backtest queries can stream
             // millions of rows and take a while under load.
@@ -558,7 +562,7 @@ impl Database {
 
     pub async fn ping(&self) -> Result<()> {
         let response = self
-            .request(self.client.get(format!("{}/ping", self.base_url)))
+            .request(self.client.get(self.endpoint("ping")?))
             .send()
             .await?;
 
@@ -2078,7 +2082,7 @@ impl Database {
             .send_with_retries(|| {
                 self.request(
                     self.client
-                        .post(format!("{}/", self.base_url))
+                        .post(self.base_url.clone())
                         .query(&[("query", sql.as_str())])
                         .body(payload.to_string()),
                 )
@@ -2100,7 +2104,7 @@ impl Database {
             .send_with_retries(|| {
                 self.request(
                     self.client
-                        .post(format!("{}/", self.base_url))
+                        .post(self.base_url.clone())
                         .query(&[("query", sql.as_str())])
                         .body(payload.to_vec()),
                 )
@@ -2116,7 +2120,7 @@ impl Database {
             .send_with_retries(|| {
                 self.request(
                     self.client
-                        .post(format!("{}/", self.base_url))
+                        .post(self.base_url.clone())
                         .body(sql.to_string()),
                 )
             })
@@ -2130,7 +2134,7 @@ impl Database {
             .send_with_retries(|| {
                 self.request(
                     self.client
-                        .post(format!("{}/", self.base_url))
+                        .post(self.base_url.clone())
                         .query(&[("output_format_json_quote_64bit_integers", "0")])
                         .body(sql.to_string()),
                 )
@@ -2145,7 +2149,7 @@ impl Database {
             .send_with_retries(|| {
                 self.request(
                     self.client
-                        .post(format!("{}/", self.base_url))
+                        .post(self.base_url.clone())
                         .query(&[("output_format_json_quote_64bit_integers", "0")])
                         .body(sql.to_string()),
                 )
@@ -2173,7 +2177,7 @@ impl Database {
             .send_with_retries(|| {
                 self.request(
                     self.client
-                        .post(format!("{}/", self.base_url))
+                        .post(self.base_url.clone())
                         .body(sql.to_string()),
                 )
             })
@@ -2245,6 +2249,12 @@ impl Database {
                 row.max_time
             },
         })
+    }
+
+    fn endpoint(&self, path: &str) -> Result<Url> {
+        self.base_url
+            .join(path)
+            .with_context(|| format!("invalid historical store path: {path}"))
     }
 
     fn request(&self, request: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
