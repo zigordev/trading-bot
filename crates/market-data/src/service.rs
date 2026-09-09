@@ -21,12 +21,14 @@ use tokio::{
     time::MissedTickBehavior,
 };
 use tokio_tungstenite::{connect_async, tungstenite::Message as WsMessage};
+use url::Url;
 use uuid::Uuid;
 
 use crate::{
     config::AppConfig,
     db::{Database, TimeGap},
     events::{NormalizedWsEvent, normalize_rest_kline, normalize_rest_trade, normalize_ws_message},
+    http::parse_base_url,
     kafka_topics::ensure_topics,
     metrics::Metrics,
     models::{
@@ -48,6 +50,7 @@ struct Inner {
     metrics: Metrics,
     database: Database,
     http_client: reqwest::Client,
+    binance_rest_base_url: Url,
     binance_weight_limiter: BinanceWeightLimiter,
     kafka_producer: FutureProducer,
     runtime_status: RwLock<RuntimeStatus>,
@@ -519,11 +522,15 @@ impl MarketDataService {
             otel_exporter_configured: config.otel_exporter_otlp_endpoint.is_some(),
         };
 
+        let binance_rest_base_url = parse_base_url(&config.binance_rest_base_url)
+            .context("invalid BINANCE_REST_BASE_URL")?;
+
         let inner = Arc::new(Inner {
             config,
             metrics,
             database,
             http_client,
+            binance_rest_base_url,
             binance_weight_limiter: BinanceWeightLimiter::new(),
             kafka_producer,
             runtime_status: RwLock::new(runtime_status),
@@ -3093,7 +3100,11 @@ impl MarketDataService {
     where
         T: DeserializeOwned,
     {
-        let url = format!("{}{}", self.inner.config.binance_rest_base_url, path);
+        let url = self
+            .inner
+            .binance_rest_base_url
+            .join(path.trim_start_matches('/'))
+            .with_context(|| format!("invalid Binance REST path: {path}"))?;
         let mut backoff_ms = self.inner.config.binance_rest_retry_backoff_ms;
         let request_weight = binance_request_weight_for_path(path, query);
         let limit_weight_1m = self
@@ -3114,7 +3125,13 @@ impl MarketDataService {
                 .binance_weight_limiter
                 .acquire(request_weight, target_weight_1m, &self.inner.metrics, path)
                 .await;
-            let response = self.inner.http_client.get(&url).query(query).send().await?;
+            let response = self
+                .inner
+                .http_client
+                .get(url.clone())
+                .query(query)
+                .send()
+                .await?;
             let status = response.status();
             let used_weight_1m = parse_used_weight_1m(response.headers());
 
