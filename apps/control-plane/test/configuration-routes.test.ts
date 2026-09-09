@@ -21,7 +21,7 @@ const createStore = <TInput, TRecord>(
 
 const createStores = (overrides: Partial<ConfigStores> = {}): ConfigStores =>
   ({
-    symbols: createStore(),
+    pairs: createStore(),
     timeframes: createStore(),
     strategies: createStore(),
     riskProfiles: createStore(),
@@ -45,7 +45,7 @@ test('POST /v1/analysis-settings maps foreign-key violations to 409', async () =
         create: async () => {
           throw createPgError('23503');
         },
-        uniqueFieldName: 'symbolCode/timeframeCode/strategyName',
+        uniqueFieldName: 'pairCode/timeframeCode/strategyName',
         getUniqueFieldValue: () => 'BTCUSDT/1m/ema',
       }),
     })

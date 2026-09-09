@@ -13,7 +13,7 @@ export interface ProgressTotals {
 
 export interface BacktestRow {
   id: string;
-  symbol: string;
+  pairCode: string;
   baseAsset: string;
   quoteAsset: string;
   timeframeCode: string;

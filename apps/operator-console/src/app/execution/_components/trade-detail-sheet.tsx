@@ -16,8 +16,9 @@ import type { ExecutionTrade } from '@/lib/api';
 import { Badge } from '@/components/ui/badge';
 import { DetailSheet } from '@/components/shared/detail-sheet';
 import { IdCell } from '@/components/shared/id-cell';
-import { SymbolAvatar } from '@/components/shared/symbol-avatar';
-import { splitSymbol } from '@/lib/backtesting/derive-rows';
+import { PairAvatar } from '@/components/shared/pair-avatar';
+import { StrategyName } from '@/components/shared/strategy-name';
+import { splitPairCode } from '@/lib/backtesting/derive-rows';
 import { usePreferences } from '@/components/providers/preferences-provider';
 
 interface TradeDetailSheetProps {
@@ -36,7 +37,7 @@ const STATUS_LABEL_KEY: Record<ExecutionTrade['status'], string> = {
 export function TradeDetailSheet({ open, onOpenChange, trade }: TradeDetailSheetProps) {
   const { t } = usePreferences();
   if (!trade) return null;
-  const { base, quote } = splitSymbol(trade.symbolCode);
+  const { base, quote } = splitPairCode(trade.pairCode);
 
   return (
     <DetailSheet
@@ -45,11 +46,11 @@ export function TradeDetailSheet({ open, onOpenChange, trade }: TradeDetailSheet
       size="md"
       title={
         <div className="flex items-center gap-2">
-          <SymbolAvatar baseAsset={base} quoteAsset={quote} size={28} />
+          <PairAvatar baseAsset={base} quoteAsset={quote} size={28} />
           <div>
-            <div>{trade.symbolCode}</div>
+            <div>{trade.pairCode}</div>
             <div className="mt-0.5 text-[12px] font-normal text-[var(--color-fg-muted)]">
-              {trade.timeframeCode} · {trade.strategyName}
+              {trade.timeframeCode} · <StrategyName name={trade.strategyName} />
             </div>
           </div>
         </div>

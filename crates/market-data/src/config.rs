@@ -54,7 +54,7 @@ pub struct AppConfig {
     /// chunk self-contained. Defaults to 1 day.
     pub historical_trade_backfill_chunk_ms: u64,
     /// Maximum number of historical trade chunks to backfill concurrently for
-    /// the same pair. This keeps one hot symbol from overwhelming Binance with
+    /// the same pair. This keeps one hot pair from overwhelming Binance with
     /// too many simultaneous pagers.
     pub historical_trade_backfill_pair_max_concurrency: usize,
     /// Maximum number of klines to buffer per ClickHouse INSERT during
@@ -318,7 +318,7 @@ pub fn load_config() -> Result<AppConfig> {
             48 * 60 * 60 * 1000,
         )?,
         backtesting_timerange_ms_by_timeframe,
-        otel_exporter_otlp_endpoint: std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT").ok(),
+        otel_exporter_otlp_endpoint: optional_env("OTEL_EXPORTER_OTLP_ENDPOINT"),
     };
 
     // Optional guardrail: only when HISTORICAL_BACKFILL_MAX_IN_FLIGHT_TRADE_ROWS is set, reduce

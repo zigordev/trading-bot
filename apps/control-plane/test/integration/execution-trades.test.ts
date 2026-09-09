@@ -29,7 +29,7 @@ const openedTrade: ExecutionTradeInput = {
   sourceBacktestId: null,
   analysisSettingId: 'analysis-integration',
   executionSettingsName: 'paper-default',
-  symbolCode: 'BTCUSDT',
+  pairCode: 'BTCUSDT',
   timeframeCode: '1m',
   strategyName: 'strategy1',
   riskProfileName: 'default-risk',

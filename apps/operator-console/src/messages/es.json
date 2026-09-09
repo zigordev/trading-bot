@@ -24,7 +24,7 @@
   },
   "configuration": {
     "resources": {
-      "symbols": "Pares",
+      "pairs": "Pares",
       "timeframes": "Marcos temporales",
       "strategies": "Estrategias",
       "risk-profiles": "Perfiles de riesgo",
@@ -32,7 +32,7 @@
       "execution-settings": "Ajustes de ejecución"
     },
     "resources_singular": {
-      "symbols": "Par",
+      "pairs": "Par",
       "timeframes": "Marco temporal",
       "strategies": "Estrategia",
       "risk-profiles": "Perfil de riesgo",
@@ -40,7 +40,7 @@
       "execution-settings": "Ajuste de ejecución"
     },
     "fields": {
-      "symbols": {
+      "pairs": {
         "code": "Par",
         "baseAsset": "Activo base",
         "destinationAsset": "Activo destino",

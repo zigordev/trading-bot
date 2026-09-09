@@ -139,7 +139,7 @@ struct BacktestCompletedEventData {
     data_retrieval_duration_ms: i64,
     analysis_setting_id: String,
     risk_profile_name: String,
-    symbol: String,
+    pair_code: String,
     timeframe_code: String,
     strategy_name: String,
     requested_start_time: i64,
@@ -177,7 +177,7 @@ struct BacktestProgressEventData {
     control_plane_job_id: String,
     analysis_setting_id: String,
     risk_profile_name: String,
-    symbol: String,
+    pair_code: String,
     timeframe_code: String,
     strategy_name: String,
     stage: String,
@@ -198,7 +198,7 @@ struct BacktestProgressEventEnvelope {
 #[serde(rename_all = "camelCase")]
 struct BacktestBatchProgressEventData {
     batch_id: String,
-    symbol: String,
+    pair_code: String,
     timeframe_code: String,
     requested_start_time: i64,
     requested_end_time: i64,
@@ -224,7 +224,7 @@ struct BacktestProgressContext {
     control_plane_job_id: String,
     analysis_setting_id: String,
     risk_profile_name: String,
-    symbol: String,
+    pair_code: String,
     timeframe_code: String,
     strategy_name: String,
     batch_id: Option<String>,
@@ -236,7 +236,7 @@ struct BacktestProgressContext {
 
 struct BacktestBatchProgressUpdate<'a> {
     batch_id: &'a str,
-    symbol: &'a str,
+    pair_code: &'a str,
     timeframe_code: &'a str,
     requested_start_time: i64,
     requested_end_time: i64,
@@ -291,7 +291,7 @@ async fn publish_batch_progress_from_context(
         occurred_at: Utc::now().to_rfc3339(),
         data: BacktestBatchProgressEventData {
             batch_id: batch_id.clone(),
-            symbol: context.symbol.clone(),
+            pair_code: context.pair_code.clone(),
             timeframe_code: context.timeframe_code.clone(),
             requested_start_time,
             requested_end_time,
@@ -333,8 +333,7 @@ struct DataReadinessSnapshotPayload {
 #[serde(rename_all = "camelCase")]
 struct DataReadinessSnapshotItem {
     status: String,
-    #[serde(alias = "pairCode")]
-    symbol_code: String,
+    pair_code: String,
     timeframe_code: String,
     strategy_name: String,
     #[serde(default)]
@@ -347,7 +346,7 @@ struct DataReadinessSnapshotItem {
 #[serde(rename_all = "camelCase")]
 struct ControlPlaneDataReadinessRecord {
     status: String,
-    symbol_code: String,
+    pair_code: String,
     timeframe_code: String,
     strategy_name: String,
     #[serde(default)]
@@ -549,20 +548,20 @@ impl ResearchBacktestingService {
             return Ok(());
         }
 
-        let candidate_symbols = envelope
+        let candidate_pairs = envelope
             .data
             .items
             .into_iter()
             .filter(|item| item.status == "ready")
-            .map(|item| item.symbol_code)
+            .map(|item| item.pair_code)
             .collect::<BTreeSet<_>>();
 
-        if candidate_symbols.is_empty() {
+        if candidate_pairs.is_empty() {
             return Ok(());
         }
 
         let ready_items = self
-            .fetch_symbol_ready_datasets_from_control_plane(candidate_symbols.iter())
+            .fetch_pair_ready_datasets_from_control_plane(candidate_pairs.iter())
             .await?;
 
         for item in ready_items {
@@ -572,7 +571,7 @@ impl ResearchBacktestingService {
             {
                 warn!(
                     error = %error,
-                    symbol = %item.symbol_code,
+                    pair_code = %item.pair_code,
                     timeframe_code = %item.timeframe_code,
                     requested_start_time = item.requested_start_time,
                     requested_end_time = item.requested_end_time,
@@ -606,18 +605,18 @@ impl ResearchBacktestingService {
         &self,
     ) -> Result<Vec<DataReadinessSnapshotItem>> {
         let rows = self.fetch_data_readiness_from_control_plane().await?;
-        Ok(filter_symbol_complete_ready_items(rows))
+        Ok(filter_pair_complete_ready_items(rows))
     }
 
-    async fn fetch_symbol_ready_datasets_from_control_plane<'a>(
+    async fn fetch_pair_ready_datasets_from_control_plane<'a>(
         &self,
-        symbols: impl IntoIterator<Item = &'a String>,
+        pairs: impl IntoIterator<Item = &'a String>,
     ) -> Result<Vec<DataReadinessSnapshotItem>> {
-        let wanted = symbols.into_iter().cloned().collect::<BTreeSet<String>>();
+        let wanted = pairs.into_iter().cloned().collect::<BTreeSet<String>>();
         let rows = self.fetch_data_readiness_from_control_plane().await?;
-        Ok(filter_symbol_complete_ready_items(rows)
+        Ok(filter_pair_complete_ready_items(rows)
             .into_iter()
-            .filter(|item| wanted.contains(&item.symbol_code))
+            .filter(|item| wanted.contains(&item.pair_code))
             .collect())
     }
 
@@ -711,7 +710,7 @@ impl ResearchBacktestingService {
                 control_plane_job_id,
                 analysis_setting_id: resolved.analysis.id.clone(),
                 risk_profile_name: resolved.analysis.risk_profile_name.clone(),
-                symbol: resolved.analysis.symbol.clone(),
+                pair_code: resolved.analysis.pair_code.clone(),
                 timeframe_code: resolved.analysis.timeframe_code.clone(),
                 strategy_name: resolved.analysis.strategy_name.clone(),
                 batch_id: request.batch_id.clone(),
@@ -842,7 +841,7 @@ impl ResearchBacktestingService {
                 data_retrieval_duration_ms: response.data_retrieval_duration_ms,
                 analysis_setting_id: response.analysis_setting_id.clone(),
                 risk_profile_name: response.analysis.risk_profile_name.clone(),
-                symbol: response.analysis.symbol_entity.code.clone(),
+                pair_code: response.analysis.pair.code.clone(),
                 timeframe_code: response.analysis.timeframe_code.clone(),
                 strategy_name: response.analysis.strategy_name.clone(),
                 requested_start_time: response.time_window.requested_start_time,
@@ -895,7 +894,7 @@ impl ResearchBacktestingService {
                 control_plane_job_id: context.control_plane_job_id.clone(),
                 analysis_setting_id: context.analysis_setting_id.clone(),
                 risk_profile_name: context.risk_profile_name.clone(),
-                symbol: context.symbol.clone(),
+                pair_code: context.pair_code.clone(),
                 timeframe_code: context.timeframe_code.clone(),
                 strategy_name: context.strategy_name.clone(),
                 stage: stage.to_string(),
@@ -930,7 +929,7 @@ impl ResearchBacktestingService {
             };
             self.publish_backtest_batch_progress_event(&BacktestBatchProgressUpdate {
                 batch_id,
-                symbol: &context.symbol,
+                pair_code: &context.pair_code,
                 timeframe_code: &context.timeframe_code,
                 requested_start_time,
                 requested_end_time,
@@ -957,7 +956,7 @@ impl ResearchBacktestingService {
             occurred_at: Utc::now().to_rfc3339(),
             data: BacktestBatchProgressEventData {
                 batch_id: update.batch_id.to_string(),
-                symbol: update.symbol.to_string(),
+                pair_code: update.pair_code.to_string(),
                 timeframe_code: update.timeframe_code.to_string(),
                 requested_start_time: update.requested_start_time,
                 requested_end_time: update.requested_end_time,
@@ -990,7 +989,7 @@ impl ResearchBacktestingService {
         source_event_id: &str,
     ) -> Result<usize> {
         let batch_key =
-            readiness_batch_key(&item.symbol_code, &item.timeframe_code, &item.strategy_name);
+            readiness_batch_key(&item.pair_code, &item.timeframe_code, &item.strategy_name);
         let requested_window = ReadinessBatchWindow {
             requested_start_time: item.requested_start_time,
             requested_end_time: item.requested_end_time,
@@ -1001,7 +1000,7 @@ impl ResearchBacktestingService {
             .await
         {
             info!(
-                symbol = %item.symbol_code,
+                pair_code = %item.pair_code,
                 timeframe_code = %item.timeframe_code,
                 strategy_name = %item.strategy_name,
                 requested_start_time = item.requested_start_time,
@@ -1025,7 +1024,7 @@ impl ResearchBacktestingService {
                 .await?
                 .into_iter()
                 .filter(|analysis| analysis.enabled)
-                .filter(|analysis| analysis.symbol == item.symbol_code)
+                .filter(|analysis| analysis.pair_code == item.pair_code)
                 .filter(|analysis| analysis.timeframe_code == item.timeframe_code)
                 .filter(|analysis| analysis.strategy_name == item.strategy_name)
                 .filter(|analysis| {
@@ -1055,7 +1054,7 @@ impl ResearchBacktestingService {
             for analysis in analyses {
                 let run_key = readiness_run_key(
                     &analysis.id,
-                    &analysis.symbol,
+                    &analysis.pair_code,
                     &analysis.timeframe_code,
                     &analysis.risk_profile_name,
                     item.requested_start_time,
@@ -1071,7 +1070,7 @@ impl ResearchBacktestingService {
                     .historical_store
                     .backtest_run_exists_for_window(
                         &analysis.id,
-                        &analysis.symbol,
+                        &analysis.pair_code,
                         &analysis.timeframe_code,
                         &analysis.risk_profile_name,
                         item.requested_start_time,
@@ -1089,7 +1088,7 @@ impl ResearchBacktestingService {
             if runnable_analyses.is_empty() {
                 if skipped_existing > 0 {
                     info!(
-                        symbol = %item.symbol_code,
+                        pair_code = %item.pair_code,
                         timeframe_code = %item.timeframe_code,
                         requested_start_time = item.requested_start_time,
                         requested_end_time = item.requested_end_time,
@@ -1104,7 +1103,7 @@ impl ResearchBacktestingService {
 
             let batch_id = format!(
                 "{}:{}:{}:{}",
-                item.symbol_code,
+                item.pair_code,
                 item.timeframe_code,
                 item.requested_start_time,
                 item.requested_end_time
@@ -1115,7 +1114,7 @@ impl ResearchBacktestingService {
 
             self.publish_backtest_batch_progress_event(&BacktestBatchProgressUpdate {
                 batch_id: &batch_id,
-                symbol: &item.symbol_code,
+                pair_code: &item.pair_code,
                 timeframe_code: &item.timeframe_code,
                 requested_start_time: item.requested_start_time,
                 requested_end_time: item.requested_end_time,
@@ -1136,7 +1135,7 @@ impl ResearchBacktestingService {
                     batch_total_count: Some(total_count),
                     batch_completed_count: Some(started),
                     analysis_setting_id: analysis.id.clone(),
-                    symbol_code: Some(analysis.symbol.clone()),
+                    pair_code: Some(analysis.pair_code.clone()),
                     timeframe_code: Some(analysis.timeframe_code.clone()),
                     risk_profile_name: Some(analysis.risk_profile_name.clone()),
                     start_time: Some(item.requested_start_time),
@@ -1159,7 +1158,7 @@ impl ResearchBacktestingService {
                         if let Err(error) = self
                             .publish_backtest_batch_progress_event(&BacktestBatchProgressUpdate {
                                 batch_id: &batch_id,
-                                symbol: &item.symbol_code,
+                                pair_code: &item.pair_code,
                                 timeframe_code: &item.timeframe_code,
                                 requested_start_time: item.requested_start_time,
                                 requested_end_time: item.requested_end_time,
@@ -1182,7 +1181,7 @@ impl ResearchBacktestingService {
                         let _ = self
                             .publish_backtest_batch_progress_event(&BacktestBatchProgressUpdate {
                                 batch_id: &batch_id,
-                                symbol: &item.symbol_code,
+                                pair_code: &item.pair_code,
                                 timeframe_code: &item.timeframe_code,
                                 requested_start_time: item.requested_start_time,
                                 requested_end_time: item.requested_end_time,
@@ -1201,7 +1200,7 @@ impl ResearchBacktestingService {
                             error = %error,
                             analysis_setting_id = %analysis.id,
                             risk_profile_name = %analysis.risk_profile_name,
-                            symbol = %analysis.symbol,
+                            pair_code = %analysis.pair_code,
                             timeframe_code = %analysis.timeframe_code,
                             requested_start_time = item.requested_start_time,
                             requested_end_time = item.requested_end_time,
@@ -1214,7 +1213,7 @@ impl ResearchBacktestingService {
 
             if started > 0 || skipped_existing > 0 {
                 info!(
-                    symbol = %item.symbol_code,
+                    pair_code = %item.pair_code,
                     timeframe_code = %item.timeframe_code,
                     requested_start_time = item.requested_start_time,
                     requested_end_time = item.requested_end_time,
@@ -1300,7 +1299,7 @@ impl ResearchBacktestingService {
                 control_plane_job_id,
                 analysis_setting_id: resolved.analysis.id.clone(),
                 risk_profile_name: resolved.analysis.risk_profile_name.clone(),
-                symbol: resolved.analysis.symbol.clone(),
+                pair_code: resolved.analysis.pair_code.clone(),
                 timeframe_code: resolved.analysis.timeframe_code.clone(),
                 strategy_name: resolved.analysis.strategy_name.clone(),
                 batch_id: request.batch_id.clone(),
@@ -1323,7 +1322,7 @@ impl ResearchBacktestingService {
         let (cached_trades, data_retrieval_duration_ms) = match trade_cache {
             Some(existing)
                 if existing.contains_window(
-                    &resolved.analysis.symbol,
+                    &resolved.analysis.pair_code,
                     resolved.replay_trade_start_time,
                     resolved.replay_trade_end_time,
                 ) =>
@@ -1337,7 +1336,7 @@ impl ResearchBacktestingService {
                 let retrieval_started_at = Instant::now();
                 let rows = fetch_trade_window_cache(
                     &self.inner.historical_store,
-                    &resolved.analysis.symbol,
+                    &resolved.analysis.pair_code,
                     resolved.replay_trade_start_time,
                     resolved.replay_trade_end_time,
                     self.inner.config.backtest_trade_replay_page_rows,
@@ -1347,7 +1346,7 @@ impl ResearchBacktestingService {
                 let data_retrieval_duration_ms = retrieval_started_at.elapsed().as_millis() as i64;
                 let rows = Arc::new(rows);
                 *trade_cache = Some(TradeWindowCache {
-                    pair_code: resolved.analysis.symbol.clone(),
+                    pair_code: resolved.analysis.pair_code.clone(),
                     start_time: resolved.replay_trade_start_time,
                     end_time: resolved.replay_trade_end_time,
                     data_retrieval_duration_ms,
@@ -1431,8 +1430,8 @@ impl ResearchBacktestingService {
             .into_iter()
             .find(|record| {
                 record.id == request.analysis_setting_id
-                    && match request.symbol_code.as_ref() {
-                        Some(symbol_code) => record.symbol == *symbol_code,
+                    && match request.pair_code.as_ref() {
+                        Some(pair_code) => record.pair_code == *pair_code,
                         None => true,
                     }
                     && match request.timeframe_code.as_ref() {
@@ -1490,7 +1489,7 @@ impl ResearchBacktestingService {
                     bail!(
                         "requested replay needs {} klines for {} {}, which exceeds BACKTEST_MAX_KLINES={}",
                         expected_candles,
-                        analysis.symbol,
+                        analysis.pair_code,
                         requirement.timeframe_code,
                         self.inner.config.max_backtest_klines
                     );
@@ -1507,7 +1506,7 @@ impl ResearchBacktestingService {
         for (timeframe_code, expected_candles, period_ms) in expected_candles_by_timeframe {
             if let Some(blocker) = kline_coverage_blocker_from_store(
                 &self.inner.historical_store,
-                &analysis.symbol,
+                &analysis.pair_code,
                 &timeframe_code,
                 time_window.effective_warmup_start_time,
                 time_window.requested_end_time,
@@ -1516,7 +1515,7 @@ impl ResearchBacktestingService {
             .await?
             {
                 warn!(
-                    symbol = %analysis.symbol,
+                    pair_code = %analysis.pair_code,
                     timeframe_code = %timeframe_code,
                     requested_start_time = time_window.requested_start_time,
                     requested_end_time = time_window.requested_end_time,
@@ -1527,7 +1526,7 @@ impl ResearchBacktestingService {
 
                 bail!(
                     "insufficient historical klines in ClickHouse for {} {} within {}..{}; backtesting requires exact market_data_klines coverage ({})",
-                    analysis.symbol,
+                    analysis.pair_code,
                     timeframe_code,
                     time_window.effective_warmup_start_time,
                     time_window.requested_end_time,
@@ -1539,7 +1538,7 @@ impl ResearchBacktestingService {
                 .inner
                 .historical_store
                 .replay_klines(
-                    &analysis.symbol,
+                    &analysis.pair_code,
                     &timeframe_code,
                     Some(time_window.effective_warmup_start_time),
                     Some(time_window.requested_end_time),
@@ -1567,7 +1566,7 @@ impl ResearchBacktestingService {
         if replay_rows.is_empty() {
             bail!(
                 "no historical klines were found in ClickHouse for {} {} within {}..{}",
-                analysis.symbol,
+                analysis.pair_code,
                 analysis.timeframe_code,
                 time_window.requested_start_time,
                 time_window.requested_end_time
@@ -1581,7 +1580,7 @@ impl ResearchBacktestingService {
             &self.inner.control_plane_client,
             &self.inner.config.binance_reference_base_url,
             &self.inner.historical_store,
-            &analysis.symbol,
+            &analysis.pair_code,
             time_window.requested_start_time,
             time_window.requested_end_time,
             tolerance,
@@ -1590,7 +1589,7 @@ impl ResearchBacktestingService {
         .unwrap_or_else(|error| {
             warn!(
                 error = %error,
-                symbol = %analysis.symbol,
+                pair_code = %analysis.pair_code,
                 requested_start_time = time_window.requested_start_time,
                 requested_end_time = time_window.requested_end_time,
                 "failed to validate trade coverage for backtest window"
@@ -1600,7 +1599,7 @@ impl ResearchBacktestingService {
 
         if let Some(blocker) = trade_coverage_blocker {
             warn!(
-                symbol = %analysis.symbol,
+                pair_code = %analysis.pair_code,
                 timeframe_code = %analysis.timeframe_code,
                 requested_start_time = time_window.requested_start_time,
                 requested_end_time = time_window.requested_end_time,
@@ -1611,7 +1610,7 @@ impl ResearchBacktestingService {
 
             bail!(
                 "insufficient historical aggregate trades in ClickHouse for {} within {}..{}; fill-aware backtesting requires full market_data_trades coverage ({})",
-                analysis.symbol,
+                analysis.pair_code,
                 time_window.requested_start_time,
                 time_window.requested_end_time,
                 blocker
@@ -1747,8 +1746,7 @@ fn apply_risk_profile(
 
 fn map_historical_kline_row(row: HistoricalKlineRecord) -> PersistedKlineRecord {
     PersistedKlineRecord {
-        pair_code: row.symbol.clone(),
-        symbol: row.symbol,
+        pair_code: row.pair_code,
         timeframe_code: row.timeframe_code,
         period_ms: row.period_ms,
         open_time: row.open_time,
@@ -1778,7 +1776,7 @@ fn persisted_backtest_run(response: &BacktestResponse) -> Result<StoredBacktestR
         data_retrieval_duration_ms: response.data_retrieval_duration_ms,
         analysis_setting_id: response.analysis_setting_id.clone(),
         risk_profile_name: response.analysis.risk_profile_name.clone(),
-        pair_code: response.analysis.symbol.clone(),
+        pair_code: response.analysis.pair_code.clone(),
         timeframe_code: response.analysis.timeframe_code.clone(),
         strategy_name: response.analysis.strategy_name.clone(),
         // This app only supports backtesting windows.
@@ -1839,7 +1837,7 @@ fn map_persisted_backtest_summary(
         data_retrieval_duration_ms: row.data_retrieval_duration_ms,
         analysis_setting_id: row.analysis_setting_id,
         risk_profile_name: row.risk_profile_name,
-        symbol: row.pair_code,
+        pair_code: row.pair_code,
         timeframe_code: row.timeframe_code,
         strategy_name: row.strategy_name,
         requested_start_time: row.requested_start_time,
@@ -1886,7 +1884,7 @@ fn map_last_backtest_status(row: StoredBacktestRunSummary) -> Result<LastBacktes
         data_retrieval_duration_ms: row.data_retrieval_duration_ms,
         analysis_setting_id: row.analysis_setting_id,
         risk_profile_name: row.risk_profile_name,
-        symbol: row.pair_code,
+        pair_code: row.pair_code,
         timeframe_code: row.timeframe_code,
         replay_kline_count: row.replay_kline_count as usize,
         signal_count: row.signal_count as usize,
@@ -1904,19 +1902,19 @@ fn millis_to_rfc3339(value: i64) -> Result<String> {
 
 fn readiness_run_key(
     analysis_setting_id: &str,
-    symbol: &str,
+    pair_code: &str,
     timeframe_code: &str,
     risk_profile_name: &str,
     requested_start_time: i64,
     requested_end_time: i64,
 ) -> String {
     format!(
-        "{analysis_setting_id}:{symbol}:{timeframe_code}:{risk_profile_name}:{requested_start_time}:{requested_end_time}"
+        "{analysis_setting_id}:{pair_code}:{timeframe_code}:{risk_profile_name}:{requested_start_time}:{requested_end_time}"
     )
 }
 
-fn readiness_batch_key(symbol: &str, timeframe_code: &str, strategy_name: &str) -> String {
-    format!("{symbol}:{timeframe_code}:{strategy_name}")
+fn readiness_batch_key(pair_code: &str, timeframe_code: &str, strategy_name: &str) -> String {
+    format!("{pair_code}:{timeframe_code}:{strategy_name}")
 }
 
 fn resolve_time_window(
@@ -2279,13 +2277,13 @@ async fn fetch_first_agg_trade_in_window(
     start_time: i64,
     end_time: i64,
 ) -> Result<Option<BinanceAggTradeBoundaryRow>> {
-    let symbol = to_binance_symbol(pair_code)?;
+    let binance_symbol = to_binance_symbol(pair_code)?;
     let rows = fetch_binance_json::<Vec<BinanceAggTradeBoundaryRow>>(
         client,
         binance_reference_base_url,
         "/api/v3/aggTrades",
         &[
-            ("symbol", symbol),
+            ("symbol", binance_symbol),
             ("startTime", start_time.to_string()),
             ("endTime", end_time.saturating_sub(1).to_string()),
             ("limit", "1".to_string()),
@@ -2302,13 +2300,13 @@ async fn fetch_last_agg_trade_in_window(
     start_time: i64,
     end_time: i64,
 ) -> Result<Option<BinanceAggTradeBoundaryRow>> {
-    let symbol = to_binance_symbol(pair_code)?;
+    let binance_symbol = to_binance_symbol(pair_code)?;
     let rows = fetch_binance_json::<Vec<BinanceAggTradeBoundaryRow>>(
         client,
         binance_reference_base_url,
         "/api/v3/aggTrades",
         &[
-            ("symbol", symbol.clone()),
+            ("symbol", binance_symbol.clone()),
             ("startTime", start_time.to_string()),
             ("endTime", end_time.saturating_sub(1).to_string()),
             ("limit", "1000".to_string()),
@@ -2331,7 +2329,7 @@ async fn fetch_last_agg_trade_in_window(
             binance_reference_base_url,
             "/api/v3/aggTrades",
             &[
-                ("symbol", symbol.clone()),
+                ("symbol", binance_symbol.clone()),
                 ("fromId", next_from_id.to_string()),
                 ("limit", "1000".to_string()),
             ],
@@ -2383,11 +2381,11 @@ async fn fetch_binance_json<T: serde::de::DeserializeOwned>(
 }
 
 fn to_binance_symbol(pair_code: &str) -> Result<String> {
-    let symbol = pair_code.trim().to_uppercase();
-    if symbol.is_empty() {
+    let binance_symbol = pair_code.trim().to_uppercase();
+    if binance_symbol.is_empty() {
         bail!("pair_code must not be empty");
     }
-    Ok(symbol)
+    Ok(binance_symbol)
 }
 
 async fn fetch_trade_window_cache(
@@ -2480,14 +2478,14 @@ fn replay_trades_page_from_cache(
     trades[cursor_idx..take_until].to_vec()
 }
 
-fn filter_symbol_complete_ready_items(
+fn filter_pair_complete_ready_items(
     rows: Vec<ControlPlaneDataReadinessRecord>,
 ) -> Vec<DataReadinessSnapshotItem> {
     rows.into_iter()
         .filter(|row| row.status == "ready")
         .map(|row| DataReadinessSnapshotItem {
             status: row.status,
-            symbol_code: row.symbol_code,
+            pair_code: row.pair_code,
             timeframe_code: row.timeframe_code,
             strategy_name: row.strategy_name,
             analysis_setting_ids: row.analysis_setting_ids,
@@ -2539,7 +2537,7 @@ async fn execute_backtest(
     }
 
     let page_rows = context.trade_page_rows.clamp(1, 50_000_000) as i64;
-    let pair_code = input.analysis.symbol.clone();
+    let pair_code = input.analysis.pair_code.clone();
     let timeframe_code = input.analysis.timeframe_code.clone();
     let start_time = input.replay_trade_start_time;
     let end_time = input.replay_trade_end_time;
@@ -2648,7 +2646,7 @@ async fn execute_backtest(
                             control_plane_job_id: context.control_plane_job_id.clone(),
                             analysis_setting_id: context.analysis_setting_id.clone(),
                             risk_profile_name: context.risk_profile_name.clone(),
-                            symbol: context.symbol.clone(),
+                            pair_code: context.pair_code.clone(),
                             timeframe_code: context.timeframe_code.clone(),
                             strategy_name: context.strategy_name.clone(),
                             stage: "retrieving-data".to_string(),
@@ -2706,7 +2704,7 @@ async fn execute_backtest(
                 control_plane_job_id: progress_context.control_plane_job_id.clone(),
                 analysis_setting_id: progress_context.analysis_setting_id.clone(),
                 risk_profile_name: progress_context.risk_profile_name.clone(),
-                symbol: progress_context.symbol.clone(),
+                pair_code: progress_context.pair_code.clone(),
                 timeframe_code: progress_context.timeframe_code.clone(),
                 strategy_name: progress_context.strategy_name.clone(),
                 stage: "simulating".to_string(),
@@ -2796,11 +2794,11 @@ fn synthetic_live_kline(
         ingestion_mode: "live".to_string(),
         stream_name: format!(
             "{}@kline_{}",
-            row.symbol.to_ascii_lowercase(),
+            row.pair_code.to_ascii_lowercase(),
             row.timeframe_code
         ),
-        pair_code: row.symbol.clone(),
-        symbol: row.symbol.clone(),
+        pair_code: row.pair_code.clone(),
+        binance_symbol: row.pair_code.clone(),
         timeframe_code: row.timeframe_code.clone(),
         period_ms: row.period_ms,
         open_time: row.open_time,
@@ -2991,7 +2989,7 @@ mod tests {
     fn analysis_record() -> ResolvedAnalysisSettingsRecord {
         ResolvedAnalysisSettingsRecord {
             id: "analysis-1".to_string(),
-            symbol: "BTCUSDT".to_string(),
+            pair_code: "BTCUSDT".to_string(),
             timeframe_code: "1m".to_string(),
             strategy_name: "emaCross".to_string(),
             risk_profile_name: "default".to_string(),
@@ -3002,7 +3000,7 @@ mod tests {
             enabled: true,
             created_at: "2026-01-01T00:00:00Z".to_string(),
             updated_at: "2026-01-01T00:00:00Z".to_string(),
-            symbol_entity: PairRecord {
+            pair: PairRecord {
                 id: "pair-1".to_string(),
                 code: "BTCUSDT".to_string(),
                 active: true,
@@ -3051,7 +3049,7 @@ mod tests {
 
     fn trade(aggregate_trade_id: i64, trade_time: i64, price: f64) -> PersistedTradeRecord {
         PersistedTradeRecord {
-            symbol: "BTCUSDT".to_string(),
+            pair_code: "BTCUSDT".to_string(),
             aggregate_trade_id,
             price: price.to_string(),
             trade_time,
@@ -3061,7 +3059,6 @@ mod tests {
     fn kline(timeframe_code: &str, period_ms: i64, open_time: i64) -> PersistedKlineRecord {
         PersistedKlineRecord {
             pair_code: "BTCUSDT".to_string(),
-            symbol: "BTCUSDT".to_string(),
             timeframe_code: timeframe_code.to_string(),
             period_ms,
             open_time,
@@ -3212,7 +3209,7 @@ mod tests {
             batch_total_count: None,
             batch_completed_count: None,
             analysis_setting_id: analysis.id.clone(),
-            symbol_code: Some(analysis.symbol.clone()),
+            pair_code: Some(analysis.pair_code.clone()),
             timeframe_code: Some(analysis.timeframe_code.clone()),
             risk_profile_name: None,
             start_time: Some(1_000_000),

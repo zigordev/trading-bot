@@ -20,7 +20,7 @@ export type OpsWebsocketEvent =
       'config.resource.updated',
       {
         resource:
-          | 'symbols'
+          | 'pairs'
           | 'timeframes'
           | 'strategies'
           | 'risk-profiles'
@@ -33,14 +33,14 @@ export type OpsWebsocketEvent =
   | BaseOpsEvent<
       'ops.backtests.updated',
       {
-        symbols: string[];
+        pairs: string[];
         timeframeCodes: string[];
       }
     >
   | BaseOpsEvent<
       'ops.data-readiness.updated',
       {
-        symbols: string[];
+        pairs: string[];
         timeframeCodes: string[];
         strategyNames: string[];
       }
@@ -48,7 +48,7 @@ export type OpsWebsocketEvent =
   | BaseOpsEvent<
       'ops.execution.updated',
       {
-        symbols: string[];
+        pairs: string[];
         timeframeCodes: string[];
       }
     >;

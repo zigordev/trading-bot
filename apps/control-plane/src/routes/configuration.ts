@@ -7,8 +7,8 @@ import {
   type ConfigStores,
   executionSettingsBodySchema,
   executionSettingsRecordSchema,
-  symbolBodySchema,
-  symbolRecordSchema,
+  pairBodySchema,
+  pairRecordSchema,
   riskProfileBodySchema,
   riskProfileRecordSchema,
   strategyBodySchema,
@@ -221,8 +221,8 @@ export const registerConfigurationRoutes = (
 ): void => {
   app.get('/v1/reference/binance-symbols', {
     schema: {
-      tags: ['symbols'],
-      summary: 'Search Binance spot symbols for symbol creation',
+      tags: ['pairs'],
+      summary: 'Search Binance spot symbols for pair creation',
       querystring: {
         type: 'object',
         properties: {
@@ -315,12 +315,12 @@ export const registerConfigurationRoutes = (
   });
 
   registerCrudRoutes(app, {
-    path: '/v1/symbols',
-    tag: 'symbols',
-    entityName: 'symbol',
-    bodySchema: symbolBodySchema,
-    recordSchema: symbolRecordSchema,
-    store: stores.symbols,
+    path: '/v1/pairs',
+    tag: 'pairs',
+    entityName: 'pair',
+    bodySchema: pairBodySchema,
+    recordSchema: pairRecordSchema,
+    store: stores.pairs,
   });
 
   registerCrudRoutes(app, {

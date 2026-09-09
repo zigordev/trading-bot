@@ -85,7 +85,7 @@ test('GET /v1/runtime-config/analysis-settings returns the injected projection',
     {
       id: 'analysis-1',
       name: 'ema-cross-20',
-      symbolCode: 'BTCUSDT',
+      pairCode: 'BTCUSDT',
       timeframeCode: '1m',
       strategyName: 'ema',
       riskProfileName: 'default-risk',
@@ -93,8 +93,8 @@ test('GET /v1/runtime-config/analysis-settings returns the injected projection',
       enabled: true,
       createdAt: '2026-03-12T16:00:00.000Z',
       updatedAt: '2026-03-12T16:00:00.000Z',
-      symbol: {
-        id: 'symbol-1',
+      pair: {
+        id: 'pair-1',
         code: 'BTCUSDT',
         active: true,
         baseAsset: 'BTC',
@@ -161,7 +161,7 @@ test('GET /v1/ops/execution endpoints return injected execution projections', as
       executionSettingsName: 'paper-default',
       analysisSettingId: 'analysis-1',
       sourceBacktestId: 'backtest-1',
-      symbolCode: 'BTCUSDT',
+      pairCode: 'BTCUSDT',
       timeframeCode: '1m',
       strategyName: 'ema-cross',
       riskProfileName: 'default-risk',
@@ -180,7 +180,7 @@ test('GET /v1/ops/execution endpoints return injected execution projections', as
         executionSettingsName: 'paper-default',
         analysisSettingId: 'analysis-1',
         sourceBacktestId: 'backtest-1',
-        symbolCode: 'BTCUSDT',
+        pairCode: 'BTCUSDT',
         timeframeCode: '1m',
         strategyName: 'ema-cross',
         riskProfileName: 'default-risk',
@@ -204,7 +204,7 @@ test('GET /v1/ops/execution endpoints return injected execution projections', as
           sourceBacktestId: 'backtest-1',
           analysisSettingId: 'analysis-1',
           executionSettingsName: 'paper-default',
-          symbolCode: 'BTCUSDT',
+          pairCode: 'BTCUSDT',
           timeframeCode: '1m',
           strategyName: 'ema-cross',
           riskProfileName: 'default-risk',
@@ -246,7 +246,7 @@ test('GET /v1/ops/execution endpoints return injected execution projections', as
   });
 
   assert.equal(summaryResponse.statusCode, 200);
-  assert.equal(summaryResponse.json().activePromotion.symbolCode, 'BTCUSDT');
+  assert.equal(summaryResponse.json().activePromotion.pairCode, 'BTCUSDT');
   assert.equal(summaryResponse.json().recentTrades.length, 1);
 
   assert.equal(tradesResponse.statusCode, 200);

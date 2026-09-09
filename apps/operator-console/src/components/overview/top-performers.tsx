@@ -7,8 +7,9 @@ import { formatPercent } from '@/lib/format';
 import { SectionCard } from '@/components/layout/section-card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ScoreCell } from '@/components/shared/score-cell';
-import { SymbolAvatar } from '@/components/shared/symbol-avatar';
-import { splitSymbol } from '@/lib/backtesting/derive-rows';
+import { PairAvatar } from '@/components/shared/pair-avatar';
+import { StrategyName } from '@/components/shared/strategy-name';
+import { splitPairCode } from '@/lib/backtesting/derive-rows';
 import { usePreferences } from '@/components/providers/preferences-provider';
 
 export function TopPerformers() {
@@ -41,19 +42,19 @@ export function TopPerformers() {
       ) : (
         <ul className="divide-y divide-[var(--color-border)]">
           {top.map((run) => {
-            const { base, quote } = splitSymbol(run.symbol);
+            const { base, quote } = splitPairCode(run.pairCode);
             return (
               <li
-                key={`${run.symbol}-${run.timeframeCode}-${run.strategyName}`}
+                key={`${run.pairCode}-${run.timeframeCode}-${run.strategyName}`}
                 className="flex items-center gap-3 px-4 py-2.5"
               >
-                <SymbolAvatar baseAsset={base} quoteAsset={quote} size={26} />
+                <PairAvatar baseAsset={base} quoteAsset={quote} size={26} />
                 <div className="flex min-w-0 flex-1 flex-col">
                   <span className="truncate text-[13px] font-medium text-[var(--color-fg)]">
-                    {run.symbol}
+                    {run.pairCode}
                   </span>
                   <span className="text-[11px] text-[var(--color-fg-subtle)]">
-                    {run.timeframeCode} · {run.strategyName}
+                    {run.timeframeCode} · <StrategyName name={run.strategyName} />
                   </span>
                 </div>
                 <span className="num text-right text-[12px] text-[var(--color-fg-muted)]">
