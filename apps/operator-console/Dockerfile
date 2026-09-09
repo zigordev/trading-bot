@@ -17,6 +17,7 @@ ARG NEXT_PUBLIC_CONTROL_PLANE_BASE_URL
 ENV NEXT_PUBLIC_CONTROL_PLANE_BASE_URL=$NEXT_PUBLIC_CONTROL_PLANE_BASE_URL
 ENV NEXT_TELEMETRY_DISABLED=1
 COPY --from=deps /repo/node_modules ./node_modules
+COPY --from=deps /repo/apps/operator-console/node_modules ./apps/operator-console/node_modules
 COPY package.json package-lock.json* ./
 COPY apps/operator-console ./apps/operator-console
 COPY apps/control-plane/package.json apps/control-plane/package.json
