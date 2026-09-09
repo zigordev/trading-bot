@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.7](https://github.com/zigordev/trading-bot/compare/v0.1.6...v0.1.7) (2026-09-09)
+
+
+### Features
+
+* **control-plane:** send RFC 9457 problem details ([#94](https://github.com/zigordev/trading-bot/issues/94)) ([0788a30](https://github.com/zigordev/trading-bot/commit/0788a30b806aed63ab94876c7c71182563846397))
+
 ## [0.1.6](https://github.com/zigordev/trading-bot/compare/v0.1.5...v0.1.6) (2026-09-09)
 
 
