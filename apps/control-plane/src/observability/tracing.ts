@@ -1,6 +1,3 @@
-// DO NOT EDIT. Vendored from platform-ops/packages/observability.
-// Change it there and run: bash platform-ops/scripts/sync-observability.sh
-
 import { getNodeAutoInstrumentations } from '@opentelemetry/auto-instrumentations-node';
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http';
 import { resourceFromAttributes } from '@opentelemetry/resources';

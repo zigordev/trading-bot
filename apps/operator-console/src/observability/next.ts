@@ -1,6 +1,3 @@
-// DO NOT EDIT. Vendored from platform-ops/packages/observability.
-// Change it there and run: bash platform-ops/scripts/sync-observability.sh
-
 import { clientKeyFrom, ingestRumBatch, MAX_BODY_BYTES } from './rum-ingest';
 import { registry } from './metrics.registry';
 import { allowCustomInteractions } from './rum-metrics';
