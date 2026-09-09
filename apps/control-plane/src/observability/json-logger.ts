@@ -1,6 +1,3 @@
-// DO NOT EDIT. Vendored from platform-ops/packages/observability.
-// Change it there and run: bash platform-ops/scripts/sync-observability.sh
-
 import { trace } from '@opentelemetry/api';
 
 export type LogLevel = 'debug' | 'error' | 'info' | 'warn';
