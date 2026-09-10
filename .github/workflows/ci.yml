@@ -59,6 +59,14 @@ jobs:
       - name: Format
         run: cargo fmt --all --check
 
+      # release-please bumps the workspace version in Cargo.toml and, through
+      # its Cargo.lock extra-files entries, the five crates' lock versions. If a
+      # future release-please stops matching those entries it logs a warning and
+      # carries on, so the lock would drift again silently. --locked refuses a
+      # lock that disagrees with the manifests, which turns that into a failure.
+      - name: Cargo.lock matches Cargo.toml
+        run: cargo metadata --locked --format-version 1 > /dev/null
+
       - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
 
