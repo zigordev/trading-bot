@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.8](https://github.com/zigordev/trading-bot/compare/v0.1.7...v0.1.8) (2026-09-10)
+
+
+### Bug Fixes
+
+* **release:** keep the workspace crate versions in Cargo.lock in step ([#98](https://github.com/zigordev/trading-bot/issues/98)) ([ce5718d](https://github.com/zigordev/trading-bot/commit/ce5718db35401bc9ddbf101e019d4d594b979a11))
+
 ## [0.1.7](https://github.com/zigordev/trading-bot/compare/v0.1.6...v0.1.7) (2026-09-09)
 
 
