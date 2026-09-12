@@ -199,25 +199,22 @@ jobs:
             target: prod
           - image: operator-console
             dockerfile: apps/operator-console/Dockerfile
-            target: local
+            target: prod
           - image: market-data
             dockerfile: crates/market-data/Dockerfile
-            target: local
+            target: prod
           - image: execution
             dockerfile: crates/execution/Dockerfile
-            target: local
+            target: prod
           - image: research-backtesting
             dockerfile: crates/research-backtesting/Dockerfile
-            target: local
+            target: prod
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
       # One runner per image: the three Rust images compile the whole workspace
       # from source, so building them in sequence would cost more wall clock
       # than the rest of CI put together.
-      #
-      # Only the control-plane names its runtime stage `prod`, which is the
-      # estate convention; the other four call it `local`.
       - name: Build image
         run: |
           docker build \
