@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.11](https://github.com/zigordev/trading-bot/compare/v0.1.10...v0.1.11) (2026-09-12)
+
+
+### Bug Fixes
+
+* **docker:** upgrade packages in the runtime stage of the rust images ([#110](https://github.com/zigordev/trading-bot/issues/110)) ([e76cc3a](https://github.com/zigordev/trading-bot/commit/e76cc3a09430da80e00163a42aa4c40b69ab637c))
+
 ## [0.1.10](https://github.com/zigordev/trading-bot/compare/v0.1.9...v0.1.10) (2026-09-12)
 
 
