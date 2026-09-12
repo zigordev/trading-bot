@@ -2263,7 +2263,7 @@ dependencies = [
 
 [[package]]
 name = "trading-bot-execution"
-version = "0.1.10"
+version = "0.1.11"
 dependencies = [
  "anyhow",
  "axum",
@@ -2289,7 +2289,7 @@ dependencies = [
 
 [[package]]
 name = "trading-bot-market-data"
-version = "0.1.10"
+version = "0.1.11"
 dependencies = [
  "anyhow",
  "assert-json-diff",
@@ -2315,7 +2315,7 @@ dependencies = [
 
 [[package]]
 name = "trading-bot-observability"
-version = "0.1.10"
+version = "0.1.11"
 dependencies = [
  "anyhow",
  "axum",
@@ -2333,7 +2333,7 @@ dependencies = [
 
 [[package]]
 name = "trading-bot-research-backtesting"
-version = "0.1.10"
+version = "0.1.11"
 dependencies = [
  "anyhow",
  "axum",
@@ -2354,7 +2354,7 @@ dependencies = [
 
 [[package]]
 name = "trading-bot-strategy-engine"
-version = "0.1.10"
+version = "0.1.11"
 dependencies = [
  "anyhow",
  "serde",
