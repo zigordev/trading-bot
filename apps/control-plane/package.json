@@ -25,7 +25,7 @@
     "@opentelemetry/resources": "^2.10.0",
     "@opentelemetry/sdk-node": "^0.222.0",
     "@opentelemetry/semantic-conventions": "^1.43.0",
-    "fastify": "^5.12.1",
+    "fastify": "^5.12.3",
     "kafkajs": "^2.2.4",
     "pg": "^8.14.1",
     "prom-client": "^15.1.3"
