@@ -12,9 +12,9 @@ This document explains the current state of `trading-bot` as it exists today:
 
 Use this as the single current-state overview. For deeper slice-by-slice details, see:
 
-- `docs/architecture-overview.md`
-- `docs/market-data-architecture.md`
-- `docs/research-backtesting-architecture.md`
+- `docs/architecture/architecture-overview.md`
+- `docs/architecture/market-data-architecture.md`
+- `docs/architecture/research-backtesting-architecture.md`
 - `docs/local-first-start.md`
 
 ## What Exists Today
@@ -676,8 +676,8 @@ Important note:
 
 If you want to understand the system from high level to detail:
 
-1. `docs/current-platform-guide.md`
-2. `docs/architecture-overview.md`
+1. `docs/architecture/current-platform-guide.md`
+2. `docs/architecture/architecture-overview.md`
 3. `docs/local-first-start.md`
-4. `docs/market-data-architecture.md`
-5. `docs/research-backtesting-architecture.md`
+4. `docs/architecture/market-data-architecture.md`
+5. `docs/architecture/research-backtesting-architecture.md`

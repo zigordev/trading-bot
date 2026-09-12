@@ -182,7 +182,7 @@ configuration authoring out of the control-plane. Additional projections are sti
 config fanout is already implemented and multiple runtime consumers now use this projection
 directly.
 
-Detailed design notes for this slice live in `docs/analysis-settings-architecture.md`.
+Detailed design notes for this slice live in `docs/architecture/analysis-settings-architecture.md`.
 
 ## Market-data slice
 
@@ -202,7 +202,7 @@ not execute strategy logic. It is the exchange-connectivity edge that converts r
 configuration into an hourly historical retrieval flow plus a dedicated historical store. The implemented
 `research/backtesting` slice now consumes the same ClickHouse historian for offline replay.
 
-Detailed design notes for this slice live in `docs/market-data-architecture.md`.
+Detailed design notes for this slice live in `docs/architecture/market-data-architecture.md`.
 
 ## Research/backtesting slice
 
@@ -235,7 +235,7 @@ That distinction matters for historian retention:
 - if you later want full order-book-aware or partial-fill simulation, you will also need
   lower-level market data such as order-book state for the same period
 
-Detailed design notes for this slice live in `docs/research-backtesting-architecture.md`.
+Detailed design notes for this slice live in `docs/architecture/research-backtesting-architecture.md`.
 
 ## General-settings decomposition
 
@@ -264,7 +264,7 @@ Instead:
   - this absorbs the old `timeframePeriods` lookup into the resource that actually owns the
     timeframe identity
 
-Detailed design notes for this decomposition live in `docs/general-settings-architecture.md`
-and `docs/research-settings-architecture.md`.
+Detailed design notes for this decomposition live in `docs/architecture/general-settings-architecture.md`
+and `docs/architecture/research-settings-architecture.md`.
 
-Detailed design notes for config fanout live in `docs/config-change-events-architecture.md`.
+Detailed design notes for config fanout live in `docs/architecture/config-change-events-architecture.md`.

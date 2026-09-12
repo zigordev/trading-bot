@@ -13,9 +13,9 @@ It is intentionally ordered around the current priority:
 
 Use this together with:
 
-- `docs/current-platform-guide.md`
-- `docs/market-data-architecture.md`
-- `docs/research-backtesting-architecture.md`
+- `docs/architecture/current-platform-guide.md`
+- `docs/architecture/market-data-architecture.md`
+- `docs/architecture/research-backtesting-architecture.md`
 - `docs/local-first-start.md`
 
 ## What Is Already Good Enough To Test
