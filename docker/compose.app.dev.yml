@@ -18,7 +18,7 @@ x-rust-dev: &rust-dev
         path: ../Cargo.toml
 
 services:
-  trading_bot_api:
+  trading_bot_control_plane:
     build:
       target: dev
     environment:
@@ -51,7 +51,7 @@ services:
     <<: *rust-dev
     command: ['cargo', 'watch', '-x', 'run -p trading-bot-execution']
 
-  trading_bot_operator-console:
+  trading_bot_operator_console:
     build:
       target: dev
     environment:
