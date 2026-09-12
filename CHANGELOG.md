@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.9](https://github.com/zigordev/trading-bot/compare/v0.1.8...v0.1.9) (2026-09-12)
+
+
+### Bug Fixes
+
+* **docker:** build the control-plane and console images on node 24 ([#100](https://github.com/zigordev/trading-bot/issues/100)) ([e3199ac](https://github.com/zigordev/trading-bot/commit/e3199acf7a1253f5c42aa8b4c3f6c0736ebfe59a))
+
 ## [0.1.8](https://github.com/zigordev/trading-bot/compare/v0.1.7...v0.1.8) (2026-09-10)
 
 
