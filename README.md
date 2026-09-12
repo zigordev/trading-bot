@@ -44,16 +44,16 @@ No live order execution has been added yet.
 
 ## Docs
 
-- `docs/current-platform-guide.md`
-- `docs/remaining-implementation-work.md`
-- `docs/architecture-overview.md`
-- `docs/analysis-settings-architecture.md`
-- `docs/config-change-events-architecture.md`
-- `docs/general-settings-architecture.md`
-- `docs/market-data-architecture.md`
-- `docs/backtest-replay-precision-guide.md`
-- `docs/research-backtesting-architecture.md`
-- `docs/research-settings-architecture.md`
+- `docs/architecture/current-platform-guide.md`
+- `docs/architecture/remaining-implementation-work.md`
+- `docs/architecture/architecture-overview.md`
+- `docs/architecture/analysis-settings-architecture.md`
+- `docs/architecture/config-change-events-architecture.md`
+- `docs/architecture/general-settings-architecture.md`
+- `docs/architecture/market-data-architecture.md`
+- `docs/architecture/backtest-replay-precision-guide.md`
+- `docs/architecture/research-backtesting-architecture.md`
+- `docs/architecture/research-settings-architecture.md`
 - `docs/local-first-start.md`
 
 ## Current local service surface

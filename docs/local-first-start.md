@@ -547,4 +547,4 @@ docker compose --env-file docker/.env.app.local -f docker/compose.app.local.yml 
 
 After the local infrastructure scaffold is ready, continue with:
 
-- `docs/architecture-overview.md`
+- `docs/architecture/architecture-overview.md`
