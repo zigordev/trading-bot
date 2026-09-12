@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { spawn } from "node:child_process";
+import { spawn } from 'node:child_process';
 
 function die(message) {
   console.error(message);
@@ -20,22 +20,22 @@ async function fetchOpenBaoSecrets() {
   const retries = 45;
   const retryDelayMs = 2000;
 
-  if (!addr) die("OPENBAO_ADDR is required");
-  if (!token) die("OPENBAO_TOKEN is required");
-  if (!mount) die("OPENBAO_KV_MOUNT is required");
-  if (!path) die("OPENBAO_SECRET_PATH is required");
+  if (!addr) die('OPENBAO_ADDR is required');
+  if (!token) die('OPENBAO_TOKEN is required');
+  if (!mount) die('OPENBAO_KV_MOUNT is required');
+  if (!path) die('OPENBAO_SECRET_PATH is required');
 
-  const mountSegment = mount.replace(/^\/+|\/+$/g, "");
-  const pathSegment = path.replace(/^\/+|\/+$/g, "");
-  const secretUrl = `${addr.replace(/\/+$/g, "")}/v1/${mountSegment}/data/${pathSegment}`;
+  const mountSegment = mount.replace(/^\/+|\/+$/g, '');
+  const pathSegment = path.replace(/^\/+|\/+$/g, '');
+  const secretUrl = `${addr.replace(/\/+$/g, '')}/v1/${mountSegment}/data/${pathSegment}`;
 
-  let lastError = "unknown error";
+  let lastError = 'unknown error';
   for (let attempt = 1; attempt <= retries; attempt += 1) {
     try {
       const response = await fetch(secretUrl, {
-        method: "GET",
+        method: 'GET',
         headers: {
-          "X-Vault-Token": token,
+          'X-Vault-Token': token,
         },
       });
 
@@ -45,7 +45,7 @@ async function fetchOpenBaoSecrets() {
       } else {
         const payload = await response.json();
         const data = payload?.data?.data;
-        if (!data || typeof data !== "object" || Array.isArray(data)) {
+        if (!data || typeof data !== 'object' || Array.isArray(data)) {
           die(`OpenBao payload did not include kv-v2 data at ${mountSegment}/${pathSegment}`);
         }
         return data;
@@ -65,11 +65,11 @@ async function fetchOpenBaoSecrets() {
 function enforceRequiredKeys(secrets) {
   const requiredRaw = process.env.OPENBAO_REQUIRED_KEYS;
   if (requiredRaw === undefined) {
-    die("OPENBAO_REQUIRED_KEYS is required");
+    die('OPENBAO_REQUIRED_KEYS is required');
   }
 
   const required = requiredRaw
-    .split(",")
+    .split(',')
     .map((item) => item.trim())
     .filter((item) => item.length > 0);
 
@@ -81,15 +81,15 @@ function enforceRequiredKeys(secrets) {
   if (missing.length > 0) {
     die(
       `OpenBao secret path is missing required keys: ${missing.join(
-        ", ",
-      )} (path=${process.env.OPENBAO_SECRET_PATH})`,
+        ', '
+      )} (path=${process.env.OPENBAO_SECRET_PATH})`
     );
   }
 }
 
 function runCommandWithSecrets(argv, secrets) {
   if (argv.length === 0) {
-    die("No command provided to openbao-run");
+    die('No command provided to openbao-run');
   }
 
   const env = {
@@ -97,21 +97,17 @@ function runCommandWithSecrets(argv, secrets) {
   };
 
   for (const [key, value] of Object.entries(secrets)) {
-    if (
-      typeof value === "string" ||
-      typeof value === "number" ||
-      typeof value === "boolean"
-    ) {
+    if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
       env[key] = String(value);
     }
   }
 
   const child = spawn(argv[0], argv.slice(1), {
-    stdio: "inherit",
+    stdio: 'inherit',
     env,
   });
 
-  child.on("exit", (code, signal) => {
+  child.on('exit', (code, signal) => {
     if (signal) {
       process.kill(process.pid, signal);
       return;
@@ -121,9 +117,8 @@ function runCommandWithSecrets(argv, secrets) {
 }
 
 async function main() {
-  const separator = process.argv.indexOf("--");
-  const commandArgs =
-    separator >= 0 ? process.argv.slice(separator + 1) : process.argv.slice(2);
+  const separator = process.argv.indexOf('--');
+  const commandArgs = separator >= 0 ? process.argv.slice(separator + 1) : process.argv.slice(2);
   const secrets = await fetchOpenBaoSecrets();
   enforceRequiredKeys(secrets);
   runCommandWithSecrets(commandArgs, secrets);
