@@ -10,24 +10,40 @@
  * Only production dependencies are checked. A GPL build tool that never ships
  * imposes nothing on the artefact.
  *
- * Usage: node platform-ops/scripts/check-licences.mjs [workspace-root]
+ * Usage: node scripts/check-licences.mjs [workspace-root]
  */
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 // Permissive licences that impose no obligation beyond attribution.
 const ALLOWED = new Set([
-  '0BSD', 'Apache-2.0', 'BSD-2-Clause', 'BSD-3-Clause', 'BlueOak-1.0.0',
-  'CC0-1.0', 'CC-BY-3.0', 'CC-BY-4.0', 'ISC', 'MIT', 'MIT-0', 'MPL-2.0',
-  'Python-2.0', 'Unlicense', 'WTFPL', 'Zlib',
+  '0BSD',
+  'Apache-2.0',
+  'BSD-2-Clause',
+  'BSD-3-Clause',
+  'BlueOak-1.0.0',
+  'CC0-1.0',
+  'CC-BY-3.0',
+  'CC-BY-4.0',
+  'ISC',
+  'MIT',
+  'MIT-0',
+  'MPL-2.0',
+  'Python-2.0',
+  'Unlicense',
+  'WTFPL',
+  'Zlib',
 ]);
 
 // Named rather than pattern-matched, so adding one is a deliberate act with a
 // reviewer attached.
 const ALLOWED_PACKAGES = new Set([
   // Dual-licensed or non-SPDX strings that are permissive in practice.
-  'argparse', 'caniuse-lite', 'spdx-exceptions', 'spdx-license-ids',
+  'argparse',
+  'caniuse-lite',
+  'spdx-exceptions',
+  'spdx-license-ids',
 ]);
 
 /**
@@ -66,7 +82,7 @@ try {
       // `npm ls` exits non-zero on peer warnings while still printing valid
       // JSON, so the output matters more than the status.
       stdio: ['ignore', 'pipe', 'ignore'],
-    }),
+    })
   );
 } catch (error) {
   if (!error.stdout) throw error;
@@ -94,13 +110,34 @@ const seen = new Map();
  * what is actually installed. The `package.json` on disk is the artefact that
  * ships.
  */
+/** The workspace directories declared by this repository, `apps/*` expanded. */
+function workspaceDirs() {
+  const manifestPath = join(root, 'package.json');
+  if (!existsSync(manifestPath)) return [];
+  const declared = JSON.parse(readFileSync(manifestPath, 'utf8')).workspaces ?? [];
+  const patterns = Array.isArray(declared) ? declared : (declared.packages ?? []);
+  const dirs = [];
+  for (const pattern of patterns) {
+    if (!pattern.endsWith('/*')) {
+      dirs.push(pattern);
+      continue;
+    }
+    const parent = pattern.slice(0, -2);
+    if (!existsSync(join(root, parent))) continue;
+    for (const entry of readdirSync(join(root, parent), { withFileTypes: true })) {
+      if (entry.isDirectory()) dirs.push(`${parent}/${entry.name}`);
+    }
+  }
+  return dirs;
+}
+
+const WORKSPACE_DIRS = workspaceDirs();
+
 /** Where npm actually put a package: hoisted at the root, or under a workspace. */
 function resolveManifest(name) {
   const candidates = [
     join(root, 'node_modules', name, 'package.json'),
-    ...['apps/api', 'apps/ui', 'apps/control-plane', 'apps/operator-console'].map((w) =>
-      join(root, w, 'node_modules', name, 'package.json'),
-    ),
+    ...WORKSPACE_DIRS.map((w) => join(root, w, 'node_modules', name, 'package.json')),
   ];
   return candidates.find((c) => existsSync(c)) ?? null;
 }
