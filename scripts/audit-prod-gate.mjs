@@ -1,20 +1,22 @@
 #!/usr/bin/env node
 
 import { spawnSync } from 'node:child_process';
+import { existsSync, readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 const HIGH_OR_CRITICAL = new Set(['high', 'critical']);
-const ALLOWED_GHSA = new Set([
-  // Temporary allowlist for NestJS 10 chain until platform-express is upgraded.
-  'GHSA-XF7R-HGR6-V32P',
-  'GHSA-V52C-386H-88MC',
-  'GHSA-5528-5VMV-3XC2',
-]);
-const ALLOWED_CHAIN_PACKAGES = new Set([
-  '@nestjs/core',
-  '@nestjs/platform-express',
-  '@nestjs/swagger',
-  'multer',
-]);
+
+// Advisories this repository accepts for now, and the packages they arrive
+// through. The body of this script is identical in every repository; what
+// differs is data, so it lives beside it in audit-allowlist.json. Add a CVE
+// there only when a remediation path exists but cannot be applied yet, and
+// pair it with the owning package.
+const allowlistPath = fileURLToPath(new URL('./audit-allowlist.json', import.meta.url));
+const allowlist = existsSync(allowlistPath)
+  ? JSON.parse(readFileSync(allowlistPath, 'utf8'))
+  : { ghsa: [], chainPackages: [] };
+const ALLOWED_GHSA = new Set(allowlist.ghsa ?? []);
+const ALLOWED_CHAIN_PACKAGES = new Set(allowlist.chainPackages ?? []);
 
 function normalizeSeverity(value) {
   return String(value ?? '').toLowerCase();
