@@ -22,7 +22,7 @@ COPY crates/strategy-engine /app/crates/strategy-engine
 
 RUN cargo build --release -p trading-bot-research-backtesting
 
-FROM debian:bookworm-slim AS local
+FROM debian:bookworm-slim AS prod
 WORKDIR /app
 
 RUN apt-get update \
@@ -32,7 +32,6 @@ RUN apt-get update \
     libssl3 \
     libsasl2-2 \
     libzstd1 \
-    tini \
     wget \
     zlib1g \
   && rm -rf /var/lib/apt/lists/*
@@ -50,5 +49,6 @@ EXPOSE 8110
 
 USER app
 
-ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["trading-bot-research-backtesting"]
+
+FROM prod AS local

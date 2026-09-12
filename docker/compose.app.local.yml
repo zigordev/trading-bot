@@ -28,7 +28,7 @@ services:
       retries: 20
     logging: *default-logging
     networks:
-      trading_bot_shared:
+      platform_ops_shared:
         aliases:
           - trading-bot-postgres
 
@@ -65,13 +65,14 @@ services:
       retries: 30
     logging: *default-logging
     networks:
-      trading_bot_shared:
+      platform_ops_shared:
         aliases:
           - trading-bot-historical-store
 
-  trading_bot_api:
+  trading_bot_control_plane:
     security_opt:
       - no-new-privileges:true
+    init: true
     build:
       context: ..
       dockerfile: apps/control-plane/Dockerfile
@@ -111,13 +112,14 @@ services:
       - '3020:8080'
     logging: *default-logging
     networks:
-      trading_bot_shared:
+      platform_ops_shared:
         aliases:
-          - trading-bot-api
+          - trading-bot-control-plane
 
   trading_bot_market_data:
     security_opt:
       - no-new-privileges:true
+    init: true
     build:
       context: ..
       dockerfile: crates/market-data/Dockerfile
@@ -134,7 +136,7 @@ services:
       HISTORICAL_STORE_DATABASE: ${HISTORICAL_STORE_DATABASE:-trading_bot_market_data}
       HISTORICAL_STORE_USER: ${HISTORICAL_STORE_USER:-trading_bot_market_data}
       HISTORICAL_STORE_PASSWORD: ${HISTORICAL_STORE_PASSWORD:-trading_bot_market_data}
-      CONTROL_PLANE_BASE_URL: http://trading-bot-api:8080
+      CONTROL_PLANE_BASE_URL: http://trading-bot-control-plane:8080
       CONTROL_PLANE_REQUEST_TIMEOUT_MS: ${CONTROL_PLANE_REQUEST_TIMEOUT_MS:-5000}
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
       KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-platform-redpanda:9092}
@@ -176,7 +178,7 @@ services:
     depends_on:
       trading_bot_historical_store:
         condition: service_healthy
-      trading_bot_api:
+      trading_bot_control_plane:
         condition: service_healthy
     ports:
       - '3030:8090'
@@ -187,13 +189,14 @@ services:
       retries: 12
     logging: *default-logging
     networks:
-      trading_bot_shared:
+      platform_ops_shared:
         aliases:
           - trading-bot-market-data
 
   trading_bot_research_backtesting:
     security_opt:
       - no-new-privileges:true
+    init: true
     build:
       context: ..
       dockerfile: crates/research-backtesting/Dockerfile
@@ -203,7 +206,7 @@ services:
       PORT: 8110
       OTEL_SERVICE_NAME: trading-bot-research-backtesting
       APP_ENV: local
-      CONTROL_PLANE_BASE_URL: http://trading-bot-api:8080
+      CONTROL_PLANE_BASE_URL: http://trading-bot-control-plane:8080
       CONTROL_PLANE_REQUEST_TIMEOUT_MS: ${CONTROL_PLANE_REQUEST_TIMEOUT_MS:-5000}
       HISTORICAL_STORE_HOST: ${HISTORICAL_STORE_HOST:-trading-bot-historical-store}
       HISTORICAL_STORE_PORT: ${HISTORICAL_STORE_PORT:-8123}
@@ -233,7 +236,7 @@ services:
     depends_on:
       trading_bot_historical_store:
         condition: service_healthy
-      trading_bot_api:
+      trading_bot_control_plane:
         condition: service_healthy
     ports:
       - '3050:8110'
@@ -244,13 +247,14 @@ services:
       retries: 12
     logging: *default-logging
     networks:
-      trading_bot_shared:
+      platform_ops_shared:
         aliases:
           - trading-bot-research-backtesting
 
   trading_bot_execution:
     security_opt:
       - no-new-privileges:true
+    init: true
     build:
       context: ..
       dockerfile: crates/execution/Dockerfile
@@ -260,7 +264,7 @@ services:
       PORT: 8120
       OTEL_SERVICE_NAME: trading-bot-execution
       APP_ENV: local
-      CONTROL_PLANE_BASE_URL: http://trading-bot-api:8080
+      CONTROL_PLANE_BASE_URL: http://trading-bot-control-plane:8080
       MARKET_DATA_BASE_URL: http://trading-bot-market-data:8090
       KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-platform-redpanda:9092}
       MARKET_DATA_KLINE_EVENTS_TOPIC: ${MARKET_DATA_KLINE_EVENTS_TOPIC:-trading-bot.market-data.kline.v1}
@@ -278,7 +282,7 @@ services:
       BINANCE_RECV_WINDOW: ${BINANCE_RECV_WINDOW:-5000}
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
     depends_on:
-      trading_bot_api:
+      trading_bot_control_plane:
         condition: service_healthy
       trading_bot_market_data:
         condition: service_healthy
@@ -291,13 +295,14 @@ services:
       retries: 12
     logging: *default-logging
     networks:
-      trading_bot_shared:
+      platform_ops_shared:
         aliases:
           - trading-bot-execution
 
-  trading_bot_operator-console:
+  trading_bot_operator_console:
     security_opt:
       - no-new-privileges:true
+    init: true
     build:
       context: ..
       dockerfile: apps/operator-console/Dockerfile
@@ -306,7 +311,7 @@ services:
         NEXT_PUBLIC_CONTROL_PLANE_BASE_URL: ${OPERATOR_CONSOLE_CONTROL_PLANE_BASE_URL:-http://localhost:3020}
     restart: unless-stopped
     depends_on:
-      trading_bot_api:
+      trading_bot_control_plane:
         condition: service_healthy
       trading_bot_execution:
         condition: service_healthy
@@ -319,12 +324,12 @@ services:
       retries: 12
     logging: *default-logging
     networks:
-      trading_bot_shared:
+      platform_ops_shared:
         aliases:
           - trading-bot-operator-console
 
 networks:
-  trading_bot_shared:
+  platform_ops_shared:
     name: platform_ops_shared
     external: true
 
