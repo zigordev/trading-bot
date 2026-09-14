@@ -162,7 +162,7 @@ Fixed values such as the database name, database user, OpenBao address, KV mount
 From the `trading-bot` repo root:
 
 ```bash
-./scripts/local-stack-up.sh
+npm run local:up
 ```
 
 What the script does:
@@ -261,24 +261,24 @@ startup.
 Stop the stack and keep data:
 
 ```bash
-./scripts/local-stack-down.sh
+npm run local:down
 ```
 
 Stop the stack and remove volumes:
 
 ```bash
-./scripts/local-stack-reset.sh
+npm run local:reset
 ```
 
 Start it again:
 
 ```bash
-./scripts/local-stack-up.sh
+npm run local:up
 ```
 
 If you are upgrading from an older local historical-store implementation:
 
-- preferred: run `./scripts/local-stack-reset.sh`
+- preferred: run `npm run local:reset`
 - or manually remove only the unused old PostgreSQL table:
 
 ```bash
