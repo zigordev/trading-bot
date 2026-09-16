@@ -43,6 +43,7 @@ RUN apk upgrade --no-cache zlib libcrypto3 libssl3 \
 COPY --from=build --chown=nextjs:nodejs /workspace/apps/operator-console/.next/standalone ./
 COPY --from=build --chown=nextjs:nodejs /workspace/apps/operator-console/.next/static ./apps/operator-console/.next/static
 COPY --from=build --chown=nextjs:nodejs /workspace/apps/operator-console/public ./apps/operator-console/public
+COPY --from=build --chown=nextjs:nodejs /workspace/apps/operator-console/messages ./messages
 USER nextjs
 EXPOSE 3000
 CMD ["node", "apps/operator-console/server.js"]
