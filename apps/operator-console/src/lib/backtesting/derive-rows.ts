@@ -167,7 +167,6 @@ export function deriveBacktestRows({ summary, readiness }: DeriveInput): Backtes
   }
 
   for (const run of summary?.latestRuns ?? []) {
-    const key = rowKey(run.pairCode, run.timeframeCode, run.strategyName);
     const row = ensureRow(run.pairCode, run.timeframeCode, run.strategyName);
     if (!row.latestRun || new Date(run.finishedAt) > new Date(row.latestRun.finishedAt)) {
       row.latestRun = run;
