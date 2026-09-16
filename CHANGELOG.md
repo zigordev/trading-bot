@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.12](https://github.com/zigordev/trading-bot/compare/v0.1.11...v0.1.12) (2026-09-16)
+
+
+### Features
+
+* **i18n:** read Tolgee at runtime over the committed bundle ([#126](https://github.com/zigordev/trading-bot/issues/126)) ([9797766](https://github.com/zigordev/trading-bot/commit/9797766d5f87ae1db979d11c47d1b68944f44e18))
+
 ## [0.1.11](https://github.com/zigordev/trading-bot/compare/v0.1.10...v0.1.11) (2026-09-12)
 
 
