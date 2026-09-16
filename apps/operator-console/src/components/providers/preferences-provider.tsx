@@ -2,7 +2,9 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 
-import { translate, type Language } from '@/lib/i18n/messages';
+import { useRouter } from 'next/navigation';
+import { useI18n } from '@/i18n/client';
+import { LANGUAGE_COOKIE, type Locale as Language } from '@/i18n/config';
 
 export type ThemeMode = 'light' | 'dark';
 export type Translate = (key: string, params?: Record<string, string | number>) => string;
@@ -17,8 +19,16 @@ interface PreferencesContextValue {
 
 const PreferencesContext = createContext<PreferencesContextValue | null>(null);
 
+const readLanguageCookie = (): Language | null => {
+  const match = document.cookie.match(new RegExp(`(?:^|; )${LANGUAGE_COOKIE}=([^;]*)`));
+  const value = match?.[1];
+  return value === 'en' || value === 'es' ? value : null;
+};
+
 const initialLanguage = (): Language => {
   if (typeof window === 'undefined') return 'en';
+  const cookie = readLanguageCookie();
+  if (cookie) return cookie;
   const stored = window.localStorage.getItem('operator-console-language');
   if (stored === 'en' || stored === 'es') return stored;
   return navigator.language.toLowerCase().startsWith('es') ? 'es' : 'en';
@@ -32,7 +42,9 @@ const initialTheme = (): ThemeMode => {
 };
 
 export function PreferencesProvider({ children }: { children?: React.ReactNode }) {
-  const [language, updateLanguage] = useState<Language>('en');
+  const router = useRouter();
+  const { locale, t } = useI18n();
+  const [language, updateLanguage] = useState<Language>(locale);
   const [theme, updateTheme] = useState<ThemeMode>('light');
 
   useEffect(() => {
@@ -43,6 +55,7 @@ export function PreferencesProvider({ children }: { children?: React.ReactNode }
   useEffect(() => {
     document.documentElement.lang = language;
     window.localStorage.setItem('operator-console-language', language);
+    document.cookie = `${LANGUAGE_COOKIE}=${language}; path=/; max-age=31536000; samesite=lax`;
   }, [language]);
 
   useEffect(() => {
@@ -55,9 +68,15 @@ export function PreferencesProvider({ children }: { children?: React.ReactNode }
     window.localStorage.setItem('operator-console-theme', theme);
   }, [theme]);
 
-  const setLanguage = useCallback((next: Language) => updateLanguage(next), []);
+  const setLanguage = useCallback(
+    (next: Language) => {
+      updateLanguage(next);
+      document.cookie = `${LANGUAGE_COOKIE}=${next}; path=/; max-age=31536000; samesite=lax`;
+      router.refresh();
+    },
+    [router]
+  );
   const setTheme = useCallback((next: ThemeMode) => updateTheme(next), []);
-  const t = useCallback<Translate>((key, params) => translate(language, key, params), [language]);
 
   const value = useMemo(
     () => ({ language, theme, setLanguage, setTheme, t }),

@@ -6,6 +6,8 @@ import { NuqsAdapter } from 'nuqs/adapters/next/app';
 import { QueryProvider } from '@/components/providers/query-provider';
 import { OpsRealtimeBridge } from '@/components/providers/ops-realtime-bridge';
 import { PreferencesProvider } from '@/components/providers/preferences-provider';
+import { I18nProvider } from '@/i18n/client';
+import { getLocale, getMessages } from '@/i18n/server';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { Toaster } from '@/components/ui/sonner';
 import { AppShell } from '@/components/layout/app-shell';
@@ -37,26 +39,31 @@ export const metadata: Metadata = {
   description: 'Monitor backtests, execution, and configuration.',
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const locale = await getLocale();
+  const messages = await getMessages(locale);
+
   return (
-    <html data-theme="operator-console">
+    <html data-theme="operator-console" lang={locale}>
       <body className={`${inter.variable} ${geistMono.variable}`}>
         <RumProvider />
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
-        <PreferencesProvider>
-          <NuqsAdapter>
-            <QueryProvider>
-              <TooltipProvider delayDuration={150}>
-                <OpsRealtimeBridge>
-                  <TopbarSlotProvider>
-                    <AppShell>{children}</AppShell>
-                  </TopbarSlotProvider>
-                  <Toaster />
-                </OpsRealtimeBridge>
-              </TooltipProvider>
-            </QueryProvider>
-          </NuqsAdapter>
-        </PreferencesProvider>
+        <I18nProvider locale={locale} messages={messages}>
+          <PreferencesProvider>
+            <NuqsAdapter>
+              <QueryProvider>
+                <TooltipProvider delayDuration={150}>
+                  <OpsRealtimeBridge>
+                    <TopbarSlotProvider>
+                      <AppShell>{children}</AppShell>
+                    </TopbarSlotProvider>
+                    <Toaster />
+                  </OpsRealtimeBridge>
+                </TooltipProvider>
+              </QueryProvider>
+            </NuqsAdapter>
+          </PreferencesProvider>
+        </I18nProvider>
       </body>
     </html>
   );
