@@ -109,14 +109,35 @@ jobs:
       - name: Format check
         run: npm run format:check
 
+      - name: Lint
+        run: npm run lint --workspaces --if-present
+
       - name: Typecheck
         run: npm run typecheck
 
       - name: Build
         run: npm run build:control-plane && npm run build:operator-console
 
-      - name: Test
-        run: npm run test:control-plane && npm run test:operator-console
+      - name: Test with coverage
+        run: npm run test:cov
+
+      - name: Upload control-plane coverage
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage-control-plane
+          path: apps/control-plane/coverage
+          retention-days: 7
+          if-no-files-found: warn
+
+      - name: Upload operator-console coverage
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage-operator-console
+          path: apps/operator-console/coverage
+          retention-days: 7
+          if-no-files-found: warn
 
   integration:
     name: PostgreSQL Integration
