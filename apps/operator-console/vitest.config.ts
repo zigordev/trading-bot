@@ -13,5 +13,16 @@ export default defineConfig({
     environment: 'jsdom',
     globals: false,
     include: ['**/*.test.ts', '**/*.test.tsx'],
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'lcov'],
+      reportsDirectory: 'coverage',
+      thresholds: {
+        branches: 67,
+        functions: 63,
+        lines: 82,
+        statements: 75,
+      },
+    },
   },
 });
