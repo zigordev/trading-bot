@@ -9,7 +9,6 @@ import type { SortingState } from '@tanstack/react-table';
 import { useTopbarSlot } from '@/components/layout/topbar-slot-context';
 import { usePreferences, type Translate } from '@/components/providers/preferences-provider';
 import { SegmentedControl } from 'design-system/components/navigation/SegmentedControl.jsx';
-import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { ErrorState } from '@/components/shared/error-state';
 import { useExecutionTrades } from '@/lib/hooks/use-execution-trades';

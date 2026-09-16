@@ -1,5 +1,3 @@
-import assert from 'node:assert/strict';
-
 import Fastify, { type FastifyBaseLogger, type FastifyInstance } from 'fastify';
 
 import type { AppConfig } from '../src/config.js';
