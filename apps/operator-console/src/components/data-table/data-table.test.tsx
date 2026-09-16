@@ -1,10 +1,17 @@
-import { afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, within } from '@testing-library/react';
 
 import { DataTable } from './data-table';
 import { PreferencesProvider } from '@/components/providers/preferences-provider';
+import { I18nProvider } from '@/i18n/client';
+import en from '../../../messages/en.json';
+import type { Messages } from '@/i18n/translator';
 import type { SortingState } from '@tanstack/react-table';
 import type { LegacyColumnDef } from '@tanstack/react-table/legacy';
+
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ refresh: vi.fn() }),
+}));
 
 interface Row {
   name: string;
@@ -39,9 +46,11 @@ afterEach(cleanup);
 
 function renderTable(props: Partial<React.ComponentProps<typeof DataTable<Row>>> = {}) {
   const { container } = render(
-    <PreferencesProvider>
-      <DataTable columns={columns} data={rows} {...props} />
-    </PreferencesProvider>
+    <I18nProvider locale="en" messages={en as Messages}>
+      <PreferencesProvider>
+        <DataTable columns={columns} data={rows} {...props} />
+      </PreferencesProvider>
+    </I18nProvider>
   );
   return container;
 }

@@ -118,14 +118,14 @@
       "select_placeholder": "Seleccionar…",
       "autofilled_placeholder": "Autocompletado desde el par",
       "invalid_json": "JSON no válido",
-      "search_placeholder": "Buscar {{resource}}…"
+      "search_placeholder": "Buscar {resource}…"
     },
     "confirm": {
-      "delete_title": "¿Eliminar {{name}}?",
-      "delete_description": "Esto elimina permanentemente el registro de {{resource}} del plano de control. Esta acción no se puede deshacer."
+      "delete_title": "¿Eliminar {name}?",
+      "delete_description": "Esto elimina permanentemente el registro de {resource} del plano de control. Esta acción no se puede deshacer."
     },
     "empty": {
-      "no_records": "Aún no hay {{resource}} configurados."
+      "no_records": "Aún no hay {resource} configurados."
     },
     "combobox": {
       "placeholder": "Buscar pares de Binance…",
@@ -148,9 +148,9 @@
         "search_placeholder": "Buscar estados…",
         "trigger_label": "Estado"
       },
-      "chip_search": "búsqueda \"{{search}}\"",
-      "chip_timeframe": "marco: {{timeframe}}",
-      "chip_strategy": "estrategia: {{strategy}}",
+      "chip_search": "búsqueda \"{search}\"",
+      "chip_timeframe": "marco: {timeframe}",
+      "chip_strategy": "estrategia: {strategy}",
       "clear_all": "Limpiar todo",
       "search_placeholder": "Buscar par, estrategia, marco temporal…",
       "pairs": {
@@ -175,14 +175,14 @@
       },
       "running": {
         "label": "En ejecución",
-        "hint": "{{queued}} en cola"
+        "hint": "{queued} en cola"
       },
       "last_completed": {
         "label": "Última completada"
       },
       "avg_score": {
-        "label": "Puntuación media · últimas {{count}}",
-        "hint": "{{value}} en la mejor ejecución"
+        "label": "Puntuación media · últimas {count}",
+        "hint": "{value} en la mejor ejecución"
       }
     },
     "table": {
@@ -199,7 +199,7 @@
       "empty": "Ningún backtest coincide con los filtros actuales."
     },
     "detail": {
-      "footer_last_run": "Última ejecución {{time}}",
+      "footer_last_run": "Última ejecución {time}",
       "footer_no_runs": "Aún no hay ejecuciones completadas",
       "promote_paper": "Promover a paper",
       "promote_paper_tooltip": "El endpoint de promoción aún no está conectado — la promoción automática se ejecuta en el servidor.",
@@ -229,9 +229,9 @@
       "stat_data_fetch": "Obtención de datos",
       "stat_replay_klines": "Klines de repetición",
       "runs_empty": "No hay ejecuciones recientes disponibles para esta fila.",
-      "runs_list_score": "puntuación {{score}}",
-      "runs_list_summary_one": "PnL {{pnl}} · {{count}} operación",
-      "runs_list_summary_other": "PnL {{pnl}} · {{count}} operaciones",
+      "runs_list_score": "puntuación {score}",
+      "runs_list_summary_one": "PnL {pnl} · {count} operación",
+      "runs_list_summary_other": "PnL {pnl} · {count} operaciones",
       "readiness_klines_heading": "Klines",
       "readiness_no_klines": "No se reportaron datos de klines.",
       "readiness_trades_heading": "Operaciones",
@@ -260,18 +260,18 @@
       "legend_thin": "Escaso",
       "legend_favorable": "Favorable",
       "empty": "No hay análisis de horarios disponible para esta ejecución.",
-      "tooltip_with_trades": "{{label}}\nOperaciones: {{tradeCount}}\nTasa de acierto: {{winRate}}%\nExpectativa: {{expectancy}}\nPnL promedio: {{avgPnl}}",
-      "tooltip_no_trades": "{{label}}\nSin operaciones"
+      "tooltip_with_trades": "{label}\nOperaciones: {tradeCount}\nTasa de acierto: {winRate}%\nExpectativa: {expectancy}\nPnL promedio: {avgPnl}",
+      "tooltip_no_trades": "{label}\nSin operaciones"
     }
   },
   "execution": {
     "kpis": {
       "realized_pnl_label": "PnL realizado (filtrado)",
-      "trades_count_one": "{{count}} operación",
-      "trades_count_other": "{{count}} operaciones",
+      "trades_count_one": "{count} operación",
+      "trades_count_other": "{count} operaciones",
       "open_positions_label": "Posiciones abiertas",
-      "recent_trades_label": "Operaciones recientes · {{hours}}h",
-      "win_rate_label": "Tasa de acierto · últimas {{count}}"
+      "recent_trades_label": "Operaciones recientes · {hours}h",
+      "win_rate_label": "Tasa de acierto · últimas {count}"
     },
     "actions": {
       "promotions": "Promociones"
@@ -281,10 +281,10 @@
       "load_trades_description": "El plano de control devolvió un error. Reintenta o revisa los registros del servidor."
     },
     "filters": {
-      "search_chip": "buscar \"{{query}}\"",
-      "timeframe_chip": "tf: {{timeframe}}",
-      "strategy_chip": "estrategia: {{strategy}}",
-      "side_chip": "lado: {{side}}",
+      "search_chip": "buscar \"{query}\"",
+      "timeframe_chip": "tf: {timeframe}",
+      "strategy_chip": "estrategia: {strategy}",
+      "side_chip": "lado: {side}",
       "opened_range_chip": "apertura: rango",
       "clear_all": "Limpiar todo",
       "search_placeholder": "Buscar par, estrategia, ID de orden…",
@@ -374,12 +374,12 @@
   "overview": {
     "kpi": {
       "realized_pnl": "PnL realizado",
-      "trades_24h": "{{count}} operaciones · 24h",
+      "trades_24h": "{count} operaciones · 24h",
       "open_positions": "Posiciones abiertas",
-      "closed_today": "{{count}} cerradas hoy",
+      "closed_today": "{count} cerradas hoy",
       "active_promotions": "Promociones activas",
       "data_readiness": "Preparación de datos",
-      "pair_timeframe": "{{count}} par×marco temporal"
+      "pair_timeframe": "{count} par×marco temporal"
     },
     "health_status": {
       "healthy": "Saludable",
@@ -390,12 +390,12 @@
     "system_health": {
       "title": "Estado del sistema",
       "realtime_channel": "Canal en tiempo real",
-      "realtime_hint": "/ws/ops · {{status}}",
+      "realtime_hint": "/ws/ops · {status}",
       "control_plane": "Plano de control",
       "control_plane_hint": "/v1/ops/* responde",
       "backtest_queue": "Cola de backtests",
-      "queue_depth_one": "{{count}} trabajo pendiente",
-      "queue_depth_other": "{{count}} trabajos pendientes"
+      "queue_depth_one": "{count} trabajo pendiente",
+      "queue_depth_other": "{count} trabajos pendientes"
     },
     "top_performers": {
       "title": "Mejores resultados",
@@ -467,7 +467,7 @@
   "data_table": {
     "no_results": "Sin resultados.",
     "no_rows": "Sin filas",
-    "pagination_range": "{{start}}–{{end}} de {{total}}",
+    "pagination_range": "{start}–{end} de {total}",
     "rows": "Filas",
     "search_placeholder": "Buscar…",
     "columns": "Columnas",
