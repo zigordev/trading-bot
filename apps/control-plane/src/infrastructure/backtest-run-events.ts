@@ -1,5 +1,5 @@
 import type { FastifyBaseLogger } from 'fastify';
-import { Kafka, logLevel, type Consumer, type Producer } from 'kafkajs';
+import { Kafka, logLevel, type Consumer } from 'kafkajs';
 import type { Pool } from 'pg';
 
 import type { AppConfig } from '../config.js';

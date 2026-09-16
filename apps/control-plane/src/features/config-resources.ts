@@ -264,19 +264,6 @@ const mapAnalysisSettingsRow = (row: QueryResultRow): AnalysisSettingsRecord => 
   updatedAt: toIsoString(row.updated_at),
 });
 
-const parseStringArray = (value: unknown): string[] => {
-  if (Array.isArray(value)) {
-    return value.map((item) => String(item));
-  }
-
-  if (typeof value === 'string' && value.trim()) {
-    const parsed = JSON.parse(value);
-    return Array.isArray(parsed) ? parsed.map((item) => String(item)) : [];
-  }
-
-  return [];
-};
-
 const mapExecutionSettingsRow = (row: QueryResultRow): ExecutionSettingsRecord => ({
   id: String(row.id),
   name: String(row.name),

@@ -31,7 +31,6 @@ import {
 } from 'design-system/components/data-display/Table.jsx';
 
 declare module '@tanstack/react-table' {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   interface ColumnMeta<
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     TFeatures extends TableFeatures,
