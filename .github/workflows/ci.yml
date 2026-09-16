@@ -36,7 +36,7 @@ jobs:
           GITLEAKS_ENABLE_UPLOAD_ARTIFACT: false
 
   rust:
-    name: Rust (fmt + clippy + test)
+    name: Quality (Rust)
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -92,7 +92,7 @@ jobs:
           if-no-files-found: warn
 
   typescript:
-    name: TypeScript (format + typecheck + build + test)
+    name: Quality (TypeScript)
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
