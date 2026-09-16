@@ -1,11 +1,11 @@
-@import "tailwindcss";
+@import 'tailwindcss';
 @plugin "tailwindcss-animate";
 
 /* Shared design system, copy-pasted in. Defines the --ds-* custom
    properties that the @theme block below aliases: one source of truth for
    colour, radius and shadow, in both light and dark. */
-@import "design-system/styles.css";
-@import "design-system/themes/operator-console.css";
+@import 'design-system/styles.css';
+@import 'design-system/themes/operator-console.css';
 
 @theme {
   /* Colour is aliased to the design system rather than restated. These were
@@ -49,10 +49,9 @@
   --radius-md: var(--ds-radius-md);
   --radius-lg: var(--ds-radius-lg);
   --radius-xl: var(--ds-radius-xl);
-  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system,
-    "Segoe UI", Roboto, sans-serif;
-  --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo,
-    monospace;
+  --font-sans:
+    var(--font-inter), ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
   --shadow-xs: var(--ds-shadow-xs);
   --shadow-sm: var(--ds-shadow-sm);
   --shadow-md: var(--ds-shadow-md);
@@ -87,7 +86,7 @@
   }
 
   html {
-    font-feature-settings: "cv11", "ss01", "ss03";
+    font-feature-settings: 'cv11', 'ss01', 'ss03';
   }
 
   html,
@@ -171,7 +170,7 @@
 
   .num {
     font-variant-numeric: tabular-nums slashed-zero;
-    font-feature-settings: "tnum", "zero";
+    font-feature-settings: 'tnum', 'zero';
   }
 }
 
