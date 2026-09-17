@@ -176,7 +176,7 @@ jobs:
 
       - name: Render compose manifests
         run: |
-          for f in docker/compose.app.*.yml; do
+          for f in docker/compose.app.*.yml docker/compose.ci.yml; do
             echo "rendering $f"
             # docker/.env.app.local.example carries safe placeholders for the
             # secrets the compose file requires (OPENBAO_TOKEN, POSTGRES_PASSWORD)
