@@ -6,11 +6,13 @@ on:
     types: [opened, reopened, ready_for_review, synchronize]
 
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 jobs:
   dependabot:
+    permissions:
+      contents: write
+      pull-requests: write
     name: Auto-merge (Dependabot, patch/minor only)
     if: github.actor == 'dependabot[bot]' && github.event.pull_request.draft == false
     runs-on: ubuntu-latest
@@ -35,6 +37,9 @@ jobs:
           gh pr merge --auto --squash "$PR_URL"
 
   everyone-else:
+    permissions:
+      contents: write
+      pull-requests: write
     name: Auto-merge
     if: github.actor != 'dependabot[bot]' && github.event.pull_request.draft == false
     runs-on: ubuntu-latest

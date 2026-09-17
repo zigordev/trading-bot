@@ -8,6 +8,9 @@ on:
 
 # A superseded run tells you about a commit nobody is waiting on, while
 # holding a runner the current commit needs.
+permissions:
+  contents: read
+
 concurrency:
   group: codeql-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
