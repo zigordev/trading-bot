@@ -6,8 +6,6 @@ on:
   schedule:
     - cron: '17 4 * * 1'
 
-# A superseded run tells you about a commit nobody is waiting on, while
-# holding a runner the current commit needs.
 permissions:
   contents: read
 
@@ -21,10 +19,6 @@ env:
 jobs:
   analyze-js:
     name: Analyze (javascript-typescript)
-    # Code scanning upload needs GitHub Advanced Security, a paid add-on on a
-    # private repo. Without this guard the job runs the full analysis and only
-    # fails at the very last step ("Code scanning is not enabled for this
-    # repository") — every other repo in the estate already skips instead.
     if: ${{ !github.event.repository.private }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -45,9 +39,11 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
 
-      - run: npm install
+      - run: npm ci
 
       - uses: github/codeql-action/analyze@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
+        with:
+          category: '/language:javascript-typescript'
 
   analyze-rust:
     name: Analyze (rust)
@@ -66,16 +62,9 @@ jobs:
         with:
           languages: rust
 
-      # Rust is compiled, so CodeQL needs an actual build to trace through —
-      # same toolchain setup as ci.yml's rust job, so the workspace builds the
-      # same way here as it does everywhere else.
       - name: Install toolchain
         run: rustup show
 
-      # rdkafka's cmake-build feature compiles librdkafka from source, and its
-      # SASL OAUTHBEARER/OIDC support includes curl.h unconditionally even with
-      # -DWITH_CURL=0 passed — the dev headers just need to be present, whether
-      # or not curl ends up linked. Not on the runner by default.
       - name: Install librdkafka build dependencies
         run: sudo apt-get update && sudo apt-get install -y libcurl4-openssl-dev
 
@@ -85,3 +74,5 @@ jobs:
         run: cargo build --workspace --all-targets
 
       - uses: github/codeql-action/analyze@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
+        with:
+          category: '/language:rust'
