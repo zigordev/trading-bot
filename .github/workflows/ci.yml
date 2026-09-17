@@ -162,6 +162,42 @@ jobs:
         if: failure()
         run: docker compose -f docker/compose.ci.yml logs --no-color
 
+  browser-checks:
+    name: Browser Checks (Operator Console)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+        working-directory: apps/operator-console
+
+      - name: Build operator console
+        run: npm run build:operator-console
+
+      - name: Browser checks (render + axe)
+        run: npm run e2e:operator-console
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: playwright-report-operator-console
+          path: |
+            apps/operator-console/playwright-report
+            apps/operator-console/test-results
+          retention-days: 7
+          if-no-files-found: ignore
+
   compose-validation:
     name: Compose Manifests
     runs-on: ubuntu-latest

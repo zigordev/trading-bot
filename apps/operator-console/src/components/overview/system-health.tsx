@@ -19,9 +19,9 @@ const HEALTH_TEXT_KEY: Record<Health, string> = {
 };
 
 const HEALTH_CLASS: Record<Health, string> = {
-  healthy: 'text-[var(--color-success)]',
-  degraded: 'text-[var(--color-warning)]',
-  down: 'text-[var(--color-danger)]',
+  healthy: 'text-[var(--color-success-fg)]',
+  degraded: 'text-[var(--color-warning-fg)]',
+  down: 'text-[var(--color-danger-fg)]',
   unknown: 'text-[var(--color-fg-subtle)]',
 };
 
