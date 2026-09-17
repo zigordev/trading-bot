@@ -7,6 +7,8 @@ export default tseslint.config(
     ignores: [
       '.next/**',
       'coverage/**',
+      'playwright-report/**',
+      'test-results/**',
       'next-env.d.ts',
       'eslint.config.mjs',
       'next.config.ts',

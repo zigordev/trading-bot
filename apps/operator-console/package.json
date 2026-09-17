@@ -9,8 +9,9 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:cov": "vitest run --coverage",
-    "clean": "rm -rf .next coverage",
-    "lint": "eslint --no-cache ."
+    "clean": "rm -rf .next coverage playwright-report test-results",
+    "lint": "eslint --no-cache .",
+    "e2e": "playwright test"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.9.1",
@@ -51,7 +52,9 @@
     "zod": "^4.5.4"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
     "@eslint/js": "^9.39.0",
+    "@playwright/test": "^1.63.0",
     "@tailwindcss/postcss": "^4.0.6",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.2.0",
