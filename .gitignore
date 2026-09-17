@@ -17,6 +17,8 @@ pnpm-debug.log*
 # Build output
 dist/
 build/
+apps/operator-console/playwright-report/
+apps/operator-console/test-results/
 
 # TypeScript incremental build state — machine-local, and it churns on every
 # build. cv, gpool and kini all ignore it.

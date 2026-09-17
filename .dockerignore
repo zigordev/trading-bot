@@ -20,6 +20,10 @@ dist
 **/.next
 coverage
 **/coverage
+playwright-report
+**/playwright-report
+test-results
+**/test-results
 artifacts
 out
 **/out
