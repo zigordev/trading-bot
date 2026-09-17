@@ -81,7 +81,7 @@ jobs:
       - name: Test with coverage
         run: |
           mkdir -p artifacts
-          cargo llvm-cov --workspace --lcov --output-path artifacts/lcov.info
+          cargo llvm-cov --workspace --lcov --output-path artifacts/lcov.info --fail-under-lines 26
 
       - name: Upload rust coverage
         if: always()
