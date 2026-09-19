@@ -11,7 +11,7 @@ import { createAppWithErrorHandler, testConfig } from '../helpers.js';
 
 const pool = new Pool({
   host: process.env.DB_HOST ?? '127.0.0.1',
-  port: Number(process.env.DB_PORT ?? 15432),
+  port: Number(process.env.DB_PORT ?? 15442),
   user: process.env.DB_USER ?? 'trading_bot_admin',
   password: process.env.DB_PASSWORD ?? 'secret',
   database: process.env.DB_NAME ?? 'trading_bot',
