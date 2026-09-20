@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.14](https://github.com/zigordev/trading-bot/compare/v0.1.13...v0.1.14) (2026-09-20)
+
+
+### Bug Fixes
+
+* **rum:** record real visits again ([#138](https://github.com/zigordev/trading-bot/issues/138)) ([80623a9](https://github.com/zigordev/trading-bot/commit/80623a90fdf1ed4facd5a00fd1f8050bf68f13aa))
+
 ## [0.1.13](https://github.com/zigordev/trading-bot/compare/v0.1.12...v0.1.13) (2026-09-20)
 
 
