@@ -45,8 +45,18 @@ export interface RumOptions {
 
 const RAGE_CLICK_THRESHOLD = 3;
 const DEAD_CLICK_MS = 500;
+const BUSY_WINDOW_MS = 1000;
+const MUTATION_MEMORY_MS = 2000;
+const MAX_TRACKED_MUTATIONS = 1000;
 const SLOW_LOAD_MS = 3000;
 const MAX_PATH_DEPTH = 20;
+
+function leavesThePage(control: Element): boolean {
+  if (!(control instanceof HTMLAnchorElement) || !control.hasAttribute('href')) return false;
+  if (control.hasAttribute('download')) return true;
+  if (control.target && control.target !== '_self') return true;
+  return !/^https?:$/.test(control.protocol);
+}
 
 class RumClient {
   private readonly endpoint: string;
@@ -56,6 +66,8 @@ class RumClient {
   private events: OutboundEvent[] = [];
   private navigationDepth = 0;
   private clickTimestamps: number[] = [];
+  private recentMutations: { target: Node; at: number }[] = [];
+  private lastScrollAt = -Infinity;
   private flushTimer?: ReturnType<typeof setInterval>;
   private started = false;
 
@@ -137,6 +149,7 @@ class RumClient {
     }
 
     let cls = 0;
+    let reportedCls = 0;
     this.observe('layout-shift', (entries) => {
       for (const entry of entries as (PerformanceEntry & {
         value?: number;
@@ -144,6 +157,10 @@ class RumClient {
       })[]) {
         if (!entry.hadRecentInput) cls += entry.value ?? 0;
       }
+    });
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState !== 'hidden' || cls === reportedCls) return;
+      reportedCls = cls;
       this.record({ type: 'performance', name: 'CLS', value: cls });
     });
 
@@ -230,6 +247,31 @@ class RumClient {
   // --- Interactions and frustration ----------------------------------------
 
   private trackInteractions(): void {
+    new MutationObserver((records) => {
+      const now = performance.now();
+      for (const record of records) this.recentMutations.push({ target: record.target, at: now });
+      const cutoff = now - MUTATION_MEMORY_MS;
+      let stale = 0;
+      while (stale < this.recentMutations.length && this.recentMutations[stale].at < cutoff) {
+        stale += 1;
+      }
+      stale = Math.max(stale, this.recentMutations.length - MAX_TRACKED_MUTATIONS);
+      if (stale > 0) this.recentMutations.splice(0, stale);
+    }).observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      characterData: true,
+    });
+
+    document.addEventListener(
+      'scroll',
+      (event) => {
+        this.lastScrollAt = event.timeStamp;
+      },
+      { capture: true, passive: true }
+    );
+
     document.addEventListener('click', (event) => {
       const target = event.target as HTMLElement | null;
       const control = target?.closest('button, a, [role="button"]');
@@ -245,23 +287,33 @@ class RumClient {
 
       this.record({ type: 'interaction', name: 'Click' });
 
+      if (leavesThePage(control)) return;
+
       // A dead click is one after which nothing on the page changed. The
       // original compared a DOM snapshot; a MutationObserver says the same
       // thing without serialising the document on every click.
-      let mutated = false;
-      const observer = new MutationObserver(() => {
-        mutated = true;
-      });
-      observer.observe(document.body, { childList: true, subtree: true, attributes: true });
+      const clickedAt = event.timeStamp;
       window.setTimeout(() => {
-        observer.disconnect();
-        if (!mutated) this.record({ type: 'frustration', name: 'Dead Click' });
+        if (document.visibilityState === 'hidden' || this.lastScrollAt >= clickedAt) return;
+        if (!this.pageChangedSince(clickedAt)) {
+          this.record({ type: 'frustration', name: 'Dead Click' });
+        }
       }, DEAD_CLICK_MS);
     });
 
     document.addEventListener('submit', () => {
       this.record({ type: 'interaction', name: 'Form Submit' });
     });
+  }
+
+  private pageChangedSince(since: number): boolean {
+    const busy = new Map<Node, number>();
+    for (const { target, at } of this.recentMutations) {
+      if (at < since && since - at <= BUSY_WINDOW_MS) busy.set(target, (busy.get(target) ?? 0) + 1);
+    }
+    return this.recentMutations.some(
+      ({ target, at }) => at >= since && (busy.get(target) ?? 0) < 2
+    );
   }
 
   private trackScrolling(): void {
