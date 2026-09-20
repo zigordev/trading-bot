@@ -337,7 +337,9 @@ prepare() {
 cmd_up() {
   prepare
   bootstrap_database
-  compose "" up -d --build --force-recreate --remove-orphans
+  compose "" build
+  compose "" stop
+  compose "" up -d --force-recreate --remove-orphans
   announce_ready
 }
 
