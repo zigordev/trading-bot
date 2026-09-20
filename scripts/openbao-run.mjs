@@ -2,6 +2,8 @@
 
 import { spawn } from 'node:child_process';
 
+const FORWARDED_SIGNALS = ['SIGTERM', 'SIGINT', 'SIGHUP'];
+
 function die(message) {
   console.error(message);
   process.exit(1);
@@ -107,7 +109,17 @@ function runCommandWithSecrets(argv, secrets) {
     env,
   });
 
+  const forward = (signal) => {
+    child.kill(signal);
+  };
+  for (const signal of FORWARDED_SIGNALS) {
+    process.on(signal, forward);
+  }
+
   child.on('exit', (code, signal) => {
+    for (const forwarded of FORWARDED_SIGNALS) {
+      process.off(forwarded, forward);
+    }
     if (signal) {
       process.kill(process.pid, signal);
       return;

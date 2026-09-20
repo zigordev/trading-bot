@@ -19,6 +19,7 @@ RUN npm run build
 FROM node:24-alpine AS prod
 WORKDIR /app/apps/control-plane
 ENV NODE_ENV=production
+ENV NODE_OPTIONS=--disable-warning=TimeoutNegativeWarning
 # Pull the latest Alpine security patches at build time rather than waiting on
 # the upstream node:24-alpine tag to be rebuilt, and drop the bundled npm CLI —
 # this image only ever runs `node dist/main.js`, so npm/npx/corepack (and their
@@ -27,6 +28,7 @@ ENV NODE_ENV=production
 RUN apk upgrade --no-cache \
   && rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack
 COPY --from=deps-build /app/node_modules /app/node_modules
+COPY --from=deps-build /app/apps/control-plane/node_modules /app/apps/control-plane/node_modules
 COPY --from=build /app/apps/control-plane/dist /app/apps/control-plane/dist
 COPY apps/control-plane/package.json /app/apps/control-plane/package.json
 COPY scripts/openbao-run.mjs /app/scripts/openbao-run.mjs
@@ -41,10 +43,12 @@ FROM prod AS local
 
 FROM base AS dev
 ENV NODE_ENV=development
+ENV NODE_OPTIONS=--disable-warning=TimeoutNegativeWarning
 COPY --from=deps-build /app/node_modules /app/node_modules
 COPY package.json package-lock.json /app/
 COPY scripts/openbao-run.mjs /app/scripts/openbao-run.mjs
 COPY apps/control-plane /app/apps/control-plane
+COPY --from=deps-build /app/apps/control-plane/node_modules /app/apps/control-plane/node_modules
 WORKDIR /app/apps/control-plane
 EXPOSE 8080
 CMD ["npm", "run", "start:dev"]
