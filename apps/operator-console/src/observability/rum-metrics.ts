@@ -121,6 +121,33 @@ const ALLOWED_NAMES: Record<RumEventType, ReadonlySet<string>> = {
 /** Timing metrics arrive in milliseconds; CLS is already unitless. */
 const UNITLESS_METRICS = new Set(['CLS']);
 
+const HOME_PAGE = '/';
+
+function frustrationLabel(name: string): string {
+  return name.toLowerCase().replace(/\s+/g, '_');
+}
+
+function initialiseHomePageSeries(): void {
+  for (const name of ALLOWED_NAMES.performance) {
+    if (UNITLESS_METRICS.has(name)) layoutShiftScore.zero({ page: HOME_PAGE });
+    else performanceSeconds.zero({ metric_name: name, page: HOME_PAGE });
+  }
+  for (const name of ALLOWED_NAMES.error) {
+    errorsTotal.inc({ error_type: name, page: HOME_PAGE }, 0);
+  }
+  for (const name of ALLOWED_NAMES.interaction) {
+    interactionsTotal.inc({ interaction_type: name, page: HOME_PAGE }, 0);
+  }
+  for (const name of ALLOWED_NAMES.navigation) {
+    navigationsTotal.inc({ navigation_type: name, page: HOME_PAGE }, 0);
+  }
+  for (const name of ALLOWED_NAMES.frustration) {
+    frustrationsTotal.inc({ frustration_type: frustrationLabel(name), page: HOME_PAGE }, 0);
+  }
+}
+
+initialiseHomePageSeries();
+
 /**
  * Product-specific interaction names, added by the app at startup.
  *
@@ -135,6 +162,7 @@ export function allowCustomInteractions(names: readonly string[]): void {
   for (const name of names) {
     if (typeof name === 'string' && name.length > 0 && name.length <= 64) {
       customInteractions.add(name);
+      interactionsTotal.inc({ interaction_type: name, page: HOME_PAGE }, 0);
     }
   }
 }
@@ -234,7 +262,7 @@ export function recordRumEvent(event: RumEvent): boolean {
 
     case 'frustration':
       frustrationsTotal.inc({
-        frustration_type: labelFor('frustration', name).toLowerCase().replace(/\s+/g, '_'),
+        frustration_type: frustrationLabel(labelFor('frustration', name)),
         page,
       });
       return true;

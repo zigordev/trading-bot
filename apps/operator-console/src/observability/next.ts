@@ -47,11 +47,8 @@ export function createRumIngestRoute(
 
   return async function POST(request: Request): Promise<Response> {
     const origin = request.headers.get('origin');
-    if (origin) {
-      const expected = options.allowedOrigin ?? new URL(request.url).origin;
-      if (origin !== expected) {
-        return new Response(null, { status: 403 });
-      }
+    if (origin && !isSameOrigin(origin, request.headers.get('host'), options.allowedOrigin)) {
+      return new Response(null, { status: 403 });
     }
 
     const declaredLength = Number(request.headers.get('content-length') ?? '0');
@@ -78,6 +75,16 @@ export function createRumIngestRoute(
     // 204: nothing to say, and nothing for a prober to learn.
     return new Response(null, { status: 204 });
   };
+}
+
+function isSameOrigin(origin: string, host: string | null, allowedOrigin?: string): boolean {
+  if (allowedOrigin) return origin === allowedOrigin;
+  if (!host) return false;
+  try {
+    return new URL(origin).host === host.toLowerCase();
+  } catch {
+    return false;
+  }
 }
 
 export { initRum } from './rum-client';
