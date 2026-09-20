@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.13](https://github.com/zigordev/trading-bot/compare/v0.1.12...v0.1.13) (2026-09-20)
+
+
+### Bug Fixes
+
+* **control-plane:** boot again and stop cleanly on SIGTERM ([#135](https://github.com/zigordev/trading-bot/issues/135)) ([4920f3f](https://github.com/zigordev/trading-bot/commit/4920f3ffea75c898551360427f083913f505772e))
+
 ## [0.1.12](https://github.com/zigordev/trading-bot/compare/v0.1.11...v0.1.12) (2026-09-16)
 
 
