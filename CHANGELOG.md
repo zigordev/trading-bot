@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.15](https://github.com/zigordev/trading-bot/compare/v0.1.14...v0.1.15) (2026-09-21)
+
+
+### Bug Fixes
+
+* **observability:** name a trace only when it was sampled ([#140](https://github.com/zigordev/trading-bot/issues/140)) ([760d62a](https://github.com/zigordev/trading-bot/commit/760d62a2b93ccfa11da4ae57d3de12dc26cb3fc7))
+
 ## [0.1.14](https://github.com/zigordev/trading-bot/compare/v0.1.13...v0.1.14) (2026-09-20)
 
 
