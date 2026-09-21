@@ -1,4 +1,4 @@
-import { trace } from '@opentelemetry/api';
+import { trace, TraceFlags } from '@opentelemetry/api';
 import type { FastifyInstance } from 'fastify';
 import * as client from 'prom-client';
 import { registry } from './metrics.registry.js';
@@ -78,6 +78,9 @@ export const fastifyLoggerOptions = {
   timestamp: () => `,"timestamp":"${new Date().toISOString()}"`,
   mixin: () => {
     const spanContext = trace.getActiveSpan()?.spanContext();
-    return spanContext?.traceId ? { traceId: spanContext.traceId, spanId: spanContext.spanId } : {};
+    return spanContext?.traceId &&
+      (spanContext.traceFlags & TraceFlags.SAMPLED) === TraceFlags.SAMPLED
+      ? { traceId: spanContext.traceId, spanId: spanContext.spanId }
+      : {};
   },
 };
