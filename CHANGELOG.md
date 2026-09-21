@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.16](https://github.com/zigordev/trading-bot/compare/v0.1.15...v0.1.16) (2026-09-21)
+
+
+### Features
+
+* **observability:** export the release as service_build_info ([#142](https://github.com/zigordev/trading-bot/issues/142)) ([0e8ae7b](https://github.com/zigordev/trading-bot/commit/0e8ae7b2717a1cdb726bcb5a77baa834be5db3df))
+
 ## [0.1.15](https://github.com/zigordev/trading-bot/compare/v0.1.14...v0.1.15) (2026-09-21)
 
 
