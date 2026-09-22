@@ -50,11 +50,15 @@ impl Metrics {
         registry.register(Box::new(control_plane_connected.clone()))?;
         registry.register(Box::new(historical_store_connected.clone()))?;
         registry.register(Box::new(backtest_runs_total.clone()))?;
+        for outcome in ["success", "error"] {
+            backtest_runs_total.with_label_values(&[outcome]);
+        }
         registry.register(Box::new(replayed_klines_total.clone()))?;
         registry.register(Box::new(emitted_signals_total.clone()))?;
         registry.register(Box::new(simulated_trades_total.clone()))?;
 
         let http = HttpMetrics::register(&registry)?;
+        trading_bot_observability::register_build_info(&registry)?;
 
         Ok(Self {
             registry,

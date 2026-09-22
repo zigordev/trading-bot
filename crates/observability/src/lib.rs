@@ -13,12 +13,40 @@
 
 pub mod tracing_setup;
 
+pub fn current_release() -> Option<String> {
+    ["OTEL_SERVICE_VERSION", "APP_RELEASE"]
+        .iter()
+        .filter_map(|name| std::env::var(name).ok())
+        .map(|value| value.trim().to_owned())
+        .find(|value| !value.is_empty())
+}
+
+pub fn register_build_info(registry: &Registry) -> anyhow::Result<()> {
+    register_build_info_for(
+        registry,
+        &current_release().unwrap_or_else(|| "dev".to_owned()),
+    )
+}
+
+fn register_build_info_for(registry: &Registry, version: &str) -> anyhow::Result<()> {
+    let build_info = IntGaugeVec::new(
+        Opts::new(
+            "service_build_info",
+            "The release this process runs, as a label",
+        ),
+        &["version"],
+    )?;
+    registry.register(Box::new(build_info.clone()))?;
+    build_info.with_label_values(&[version]).set(1);
+    Ok(())
+}
+
 use axum::{
     extract::{MatchedPath, Request, State},
     middleware::Next,
     response::Response,
 };
-use prometheus::{HistogramOpts, HistogramVec, IntCounterVec, Opts, Registry};
+use prometheus::{HistogramOpts, HistogramVec, IntCounterVec, IntGaugeVec, Opts, Registry};
 use std::time::Instant;
 
 /// The two metrics the shared alerting rules are built on.
@@ -122,4 +150,24 @@ pub async fn track_http_metrics(
         .observe(started.elapsed().as_secs_f64());
 
     response
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use prometheus::{Encoder, TextEncoder};
+
+    #[test]
+    fn build_info_names_the_release_as_a_label() {
+        let registry = Registry::new();
+        register_build_info_for(&registry, "v0.2.0").unwrap();
+
+        let mut buffer = Vec::new();
+        TextEncoder::new()
+            .encode(&registry.gather(), &mut buffer)
+            .unwrap();
+        let text = String::from_utf8(buffer).unwrap();
+
+        assert!(text.contains("service_build_info{version=\"v0.2.0\"} 1"));
+    }
 }

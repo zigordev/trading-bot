@@ -40,6 +40,7 @@ impl Metrics {
         registry.register(Box::new(refresh_total.clone()))?;
 
         let http = HttpMetrics::register(&registry)?;
+        trading_bot_observability::register_build_info(&registry)?;
 
         Ok(Self {
             registry,

@@ -332,6 +332,7 @@ pub fn load_config() -> Result<AppConfig> {
             let effective =
                 (max_in_flight / config.historical_trade_backfill_insert_batch_rows).max(1);
             warn!(
+                event = "config.backfill_concurrency_lowered",
                 configured_historical_backfill_max_concurrency =
                     config.historical_backfill_max_concurrency,
                 historical_trade_backfill_insert_batch_rows =

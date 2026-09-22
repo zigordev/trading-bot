@@ -475,7 +475,7 @@ impl ResearchBacktestingService {
 
         tokio::spawn(async move {
             if let Err(error) = service.consume_data_readiness_events().await {
-                error!(error = %error, "data-readiness trigger consumer stopped");
+                error!(event = "kafka.consumer_stopped", error = %error, "data-readiness trigger consumer stopped");
             }
         });
     }
@@ -488,7 +488,7 @@ impl ResearchBacktestingService {
         let service = self.clone();
         tokio::spawn(async move {
             if let Err(error) = service.run_scheduled_backtest_scan("startup").await {
-                warn!(error = %error, "scheduled backtest startup scan failed");
+                warn!(event = "backtest_scan.startup_failed", error = %error, "scheduled backtest startup scan failed");
             }
 
             loop {
@@ -498,7 +498,7 @@ impl ResearchBacktestingService {
                 .await;
 
                 if let Err(error) = service.run_scheduled_backtest_scan("periodic").await {
-                    warn!(error = %error, "scheduled backtest periodic scan failed");
+                    warn!(event = "backtest_scan.failed", error = %error, "scheduled backtest periodic scan failed");
                 }
             }
         });
@@ -520,7 +520,7 @@ impl ResearchBacktestingService {
 
         consumer.subscribe(&[&self.inner.config.data_readiness_events_topic])?;
 
-        info!(
+        info!(event = "kafka.consumer_started",
             topic = %self.inner.config.data_readiness_events_topic,
             group_id = %self.inner.config.data_readiness_events_consumer_group_id,
             "data-readiness trigger consumer started"
@@ -535,11 +535,11 @@ impl ResearchBacktestingService {
                     };
 
                     if let Err(error) = self.handle_data_readiness_message(payload).await {
-                        warn!(error = %error, "failed to process data-readiness snapshot");
+                        warn!(event = "data_readiness.processing_failed", error = %error, "failed to process data-readiness snapshot");
                     }
                 }
                 Err(error) => {
-                    warn!(error = %error, "data-readiness trigger consumer poll failed");
+                    warn!(event = "kafka.consumer_poll_failed", error = %error, "data-readiness trigger consumer poll failed");
                 }
             }
         }
@@ -575,7 +575,7 @@ impl ResearchBacktestingService {
                 .trigger_backtests_for_ready_dataset(&item, &envelope.event_id)
                 .await
             {
-                warn!(
+                warn!(event = "backtest.trigger_failed",
                     error = %error,
                     pair_code = %item.pair_code,
                     timeframe_code = %item.timeframe_code,
@@ -601,8 +601,8 @@ impl ResearchBacktestingService {
         }
 
         info!(
-            reason,
-            started, "scheduled backtest scan processed ready datasets"
+            event = "backtest_scan.completed",
+            reason, started, "scheduled backtest scan processed ready datasets"
         );
         Ok(started)
     }
@@ -734,7 +734,7 @@ impl ResearchBacktestingService {
                 .publish_backtest_progress_event(context, "retrieving-data", 0.0)
                 .await
         {
-            warn!(
+            warn!(event = "backtest.progress_publish_failed",
                 error = %error,
                 control_plane_job_id = %context.control_plane_job_id,
                 "failed to publish backtest-progress event"
@@ -773,7 +773,7 @@ impl ResearchBacktestingService {
             )
             .await
         {
-            warn!(
+            warn!(event = "backtest.completed_publish_failed",
                 error = %error,
                 backtest_id = completed.response.backtest_id,
                 "failed to publish backtest-completed event"
@@ -1009,7 +1009,7 @@ impl ResearchBacktestingService {
             .try_mark_readiness_batch_in_flight(&batch_key, requested_window)
             .await
         {
-            info!(
+            info!(event = "backtest.batch_skipped",
                 pair_code = %item.pair_code,
                 timeframe_code = %item.timeframe_code,
                 strategy_name = %item.strategy_name,
@@ -1097,7 +1097,7 @@ impl ResearchBacktestingService {
 
             if runnable_analyses.is_empty() {
                 if skipped_existing > 0 {
-                    info!(
+                    info!(event = "backtest.batch_processed",
                         pair_code = %item.pair_code,
                         timeframe_code = %item.timeframe_code,
                         requested_start_time = item.requested_start_time,
@@ -1180,7 +1180,7 @@ impl ResearchBacktestingService {
                             })
                             .await
                         {
-                            warn!(
+                            warn!(event = "backtest.batch_progress_publish_failed",
                                 error = %error,
                                 batch_id = %batch_id,
                                 "failed to publish backtest-batch progress event"
@@ -1206,7 +1206,7 @@ impl ResearchBacktestingService {
                                 running_count: 0,
                             })
                             .await;
-                        warn!(
+                        warn!(event = "backtest.failed",
                             error = %error,
                             analysis_setting_id = %analysis.id,
                             risk_profile_name = %analysis.risk_profile_name,
@@ -1222,7 +1222,7 @@ impl ResearchBacktestingService {
             }
 
             if started > 0 || skipped_existing > 0 {
-                info!(
+                info!(event = "backtest.batch_processed",
                     pair_code = %item.pair_code,
                     timeframe_code = %item.timeframe_code,
                     requested_start_time = item.requested_start_time,
@@ -1323,7 +1323,7 @@ impl ResearchBacktestingService {
                 .publish_backtest_progress_event(context, "retrieving-data", 0.0)
                 .await
         {
-            warn!(
+            warn!(event = "backtest.progress_publish_failed",
                 error = %error,
                 control_plane_job_id = %context.control_plane_job_id,
                 "failed to publish backtest-progress event"
@@ -1399,7 +1399,7 @@ impl ResearchBacktestingService {
             )
             .await
         {
-            warn!(
+            warn!(event = "backtest.completed_publish_failed",
                 error = %error,
                 backtest_id = completed.response.backtest_id,
                 "failed to publish backtest-completed event"
@@ -1524,7 +1524,7 @@ impl ResearchBacktestingService {
             )
             .await?
             {
-                warn!(
+                warn!(event = "backtest.kline_coverage_incomplete",
                     pair_code = %analysis.pair_code,
                     timeframe_code = %timeframe_code,
                     requested_start_time = time_window.requested_start_time,
@@ -1597,7 +1597,7 @@ impl ResearchBacktestingService {
         )
         .await
         .unwrap_or_else(|error| {
-            warn!(
+            warn!(event = "backtest.trade_coverage_check_failed",
                 error = %error,
                 pair_code = %analysis.pair_code,
                 requested_start_time = time_window.requested_start_time,
@@ -1608,7 +1608,7 @@ impl ResearchBacktestingService {
         });
 
         if let Some(blocker) = trade_coverage_blocker {
-            warn!(
+            warn!(event = "backtest.trade_coverage_incomplete",
                 pair_code = %analysis.pair_code,
                 timeframe_code = %analysis.timeframe_code,
                 requested_start_time = time_window.requested_start_time,
@@ -2403,7 +2403,7 @@ async fn fetch_trade_window_cache(
     let mut page = 0usize;
     let started_at = Instant::now();
 
-    info!(
+    info!(event = "trade_cache.prefetch_started",
         pair_code = %pair_code,
         requested_start_time = start_time,
         requested_end_time = end_time,
@@ -2428,7 +2428,7 @@ async fn fetch_trade_window_cache(
         rows.extend(chunk);
 
         if page == 1 || page.is_multiple_of(5) {
-            info!(
+            tracing::debug!(event = "trade_cache.prefetch_progress",
                 pair_code = %pair_code,
                 page = page,
                 rows_cached = rows.len(),
@@ -2438,7 +2438,7 @@ async fn fetch_trade_window_cache(
         }
     }
 
-    info!(
+    info!(event = "trade_cache.prefetch_completed",
         pair_code = %pair_code,
         rows_cached = rows.len(),
         elapsed_ms = started_at.elapsed().as_millis() as u64,
@@ -2553,7 +2553,7 @@ async fn execute_backtest(
     let backtest_progress_events_topic_for_fetch = context.backtest_progress_events_topic.clone();
     let progress_event_source_for_fetch = context.progress_event_source.clone();
 
-    info!(
+    info!(event = "trade_retrieval.started",
         backtest_id = %retrieval_backtest_id,
         pair_code = %pair_code,
         timeframe_code = %timeframe_code,
@@ -2596,7 +2596,7 @@ async fn execute_backtest(
             };
 
             if page.is_empty() {
-                info!(
+                info!(event = "trade_retrieval.completed",
                     backtest_id = %retrieval_backtest_id,
                     pair_code = %pair_code,
                     timeframe_code = %timeframe_code,
@@ -2622,7 +2622,7 @@ async fn execute_backtest(
 
             // Keep logs readable: first page + every 5 pages + short page.
             if page_count == 1 || page_count.is_multiple_of(5) || (page.len() as i64) < limit {
-                info!(
+                tracing::debug!(event = "trade_retrieval.progress",
                     backtest_id = %retrieval_backtest_id,
                     pair_code = %pair_code,
                     timeframe_code = %timeframe_code,

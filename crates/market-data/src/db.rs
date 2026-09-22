@@ -2207,7 +2207,7 @@ impl Database {
                             err
                         ));
                     }
-                    warn!(
+                    warn!(event = "clickhouse.request_retry",
                         attempt = attempt + 1,
                         transient = is_transient,
                         connect = err.is_connect(),

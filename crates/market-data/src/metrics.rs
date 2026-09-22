@@ -137,6 +137,10 @@ impl Metrics {
         registry.register(Box::new(binance_rest_limit_weight_1m.clone()))?;
         registry.register(Box::new(config_refresh_total.clone()))?;
         registry.register(Box::new(backfill_total.clone()))?;
+        config_refresh_total.with_label_values(&["success"]);
+        for outcome in ["success", "failure"] {
+            backfill_total.with_label_values(&[outcome]);
+        }
         registry.register(Box::new(binance_rest_requests_total.clone()))?;
         registry.register(Box::new(binance_rest_rate_limit_responses_total.clone()))?;
         registry.register(Box::new(binance_rest_limiter_waits_total.clone()))?;
@@ -147,6 +151,7 @@ impl Metrics {
         registry.register(Box::new(trade_store_failures_total.clone()))?;
 
         let http = HttpMetrics::register(&registry)?;
+        trading_bot_observability::register_build_info(&registry)?;
 
         Ok(Self {
             registry,

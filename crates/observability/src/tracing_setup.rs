@@ -69,6 +69,7 @@ pub fn init(default_filter: &str) -> TelemetryGuard {
     let format_layer = tracing_subscriber::fmt::layer()
         .event_format(EstateJson {
             service: service_name.clone(),
+            release: crate::current_release(),
         })
         .with_writer(std::io::stdout);
 
@@ -148,6 +149,7 @@ fn build_tracer_provider(service_name: &str) -> Option<SdkTracerProvider> {
 /// a link to the trace, so both have to be present and spelled exactly this way.
 struct EstateJson {
     service: String,
+    release: Option<String>,
 }
 
 impl<S, N> FormatEvent<S, N> for EstateJson
@@ -176,7 +178,12 @@ where
             "service".into(),
             serde_json::Value::String(self.service.clone()),
         );
-        record.insert("message".into(), serde_json::Value::String(visitor.message));
+        if let Some(release) = &self.release {
+            record.insert("release".into(), serde_json::Value::String(release.clone()));
+        }
+        if !visitor.message.is_empty() {
+            record.insert("message".into(), serde_json::Value::String(visitor.message));
+        }
         record.insert(
             "context".into(),
             serde_json::Value::String(metadata.target().to_owned()),
@@ -196,7 +203,7 @@ where
             let otel_context = tracing::Span::current().context();
             let span = otel_context.span();
             let span_context = span.span_context();
-            if span_context.is_valid() {
+            if span_context.is_valid() && span_context.is_sampled() {
                 record.insert(
                     "traceId".into(),
                     serde_json::Value::String(span_context.trace_id().to_string()),

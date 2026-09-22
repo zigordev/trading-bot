@@ -343,6 +343,7 @@ impl BinanceWeightLimiter {
                     metrics.binance_rest_limiter_waits_total.inc();
                     metrics.binance_rest_limiter_wait_ms_total.inc_by(wait_ms);
                     tracing::info!(
+                        event = "binance.limiter_delayed",
                         path,
                         request_weight,
                         target_weight_1m,
@@ -560,7 +561,11 @@ impl MarketDataService {
         let refresh_service = self.clone();
         let startup_refresh_handle = tokio::spawn(async move {
             if let Err(error) = refresh_service.perform_refresh("startup").await {
-                tracing::warn!(?error, "market-data startup refresh failed");
+                tracing::warn!(
+                    event = "refresh.startup_failed",
+                    ?error,
+                    "market-data startup refresh failed"
+                );
             }
         });
 
@@ -954,7 +959,7 @@ impl MarketDataService {
                     while refresh_rx.try_recv().is_ok() {}
 
                     if let Err(error) = self.perform_refresh(&reason).await {
-                        tracing::warn!(?error, reason, "market-data refresh failed");
+                        tracing::warn!(event = "refresh.failed", ?error, reason, "market-data refresh failed");
                     }
                 }
             }
@@ -1009,7 +1014,7 @@ impl MarketDataService {
                                         let _ = self.inner.refresh_tx.send(format!("config-change:{}:{}", event.resource_type, event.operation)).await;
                                     }
                                     Ok(_) => {}
-                                    Err(error) => tracing::warn!(?error, "failed to decode config-change event"),
+                                    Err(error) => tracing::warn!(event = "config_change.decode_failed", ?error, "failed to decode config-change event"),
                                 }
                             }
                         }
@@ -1286,7 +1291,11 @@ impl MarketDataService {
         let startup_result = self.run_market_data_compaction("startup").await;
         drop(maintenance);
         if let Err(error) = startup_result {
-            tracing::warn!(?error, "market-data store compaction failed");
+            tracing::warn!(
+                event = "compaction.failed",
+                ?error,
+                "market-data store compaction failed"
+            );
         }
         interval.tick().await;
 
@@ -1300,7 +1309,7 @@ impl MarketDataService {
                 _ = interval.tick() => {
                     let _maintenance = self.inner.maintenance_gate.lock().await;
                     if let Err(error) = self.run_market_data_compaction("periodic-reconcile").await {
-                        tracing::warn!(?error, "market-data store compaction failed");
+                        tracing::warn!(event = "compaction.failed", ?error, "market-data store compaction failed");
                     }
                 }
             }
@@ -1309,7 +1318,11 @@ impl MarketDataService {
 
     async fn run_market_data_compaction(&self, reason: &str) -> Result<()> {
         let _permit = self.inner.compaction_gate.lock().await;
-        tracing::info!(reason, "starting historical market-data compaction");
+        tracing::info!(
+            event = "compaction.started",
+            reason,
+            "starting historical market-data compaction"
+        );
         let started = std::time::SystemTime::now();
         self.inner.database.compact_market_data_tables().await?;
         let elapsed_ms = started
@@ -1318,6 +1331,7 @@ impl MarketDataService {
             .map(|elapsed| elapsed.as_millis())
             .unwrap_or_default();
         tracing::info!(
+            event = "compaction.completed",
             reason,
             elapsed_ms,
             "finished historical market-data compaction"
@@ -1385,6 +1399,7 @@ impl MarketDataService {
             .await
             .clear();
         tracing::info!(
+            event = "subscriptions.refreshed",
             reason,
             kline_subscriptions = active.kline_subscriptions.len(),
             pair_subscriptions = active.pair_subscriptions.len(),
@@ -1398,6 +1413,8 @@ impl MarketDataService {
             .await
         {
             tracing::warn!(
+                event = "data_readiness.publish_failed",
+                snapshot = "placeholder",
                 ?error,
                 reason,
                 "failed to publish placeholder data-readiness snapshot"
@@ -1426,6 +1443,7 @@ impl MarketDataService {
                     .await
             {
                 tracing::warn!(
+                    event = "trade_gap_repair.failed",
                     ?error,
                     reason,
                     "startup trade gap audit/repair failed (continuing)"
@@ -1443,7 +1461,13 @@ impl MarketDataService {
         refresh_result?;
 
         if let Err(error) = self.publish_data_readiness_snapshot(&records).await {
-            tracing::warn!(?error, reason, "failed to publish data-readiness snapshot");
+            tracing::warn!(
+                event = "data_readiness.publish_failed",
+                snapshot = "current",
+                ?error,
+                reason,
+                "failed to publish data-readiness snapshot"
+            );
         }
         Ok(())
     }
@@ -1467,6 +1491,8 @@ impl MarketDataService {
         let handle = tokio::spawn(async move {
             if let Err(error) = service.publish_data_readiness_snapshot(&records).await {
                 tracing::warn!(
+                    event = "data_readiness.publish_failed",
+                    snapshot = "initial",
                     ?error,
                     reason,
                     "failed to publish initial in-progress data-readiness snapshot"
@@ -1484,7 +1510,7 @@ impl MarketDataService {
                     }
                     _ = interval.tick() => {
                         if let Err(error) = service.publish_data_readiness_snapshot(&records).await {
-                            tracing::warn!(
+                            tracing::warn!(event = "data_readiness.publish_failed", snapshot = "periodic",
                                 ?error,
                                 reason,
                                 "failed to publish periodic data-readiness snapshot"
@@ -2027,7 +2053,12 @@ impl MarketDataService {
             && self.inner.config.historical_store_compact_after_refresh
             && let Err(error) = self.run_market_data_compaction("post-refresh").await
         {
-            tracing::warn!(?error, "market-data post-refresh compaction failed");
+            tracing::warn!(
+                event = "compaction.failed",
+                phase = "post_refresh",
+                ?error,
+                "market-data post-refresh compaction failed"
+            );
         }
 
         self.inner
@@ -2199,7 +2230,7 @@ impl MarketDataService {
                     return Ok(());
                 }
 
-                tracing::info!(
+                tracing::info!(event = "trade_gap_repair.started", 
                     table = "market_data_trades",
                     pair_code = %subscription.pair_code,
                     mode = ?mode,
@@ -2221,7 +2252,7 @@ impl MarketDataService {
                     )
                     .await?;
                 if missing_ranges.is_empty() {
-                    tracing::info!(
+                    tracing::info!(event = "trade_gap_repair.skipped", 
                         table = "market_data_trades",
                         pair_code = %subscription.pair_code,
                         mode = ?mode,
@@ -2243,7 +2274,7 @@ impl MarketDataService {
                     )
                     .await?;
 
-                tracing::info!(
+                tracing::info!(event = "trade_gap_repair.completed", 
                     table = "market_data_trades",
                     pair_code = %subscription.pair_code,
                     mode = ?mode,
@@ -2493,7 +2524,7 @@ impl MarketDataService {
         let mut buffered_events: Vec<NormalizedKlineEvent> = Vec::new();
 
         while next_start_ms < range_end_ms {
-            tracing::info!(
+            tracing::debug!(event = "kline_backfill.batch_started",
                 table = "market_data_klines",
                 pair_code = %subscription.pair_code,
                 timeframe_code = %subscription.timeframe_code,
@@ -2534,7 +2565,7 @@ impl MarketDataService {
                         .database
                         .upsert_klines_batch(&buffered_events)
                         .await?;
-                    tracing::info!(
+                    tracing::debug!(event = "kline_backfill.batch_flushed",
                         table = "market_data_klines",
                         pair_code = %subscription.pair_code,
                         timeframe_code = %subscription.timeframe_code,
@@ -2573,7 +2604,7 @@ impl MarketDataService {
                 .database
                 .upsert_klines_batch(&buffered_events)
                 .await?;
-            tracing::info!(
+            tracing::debug!(event = "kline_backfill.final_batch_flushed",
                 table = "market_data_klines",
                 pair_code = %subscription.pair_code,
                 timeframe_code = %subscription.timeframe_code,
@@ -2636,7 +2667,7 @@ impl MarketDataService {
             .await?;
 
         if unclamped_required_lookback_ms > max_retention_lookback_ms {
-            tracing::warn!(
+            tracing::warn!(event = "kline_backfill.lookback_clamped",
                 table = "market_data_klines",
                 pair_code = %subscription.pair_code,
                 timeframe_code = %subscription.timeframe_code,
@@ -2649,7 +2680,7 @@ impl MarketDataService {
         }
 
         if gaps.is_empty() {
-            tracing::info!(
+            tracing::info!(event = "kline_backfill.skipped",
                 table = "market_data_klines",
                 pair_code = %subscription.pair_code,
                 timeframe_code = %subscription.timeframe_code,
@@ -2664,7 +2695,7 @@ impl MarketDataService {
             return Ok(());
         }
 
-        tracing::info!(
+        tracing::info!(event = "kline_backfill.planned",
             table = "market_data_klines",
             pair_code = %subscription.pair_code,
             timeframe_code = %subscription.timeframe_code,
@@ -2679,7 +2710,7 @@ impl MarketDataService {
         );
 
         for gap in gaps {
-            tracing::info!(
+            tracing::debug!(event = "kline_backfill.gap_refill",
                 table = "market_data_klines",
                 pair_code = %subscription.pair_code,
                 timeframe_code = %subscription.timeframe_code,
@@ -2706,7 +2737,7 @@ impl MarketDataService {
             .await
         {
             Ok(coverage) => {
-                tracing::info!(
+                tracing::info!(event = "kline_backfill.completed",
                     table = "market_data_klines",
                     pair_code = %subscription.pair_code,
                     timeframe_code = %subscription.timeframe_code,
@@ -2719,7 +2750,7 @@ impl MarketDataService {
                 );
             }
             Err(error) => {
-                tracing::warn!(
+                tracing::warn!(event = "kline_backfill.coverage_failed",
                     ?error,
                     table = "market_data_klines",
                     pair_code = %subscription.pair_code,
@@ -2735,7 +2766,7 @@ impl MarketDataService {
             .publish_data_readiness_for_pair(&subscription.pair_code)
             .await
         {
-            tracing::warn!(
+            tracing::warn!(event = "data_readiness.publish_failed", snapshot = "final_klines",
                 ?error,
                 pair_code = %subscription.pair_code,
                 timeframe_code = %subscription.timeframe_code,
@@ -2772,7 +2803,7 @@ impl MarketDataService {
         let window_start = earliest_kline_time.max(required_window_start);
         let window_end = snapshot_end_ms;
 
-        tracing::info!(
+        tracing::info!(event = "trade_backfill.planned",
             table = "market_data_trades",
             pair_code = %subscription.pair_code,
             window_start_ms = window_start,
@@ -2816,7 +2847,7 @@ impl MarketDataService {
                 };
 
                 if has_full_coverage {
-                    tracing::info!(
+                    tracing::info!(event = "trade_backfill.completed",
                         table = "market_data_trades",
                         pair_code = %subscription.pair_code,
                         window_start_ms = window_start,
@@ -2827,7 +2858,7 @@ impl MarketDataService {
                         "trade backfill completed for pair; window coverage in ClickHouse"
                     );
                 } else {
-                    tracing::warn!(
+                    tracing::warn!(event = "trade_backfill.incomplete",
                         table = "market_data_trades",
                         pair_code = %subscription.pair_code,
                         window_start_ms = window_start,
@@ -2840,7 +2871,7 @@ impl MarketDataService {
                 }
             }
             Err(error) => {
-                tracing::warn!(
+                tracing::warn!(event = "trade_backfill.coverage_failed",
                     ?error,
                     table = "market_data_trades",
                     pair_code = %subscription.pair_code,
@@ -2855,7 +2886,7 @@ impl MarketDataService {
             .publish_data_readiness_for_pair(&subscription.pair_code)
             .await
         {
-            tracing::warn!(
+            tracing::warn!(event = "data_readiness.publish_failed", snapshot = "final_trades",
                 ?error,
                 pair_code = %subscription.pair_code,
                 "failed to publish final trade data-readiness update"
@@ -2886,7 +2917,7 @@ impl MarketDataService {
                 .await?;
 
             if missing_ranges.is_empty() {
-                tracing::info!(
+                tracing::debug!(event = "trade_backfill.pass_complete",
                     table = "market_data_trades",
                     pair_code = %subscription.pair_code,
                     window_start_ms = window_start,
@@ -2897,7 +2928,7 @@ impl MarketDataService {
                 break;
             }
 
-            tracing::warn!(
+            tracing::warn!(event = "trade_backfill.missing_ranges",
                 table = "market_data_trades",
                 pair_code = %subscription.pair_code,
                 window_start_ms = window_start,
@@ -2931,7 +2962,7 @@ impl MarketDataService {
         max_batches: usize,
     ) -> Result<()> {
         for (index, range) in missing_ranges.into_iter().rev().enumerate() {
-            tracing::warn!(
+            tracing::debug!(event = "trade_backfill.range_refill",
                 table = "market_data_trades",
                 pair_code = %subscription.pair_code,
                 window_start_ms = window_start,
@@ -3062,7 +3093,7 @@ impl MarketDataService {
                 total_rows_flushed_to_clickhouse.saturating_add(inserted_rows);
         }
 
-        tracing::info!(
+        tracing::debug!(event = "trade_backfill.refill_finished",
             table = "market_data_trades",
             pair_code = %subscription.pair_code,
             range_start_aggregate_trade_id = range.start_id,
@@ -3148,6 +3179,7 @@ impl MarketDataService {
                 .await
             {
                 tracing::warn!(
+                    event = "binance.weight_high",
                     path,
                     used_weight_1m = observation.effective_used_weight_1m,
                     warn_weight_1m = observation.warn_weight_1m,
@@ -3192,7 +3224,7 @@ impl MarketDataService {
                     .binance_rest_requests_total
                     .with_label_values(&[path, "retry"])
                     .inc();
-                tracing::warn!(
+                tracing::warn!(event = "binance.request_retry",
                     path,
                     status = %status,
                     attempt,

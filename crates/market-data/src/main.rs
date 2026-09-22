@@ -81,6 +81,7 @@ async fn main() -> Result<()> {
     let address = SocketAddr::from(([0, 0, 0, 0], config.port));
     let listener = tokio::net::TcpListener::bind(address).await?;
     tracing::info!(
+        event = "service.started",
         port = config.port,
         service = config.service_name,
         environment = config.app_env,
