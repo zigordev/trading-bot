@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { headers } from 'next/headers';
 import { Inter, Geist_Mono } from 'next/font/google';
 
 import { NuqsAdapter } from 'nuqs/adapters/next/app';
@@ -8,6 +9,7 @@ import { OpsRealtimeBridge } from '@/components/providers/ops-realtime-bridge';
 import { PreferencesProvider } from '@/components/providers/preferences-provider';
 import { I18nProvider } from '@/i18n/client';
 import { getLocale, getMessages } from '@/i18n/server';
+import { nonceFrom } from '@/lib/csp';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { Toaster } from '@/components/ui/sonner';
 import { AppShell } from '@/components/layout/app-shell';
@@ -42,12 +44,13 @@ export const metadata: Metadata = {
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const locale = await getLocale();
   const messages = await getMessages(locale);
+  const nonce = nonceFrom((await headers()).get('content-security-policy-report-only'));
 
   return (
     <html data-theme="operator-console" lang={locale}>
       <body className={`${inter.variable} ${geistMono.variable}`}>
         <RumProvider />
-        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+        <script nonce={nonce} dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
         <I18nProvider locale={locale} messages={messages}>
           <PreferencesProvider>
             <NuqsAdapter>

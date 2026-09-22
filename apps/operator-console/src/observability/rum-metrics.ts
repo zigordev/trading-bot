@@ -1,4 +1,5 @@
 import * as client from 'prom-client';
+import { currentRelease } from './json-logger';
 import { registry } from './metrics.registry';
 
 /**
@@ -20,11 +21,14 @@ import { registry } from './metrics.registry';
 /** Timing metrics, in seconds. Buckets sit on the Core Web Vitals thresholds
  *  so a quantile reads against the grade: INP good at 0.2s and poor past 0.5s,
  *  TTFB good at 0.8s and poor past 1.8s, LCP good at 2.5s and poor past 4s. */
+const exemplars = (registry.contentType as string) === client.openMetricsContentType;
+
 const performanceSeconds = new client.Histogram({
   name: 'rum_performance_seconds',
   help: 'RUM timing metrics in seconds (LCP, INP, TTFB, FCP, Load)',
-  labelNames: ['metric_name', 'page'] as const,
+  labelNames: ['metric_name', 'page', 'release'] as const,
   buckets: [0.05, 0.1, 0.2, 0.5, 0.8, 1, 1.8, 2.5, 4, 6, 10],
+  enableExemplars: exemplars,
   registers: [registry],
 });
 
@@ -34,7 +38,7 @@ const performanceSeconds = new client.Histogram({
 const layoutShiftScore = new client.Histogram({
   name: 'rum_layout_shift_score',
   help: 'Cumulative Layout Shift score (unitless)',
-  labelNames: ['page'] as const,
+  labelNames: ['page', 'release'] as const,
   buckets: [0.01, 0.05, 0.1, 0.15, 0.25, 0.5, 1],
   registers: [registry],
 });
@@ -42,28 +46,28 @@ const layoutShiftScore = new client.Histogram({
 const errorsTotal = new client.Counter({
   name: 'rum_errors_total',
   help: 'Client-side errors reported by the browser',
-  labelNames: ['error_type', 'page'] as const,
+  labelNames: ['error_type', 'page', 'release'] as const,
   registers: [registry],
 });
 
 const interactionsTotal = new client.Counter({
   name: 'rum_interactions_total',
   help: 'User interactions reported by the browser',
-  labelNames: ['interaction_type', 'page'] as const,
+  labelNames: ['interaction_type', 'page', 'release'] as const,
   registers: [registry],
 });
 
 const navigationsTotal = new client.Counter({
   name: 'rum_navigations_total',
   help: 'Page views and route changes',
-  labelNames: ['navigation_type', 'page'] as const,
+  labelNames: ['navigation_type', 'page', 'release'] as const,
   registers: [registry],
 });
 
 const frustrationsTotal = new client.Counter({
   name: 'rum_frustrations_total',
   help: 'Rage clicks, dead clicks and other frustration signals',
-  labelNames: ['frustration_type', 'page'] as const,
+  labelNames: ['frustration_type', 'page', 'release'] as const,
   registers: [registry],
 });
 
@@ -94,6 +98,7 @@ export interface RumEvent {
   value?: number;
   page?: string;
   navigationDepth?: number;
+  traceId?: string;
 }
 
 /**
@@ -123,26 +128,34 @@ const UNITLESS_METRICS = new Set(['CLS']);
 
 const HOME_PAGE = '/';
 
+const releaseLabel = (): string => currentRelease() ?? 'unknown';
+
+let allowedPages: ReadonlySet<string> | null = null;
+
 function frustrationLabel(name: string): string {
   return name.toLowerCase().replace(/\s+/g, '_');
 }
 
 function initialiseHomePageSeries(): void {
+  const release = releaseLabel();
   for (const name of ALLOWED_NAMES.performance) {
-    if (UNITLESS_METRICS.has(name)) layoutShiftScore.zero({ page: HOME_PAGE });
-    else performanceSeconds.zero({ metric_name: name, page: HOME_PAGE });
+    if (UNITLESS_METRICS.has(name)) layoutShiftScore.zero({ page: HOME_PAGE, release });
+    else performanceSeconds.zero({ metric_name: name, page: HOME_PAGE, release });
   }
   for (const name of ALLOWED_NAMES.error) {
-    errorsTotal.inc({ error_type: name, page: HOME_PAGE }, 0);
+    errorsTotal.inc({ error_type: name, page: HOME_PAGE, release }, 0);
   }
   for (const name of ALLOWED_NAMES.interaction) {
-    interactionsTotal.inc({ interaction_type: name, page: HOME_PAGE }, 0);
+    interactionsTotal.inc({ interaction_type: name, page: HOME_PAGE, release }, 0);
   }
   for (const name of ALLOWED_NAMES.navigation) {
-    navigationsTotal.inc({ navigation_type: name, page: HOME_PAGE }, 0);
+    navigationsTotal.inc({ navigation_type: name, page: HOME_PAGE, release }, 0);
   }
   for (const name of ALLOWED_NAMES.frustration) {
-    frustrationsTotal.inc({ frustration_type: frustrationLabel(name), page: HOME_PAGE }, 0);
+    frustrationsTotal.inc(
+      { frustration_type: frustrationLabel(name), page: HOME_PAGE, release },
+      0
+    );
   }
 }
 
@@ -162,9 +175,22 @@ export function allowCustomInteractions(names: readonly string[]): void {
   for (const name of names) {
     if (typeof name === 'string' && name.length > 0 && name.length <= 64) {
       customInteractions.add(name);
-      interactionsTotal.inc({ interaction_type: name, page: HOME_PAGE }, 0);
+      interactionsTotal.inc(
+        { interaction_type: name, page: HOME_PAGE, release: releaseLabel() },
+        0
+      );
     }
   }
+}
+
+export function allowPages(pages: readonly string[]): void {
+  allowedPages = new Set(pages.filter((page) => typeof page === 'string' && page.startsWith('/')));
+}
+
+export function pageLabel(rawPage: string): string {
+  const page = normalizePage(rawPage);
+  if (allowedPages && !allowedPages.has(page)) return 'other';
+  return page;
 }
 
 function labelFor(type: RumEventType, name: string): string {
@@ -220,7 +246,8 @@ export function normalizePage(rawPage: string): string {
  * the caller can count rejections.
  */
 export function recordRumEvent(event: RumEvent): boolean {
-  const page = normalizePage(event.page ?? '/');
+  const page = pageLabel(event.page ?? '/');
+  const release = releaseLabel();
   const { type, name } = event;
 
   switch (type) {
@@ -232,23 +259,33 @@ export function recordRumEvent(event: RumEvent): boolean {
       if (metricName === 'other') return false;
 
       if (UNITLESS_METRICS.has(metricName)) {
-        layoutShiftScore.observe({ page }, event.value);
+        layoutShiftScore.observe({ page, release }, event.value);
       } else {
-        performanceSeconds.observe({ metric_name: metricName, page }, event.value / 1000);
+        const labels = { metric_name: metricName, page, release };
+        const value = event.value / 1000;
+        if (exemplars) {
+          performanceSeconds.observe({
+            labels,
+            value,
+            ...(event.traceId ? { exemplarLabels: { trace_id: event.traceId } as never } : {}),
+          });
+        } else {
+          performanceSeconds.observe(labels, value);
+        }
       }
       return true;
     }
 
     case 'error':
-      errorsTotal.inc({ error_type: labelFor('error', name), page });
+      errorsTotal.inc({ error_type: labelFor('error', name), page, release });
       return true;
 
     case 'interaction':
-      interactionsTotal.inc({ interaction_type: labelFor('interaction', name), page });
+      interactionsTotal.inc({ interaction_type: labelFor('interaction', name), page, release });
       return true;
 
     case 'navigation':
-      navigationsTotal.inc({ navigation_type: labelFor('navigation', name), page });
+      navigationsTotal.inc({ navigation_type: labelFor('navigation', name), page, release });
       if (
         typeof event.navigationDepth === 'number' &&
         Number.isFinite(event.navigationDepth) &&
@@ -264,6 +301,7 @@ export function recordRumEvent(event: RumEvent): boolean {
       frustrationsTotal.inc({
         frustration_type: frustrationLabel(labelFor('frustration', name)),
         page,
+        release,
       });
       return true;
 
