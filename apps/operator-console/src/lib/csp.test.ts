@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { API_BASE } from './api';
+import { API_BASE } from './api-base';
 import { contentSecurityPolicy, nonceFrom } from './csp';
 
 describe('contentSecurityPolicy', () => {

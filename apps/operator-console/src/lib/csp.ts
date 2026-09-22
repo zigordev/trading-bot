@@ -1,4 +1,4 @@
-import { API_BASE } from '@/lib/api';
+import { API_BASE } from '@/lib/api-base';
 
 function controlPlaneOrigins(base: string = API_BASE): string[] {
   try {

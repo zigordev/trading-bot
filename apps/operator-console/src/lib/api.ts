@@ -1,6 +1,6 @@
-export const API_BASE = process.env.NEXT_PUBLIC_CONTROL_PLANE_BASE_URL ?? 'http://localhost:3020';
+import { API_BASE } from './api-base';
 
-export const OPS_WS_URL = `${API_BASE.replace(/^http/, 'ws')}/ws/ops`;
+export { API_BASE, OPS_WS_URL } from './api-base';
 
 export type BacktestBatch = {
   batchId: string;
