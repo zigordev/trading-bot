@@ -1,8 +1,11 @@
 import { getNodeAutoInstrumentations } from '@opentelemetry/auto-instrumentations-node';
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http';
 import { resourceFromAttributes } from '@opentelemetry/resources';
-import { NodeSDK } from '@opentelemetry/sdk-node';
-import { ATTR_SERVICE_NAME } from '@opentelemetry/semantic-conventions';
+import { NodeSDK, tracing } from '@opentelemetry/sdk-node';
+import { ATTR_SERVICE_NAME, ATTR_SERVICE_VERSION } from '@opentelemetry/semantic-conventions';
+
+import { currentRelease } from './json-logger.js';
+import { isUnsampledPath, pathOfSpan } from './probe-paths.js';
 
 /**
  * The OpenTelemetry bootstrap.
@@ -17,6 +20,21 @@ import { ATTR_SERVICE_NAME } from '@opentelemetry/semantic-conventions';
  * it just started using. `fs` is off because it produces a span per file read
  * and drowns everything else.
  */
+class ProbeSampler implements tracing.Sampler {
+  constructor(private readonly delegate: tracing.Sampler) {}
+
+  shouldSample(...args: Parameters<tracing.Sampler['shouldSample']>): tracing.SamplingResult {
+    if (isUnsampledPath(pathOfSpan(args[4]))) {
+      return { decision: tracing.SamplingDecision.NOT_RECORD };
+    }
+    return this.delegate.shouldSample(...args);
+  }
+
+  toString(): string {
+    return `ProbeSampler(${this.delegate.toString()})`;
+  }
+}
+
 const tracesEnabled = (process.env.OTEL_TRACES_ENABLED || 'true').toLowerCase() !== 'false';
 
 const telemetrySdk = tracesEnabled ? start() : null;
@@ -44,7 +62,13 @@ function start(): NodeSDK {
   ).replace(/\/+$/, '');
 
   const sdk = new NodeSDK({
-    resource: resourceFromAttributes({ [ATTR_SERVICE_NAME]: serviceName }),
+    resource: resourceFromAttributes({
+      [ATTR_SERVICE_NAME]: serviceName,
+      [ATTR_SERVICE_VERSION]: currentRelease() ?? 'dev',
+    }),
+    sampler: new ProbeSampler(
+      new tracing.ParentBasedSampler({ root: new tracing.AlwaysOnSampler() })
+    ),
     traceExporter: new OTLPTraceExporter({ url: `${endpoint}/v1/traces` }),
     instrumentations: [
       getNodeAutoInstrumentations({

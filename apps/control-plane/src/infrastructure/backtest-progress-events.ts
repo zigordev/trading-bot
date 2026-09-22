@@ -8,6 +8,7 @@ import {
   upsertBacktestJobFromProgressEvent,
 } from '../features/ops.js';
 import { publishOpsEvent } from './ops-events.js';
+import { countProjection } from '../domain-metrics.js';
 
 type KafkaAdmin = Pick<ReturnType<Kafka['admin']>, 'connect' | 'disconnect' | 'createTopics'>;
 
@@ -247,19 +248,19 @@ export const createBacktestProgressConsumer = (
                 },
               });
             }
+            countProjection('backtest_progress', 'projected');
           } catch (error) {
-            logger.error({ err: error, rawValue }, 'Failed to project backtest-progress event');
+            countProjection('backtest_progress', 'failed');
+            logger.error({ event: 'backtest.progress_projection_failed', error, rawValue });
           }
         },
       });
       started = true;
-      logger.info(
-        {
-          groupId: config.backtestProgressEventsConsumerGroupId,
-          topic: config.backtestProgressEventsTopic,
-        },
-        'Backtest progress consumer started'
-      );
+      logger.info({
+        event: 'kafka.consumer_started',
+        groupId: config.backtestProgressEventsConsumerGroupId,
+        topic: config.backtestProgressEventsTopic,
+      });
     },
     stop: async () => {
       if (!started || stopped) {

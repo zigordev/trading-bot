@@ -2,6 +2,37 @@ import { trace, TraceFlags } from '@opentelemetry/api';
 
 export type LogLevel = 'debug' | 'error' | 'info' | 'warn';
 
+const SEVERITY: Record<LogLevel, number> = { debug: 10, info: 20, warn: 30, error: 40 };
+
+function threshold(): number {
+  const configured = process.env.LOG_LEVEL?.trim().toLowerCase();
+  return SEVERITY[configured as LogLevel] ?? SEVERITY.info;
+}
+
+export function currentRelease(): string | undefined {
+  return (
+    process.env.OTEL_SERVICE_VERSION?.trim() ||
+    process.env.APP_RELEASE?.trim() ||
+    process.env.NEXT_PUBLIC_RELEASE?.trim() ||
+    undefined
+  );
+}
+
+function isFieldBag(value: unknown): value is Record<string, unknown> {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    !Array.isArray(value) &&
+    !(value instanceof Error)
+  );
+}
+
+function errorFields(error: Error, withStack: boolean): Record<string, unknown> {
+  const fields: Record<string, unknown> = { name: error.name, message: error.message };
+  if (withStack && error.stack) fields.stack = error.stack;
+  return fields;
+}
+
 /**
  * One JSON object per line, on stdout — the format Alloy ships to Loki.
  *
@@ -20,7 +51,10 @@ export function writeLogRecord(
   context?: string,
   stack?: string
 ): void {
+  if (SEVERITY[level] < threshold()) return;
+
   const spanContext = trace.getActiveSpan()?.spanContext();
+  const version = currentRelease();
 
   const record: Record<string, unknown> = {
     timestamp: new Date().toISOString(),
@@ -28,8 +62,19 @@ export function writeLogRecord(
     // The same string as the health endpoint's `service` and the OTel resource
     // attribute, so a service is named identically everywhere it appears.
     service: process.env.OTEL_SERVICE_NAME?.trim() || 'unknown-service',
-    message: message instanceof Error ? message.message : message,
   };
+
+  if (version) record.release = version;
+
+  if (isFieldBag(message)) {
+    Object.assign(record, message);
+    if (record.error instanceof Error) record.error = errorFields(record.error, false);
+  } else if (message instanceof Error) {
+    record.message = message.message;
+    record.error = errorFields(message, true);
+  } else {
+    record.message = message;
+  }
 
   if (context) record.context = context;
   if (
@@ -78,9 +123,11 @@ export function kafkaLogCreator(): (
   return () =>
     ({ level, log, namespace }) => {
       const { message, timestamp, logger, stack, ...rest } = log;
+      const mapped = level === 1 && rest.restarting === true ? 'warn' : (levels[level] ?? 'info');
+
       writeLogRecord(
-        levels[level] ?? 'info',
-        Object.keys(rest).length > 0 ? { message, ...rest } : message,
+        mapped,
+        { message, ...rest },
         `kafkajs${namespace ? `:${namespace}` : ''}`,
         typeof stack === 'string' ? stack : undefined
       );

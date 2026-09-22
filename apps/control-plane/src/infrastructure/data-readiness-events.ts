@@ -8,6 +8,7 @@ import {
   type DataReadinessProjectionInput,
 } from '../features/ops.js';
 import { publishOpsEvent } from './ops-events.js';
+import { countProjection } from '../domain-metrics.js';
 
 type KafkaAdmin = Pick<ReturnType<Kafka['admin']>, 'connect' | 'disconnect' | 'createTopics'>;
 
@@ -178,22 +179,19 @@ export const createDataReadinessProjectionConsumer = (
                 strategyNames: [...new Set(envelope.data.items.map((item) => item.strategyName))],
               },
             });
+            countProjection('data_readiness', 'projected');
           } catch (error) {
-            logger.error(
-              { err: error, rawValue },
-              'Failed to project data-readiness snapshot event'
-            );
+            countProjection('data_readiness', 'failed');
+            logger.error({ event: 'data_readiness.projection_failed', error, rawValue });
           }
         },
       });
       started = true;
-      logger.info(
-        {
-          groupId: config.dataReadinessEventsConsumerGroupId,
-          topic: config.dataReadinessEventsTopic,
-        },
-        'Data-readiness projection consumer started'
-      );
+      logger.info({
+        event: 'kafka.consumer_started',
+        groupId: config.dataReadinessEventsConsumerGroupId,
+        topic: config.dataReadinessEventsTopic,
+      });
     },
     stop: async () => {
       if (!started || stopped) {

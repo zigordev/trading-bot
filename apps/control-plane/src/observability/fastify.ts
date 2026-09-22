@@ -1,6 +1,7 @@
 import { trace, TraceFlags } from '@opentelemetry/api';
 import type { FastifyInstance } from 'fastify';
 import * as client from 'prom-client';
+import { currentRelease } from './json-logger.js';
 import { registry } from './metrics.registry.js';
 
 /** The Fastify adapter, mirroring `nest.ts`. Only trading-bot's control-plane
@@ -33,8 +34,7 @@ const httpRequestDuration = new client.Histogram({
  */
 export function registerHttpMetrics(app: FastifyInstance): void {
   app.addHook('onResponse', async (request, reply) => {
-    const route = request.routeOptions?.url ?? request.url.split('?')[0];
-    if (!route) return;
+    const route = request.routeOptions?.url ?? 'unmatched';
 
     const labels = {
       method: request.method,
@@ -70,10 +70,22 @@ export function registerHttpMetrics(app: FastifyInstance): void {
 export const fastifyLoggerOptions = {
   level: process.env.LOG_LEVEL ?? 'info',
   messageKey: 'message',
-  base: { service: process.env.OTEL_SERVICE_NAME?.trim() || 'unknown-service' },
+  base: {
+    service: process.env.OTEL_SERVICE_NAME?.trim() || 'unknown-service',
+    ...(currentRelease() ? { release: currentRelease() } : {}),
+  },
   formatters: {
     // pino writes numeric levels by default; the estate uses the label.
     level: (label: string) => ({ level: label }),
+    log: (record: Record<string, unknown>) => {
+      const { error } = record;
+      if (!(error instanceof Error)) return record;
+      return {
+        ...record,
+        error: { name: error.name, message: error.message },
+        ...(error.stack ? { stack: error.stack } : {}),
+      };
+    },
   },
   timestamp: () => `,"timestamp":"${new Date().toISOString()}"`,
   mixin: () => {

@@ -13,3 +13,11 @@ export { fastifyLoggerOptions, registerHttpMetrics } from './fastify.js';
 export { allFlags, isEnabled, registerFlags } from './feature-flags.js';
 export type { FlagDefinition, ResolvedFlag } from './feature-flags.js';
 export { recordHealth } from './health-metrics.js';
+export { startAtZero } from './start-at-zero.js';
+export {
+  logRequestFailed,
+  logServiceStarted,
+  logServiceStopping,
+  observeProcessFailures,
+} from './standard-events.js';
+export type { ProcessFailureOptions, RequestFailure } from './standard-events.js';
