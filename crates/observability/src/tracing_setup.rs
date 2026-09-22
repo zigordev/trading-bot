@@ -117,6 +117,7 @@ fn observe_panics() {
             event = "process.uncaught_exception",
             error = %message,
             location = %location,
+            stack = %std::backtrace::Backtrace::force_capture(),
         );
         previous(info);
     }));

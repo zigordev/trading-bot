@@ -209,13 +209,14 @@ pub async fn track_http_metrics(
     if let Some(span) = &span {
         span.record("http.response.status_code", status_code);
         if status_code >= 500 {
-            tracing::error!(
-                parent: span,
-                event = "request.failed",
-                method = %method,
-                route = %route,
-                status = status_code,
-            );
+            span.in_scope(|| {
+                tracing::error!(
+                    event = "request.failed",
+                    method = %method,
+                    route = %route,
+                    status = status_code,
+                );
+            });
         }
     }
 
