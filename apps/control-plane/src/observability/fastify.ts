@@ -1,11 +1,18 @@
 import { trace, TraceFlags } from '@opentelemetry/api';
 import type { FastifyInstance } from 'fastify';
 import * as client from 'prom-client';
+import { isFrameworkChatter } from './framework-logs.js';
 import { currentRelease } from './json-logger.js';
 import { registry } from './metrics.registry.js';
 
-/** The Fastify adapter, mirroring `nest.ts`. Only trading-bot's control-plane
- *  uses it today; everything else in the estate is Nest. */
+declare module 'fastify' {
+  interface FastifySchema {
+    hide?: boolean;
+  }
+}
+
+/** The Fastify adapter, mirroring `nest.ts`. trading-bot's control-plane and
+ *  sity's server use it. */
 
 const httpRequestsTotal = new client.Counter({
   name: 'http_requests_total',
@@ -85,6 +92,12 @@ export const fastifyLoggerOptions = {
         error: { name: error.name, message: error.message },
         ...(error.stack ? { stack: error.stack } : {}),
       };
+    },
+  },
+  hooks: {
+    logMethod(args: unknown[], method: (...args: never[]) => unknown, level: number): void {
+      if (level === 30 && isFrameworkChatter(args[0])) return;
+      Reflect.apply(method, this, args);
     },
   },
   timestamp: () => `,"timestamp":"${new Date().toISOString()}"`,

@@ -62,6 +62,16 @@ describe('sanitizeErrorDetail', () => {
     });
   });
 
+  it('keeps a frame inside the assets of a Vite build', () => {
+    expect(
+      sanitizeErrorDetail({
+        type: 'Error',
+        message: 'm',
+        frame: { file: '/assets/index-Bx12aZ.js', line: 1, column: 100 },
+      })?.frame
+    ).toEqual({ file: '/assets/index-Bx12aZ.js', line: 1, column: 100 });
+  });
+
   it('falls back to Error for a type that is not a plain error name', () => {
     expect(sanitizeErrorDetail({ type: '<script>', message: 'x' })?.type).toBe('Error');
   });
@@ -100,6 +110,22 @@ describe('resolveFrame', () => {
     await expect(
       resolveFrame({ file: '/_next/static/chunks/app.js', line: 1, column: 100 })
     ).resolves.toBe('src/components/AskBar.tsx:42:13');
+  });
+
+  it('maps a Vite asset back to its source, whose path the map gives relative to itself', async () => {
+    const root = mkdtempSync(path.join(tmpdir(), 'rum-vite-'));
+    const generator = new SourceMapGenerator({ file: 'index-Bx12aZ.js' });
+    generator.addMapping({
+      generated: { line: 1, column: 99 },
+      original: { line: 7, column: 2 },
+      source: '../../src/scene/city.ts',
+    });
+    writeFileSync(path.join(root, 'index-Bx12aZ.js.map'), generator.toString());
+    setSourceMapRoot(root);
+
+    await expect(
+      resolveFrame({ file: '/assets/index-Bx12aZ.js', line: 1, column: 100 })
+    ).resolves.toBe('src/scene/city.ts:7:3');
   });
 
   it('never reads a map outside the static root, even when the path is encoded', async () => {

@@ -113,7 +113,7 @@ function ownFrame(url: string | undefined, line: number, column: number): StackF
   try {
     const parsed = new URL(url, window.location.href);
     if (parsed.origin !== window.location.origin) return undefined;
-    if (!parsed.pathname.startsWith('/_next/static/')) return undefined;
+    if (!/^\/(?:_next\/static|assets)\//.test(parsed.pathname)) return undefined;
     return { file: parsed.pathname, line, column };
   } catch {
     return undefined;

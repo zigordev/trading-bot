@@ -18,8 +18,8 @@ export interface ClientErrorDetail {
   frame?: StackFrame;
 }
 
-const STATIC_PREFIX = '/_next/static/';
-const STATIC_FILE = /^\/_next\/static\/(?:[\w\-.~%@[\]]+\/)*[\w\-.~%@[\]]+\.js$/;
+const STATIC_PREFIX = /^\/(?:_next\/static|assets)\//;
+const STATIC_FILE = /^\/(?:_next\/static|assets)\/(?:[\w\-.~%@[\]]+\/)*[\w\-.~%@[\]]+\.js$/;
 const ERROR_TYPE = /^[A-Z][A-Za-z]{0,48}$/;
 const SELECTOR = /^[\w\-.#>:()[\]="' ,*+~^$|]+$/;
 const SELECTOR_LIMIT = 120;
@@ -104,7 +104,7 @@ export function setSourceMapRoot(root: string): void {
 async function consumerFor(file: string): Promise<SourceMapConsumer | null> {
   let relative: string;
   try {
-    relative = decodeURIComponent(file.slice(STATIC_PREFIX.length));
+    relative = decodeURIComponent(file.replace(STATIC_PREFIX, ''));
   } catch {
     return null;
   }
@@ -113,7 +113,7 @@ async function consumerFor(file: string): Promise<SourceMapConsumer | null> {
   if (!mapPath.startsWith(`${sourceMapRoot}${path.sep}`)) return null;
   if (consumers.has(mapPath)) return consumers.get(mapPath) ?? null;
 
-  let consumer: SourceMapConsumer | null = null;
+  let consumer: SourceMapConsumer | null;
   try {
     const raw = JSON.parse(await readFile(mapPath, 'utf8')) as RawSourceMap;
     consumer = new SourceMapConsumer(raw);
@@ -135,7 +135,7 @@ function cleanSource(source: string): string {
     .replace(/^[a-z]+:\/\/\/?/i, '')
     .replace(/^\[project\]\//, '')
     .replace(/^_N_E\//, '')
-    .replace(/^(?:\.\/)+/, '')
+    .replace(/^(?:\.\.?\/)+/, '')
     .replace(/^apps\/web\//, '');
 }
 

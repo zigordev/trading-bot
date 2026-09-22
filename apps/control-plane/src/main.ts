@@ -8,7 +8,7 @@ import fastifyHelmet from '@fastify/helmet';
 import fastifySwagger from '@fastify/swagger';
 import fastifySwaggerUi from '@fastify/swagger-ui';
 import fastifyWebsocket from '@fastify/websocket';
-import Fastify from 'fastify';
+import Fastify, { LogController } from 'fastify';
 import { Gauge } from 'prom-client';
 
 import { loadConfig } from './config.js';
@@ -49,7 +49,10 @@ const databaseReadinessGauge = new Gauge({
   registers: [registry],
 });
 
-const app = Fastify({ logger: fastifyLoggerOptions });
+const app = Fastify({
+  logger: fastifyLoggerOptions,
+  logController: new LogController({ disableRequestLogging: true }),
+});
 const pool = createPool(config);
 await ensureControlPlaneSchema(pool);
 await ensureOpsSchema(pool);

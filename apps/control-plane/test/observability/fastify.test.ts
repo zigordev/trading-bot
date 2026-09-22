@@ -106,3 +106,19 @@ test('the metrics route serves the registry in the format Prometheus scrapes', a
   assert.match(headers['Content-Type'] ?? '', /^text\/plain; version=0\.0\.4/);
   assert.match(String(body), /http_request_duration_seconds/);
 });
+
+test('Fastify announcing its address is left out, since service.started carries the port', () => {
+  const written: unknown[][] = [];
+  const method = (...args: unknown[]) => {
+    written.push(args);
+  };
+
+  fastifyLoggerOptions.hooks.logMethod(['Server listening at http://0.0.0.0:8080'], method, 30);
+  fastifyLoggerOptions.hooks.logMethod([{ event: 'config.publish_failed' }, 'failed'], method, 50);
+  fastifyLoggerOptions.hooks.logMethod(['Server listening at http://0.0.0.0:8080'], method, 20);
+
+  assert.deepEqual(written, [
+    [{ event: 'config.publish_failed' }, 'failed'],
+    ['Server listening at http://0.0.0.0:8080'],
+  ]);
+});
