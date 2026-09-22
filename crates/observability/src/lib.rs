@@ -46,7 +46,9 @@ use axum::{
     middleware::Next,
     response::Response,
 };
-use prometheus::{HistogramOpts, HistogramVec, IntCounterVec, IntGaugeVec, Opts, Registry};
+use prometheus::{
+    HistogramOpts, HistogramVec, IntCounterVec, IntGauge, IntGaugeVec, Opts, Registry,
+};
 use std::time::Instant;
 
 /// The two metrics the shared alerting rules are built on.
@@ -90,6 +92,66 @@ impl HttpMetrics {
     }
 }
 
+#[derive(Clone)]
+pub struct HealthMetrics {
+    status: IntGauge,
+    component_up: IntGaugeVec,
+}
+
+impl HealthMetrics {
+    pub fn register(registry: &Registry) -> anyhow::Result<Self> {
+        let status = IntGauge::new(
+            "service_health_status",
+            "Overall service health: 2 = ok, 1 = degraded, 0 = error",
+        )?;
+        let component_up = IntGaugeVec::new(
+            Opts::new(
+                "service_component_up",
+                "Whether a dependency the service reports on is up (1) or down (0)",
+            ),
+            &["component"],
+        )?;
+
+        registry.register(Box::new(status.clone()))?;
+        registry.register(Box::new(component_up.clone()))?;
+
+        Ok(Self {
+            status,
+            component_up,
+        })
+    }
+
+    pub fn record(&self, payload: &serde_json::Value) {
+        let status = match payload.get("status").and_then(serde_json::Value::as_str) {
+            Some("ok") => 2,
+            Some("degraded") => 1,
+            _ => 0,
+        };
+        self.status.set(status);
+
+        let Some(components) = payload
+            .get("components")
+            .and_then(serde_json::Value::as_object)
+        else {
+            return;
+        };
+        for (name, component) in components {
+            let up = match component.get("status").and_then(serde_json::Value::as_str) {
+                Some("up") => 1,
+                Some("down") => 0,
+                _ => continue,
+            };
+            self.component_up
+                .with_label_values(&[name.as_str()])
+                .set(up);
+        }
+    }
+}
+
+fn is_probe(route: &str) -> bool {
+    matches!(route, "/health" | "/metrics")
+}
+
 /// Axum middleware recording every request.
 ///
 /// The `route` label comes from `MatchedPath`, which is axum's route *pattern*
@@ -111,7 +173,7 @@ pub async fn track_http_metrics(
         .map(|matched| matched.as_str().to_owned())
         .unwrap_or_else(|| "unmatched".to_owned());
 
-    // A span per request, which is what actually reaches Jaeger.
+    // A span per request except the probes, which is what actually reaches Jaeger.
     //
     // `tracing-opentelemetry` exports spans, not events — so wiring the OTLP
     // exporter without creating any span exports nothing at all, silently. The
@@ -122,24 +184,40 @@ pub async fn track_http_metrics(
     // the same as the Node services' spans in a trace list. Log lines written
     // inside this span pick up its `traceId`, which is what makes the "View
     // trace" link in Grafana work.
-    let span = tracing::info_span!(
-        "http_request",
-        otel.name = %format!("{method} {route}"),
-        otel.kind = "server",
-        http.request.method = %method,
-        http.route = %route,
-        // Filled in once the response exists; declared here because a span's
-        // field set is fixed at creation.
-        http.response.status_code = tracing::field::Empty,
-    );
+    let span = (!is_probe(&route)).then(|| {
+        tracing::info_span!(
+            "http_request",
+            otel.name = %format!("{method} {route}"),
+            otel.kind = "server",
+            http.request.method = %method,
+            http.route = %route,
+            // Filled in once the response exists; declared here because a span's
+            // field set is fixed at creation.
+            http.response.status_code = tracing::field::Empty,
+        )
+    });
 
     let started = Instant::now();
-    let response = {
-        use tracing::Instrument;
-        next.run(request).instrument(span.clone()).await
+    let response = match &span {
+        Some(span) => {
+            use tracing::Instrument;
+            next.run(request).instrument(span.clone()).await
+        }
+        None => next.run(request).await,
     };
     let status_code = response.status().as_u16();
-    span.record("http.response.status_code", status_code);
+    if let Some(span) = &span {
+        span.record("http.response.status_code", status_code);
+        if status_code >= 500 {
+            tracing::error!(
+                parent: span,
+                event = "request.failed",
+                method = %method,
+                route = %route,
+                status = status_code,
+            );
+        }
+    }
 
     let status = status_code.to_string();
     let labels = [method.as_str(), route.as_str(), status.as_str()];
@@ -169,5 +247,45 @@ mod tests {
         let text = String::from_utf8(buffer).unwrap();
 
         assert!(text.contains("service_build_info{version=\"v0.2.0\"} 1"));
+    }
+
+    fn encoded(registry: &Registry) -> String {
+        let mut buffer = Vec::new();
+        TextEncoder::new()
+            .encode(&registry.gather(), &mut buffer)
+            .unwrap();
+        String::from_utf8(buffer).unwrap()
+    }
+
+    #[test]
+    fn health_is_recorded_from_the_payload_the_health_route_answers() {
+        let registry = Registry::new();
+        let health = HealthMetrics::register(&registry).unwrap();
+
+        health.record(&serde_json::json!({
+            "status": "error",
+            "components": {
+                "controlPlane": { "status": "up" },
+                "exchange": { "status": "down" },
+                "marketData": { "status": "idle" }
+            }
+        }));
+
+        let text = encoded(&registry);
+        assert!(text.contains("service_health_status 0"));
+        assert!(text.contains("service_component_up{component=\"controlPlane\"} 1"));
+        assert!(text.contains("service_component_up{component=\"exchange\"} 0"));
+        assert!(!text.contains("component=\"marketData\""));
+
+        health.record(&serde_json::json!({ "status": "ok", "components": {} }));
+        assert!(encoded(&registry).contains("service_health_status 2"));
+    }
+
+    #[test]
+    fn probes_are_counted_but_never_traced() {
+        assert!(is_probe("/health"));
+        assert!(is_probe("/metrics"));
+        assert!(!is_probe("/v1/klines/{pair_code}/{timeframe_code}"));
+        assert!(!is_probe("unmatched"));
     }
 }

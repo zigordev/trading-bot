@@ -75,7 +75,7 @@ pub fn init(default_filter: &str) -> TelemetryGuard {
 
     let provider = build_tracer_provider(&service_name);
 
-    match provider {
+    let guard = match provider {
         Some(provider) => {
             let tracer = provider.tracer("trading-bot");
             tracing_subscriber::registry()
@@ -94,7 +94,32 @@ pub fn init(default_filter: &str) -> TelemetryGuard {
                 .init();
             TelemetryGuard { provider: None }
         }
-    }
+    };
+
+    observe_panics();
+    guard
+}
+
+fn observe_panics() {
+    let previous = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let message = info
+            .payload()
+            .downcast_ref::<&str>()
+            .map(|message| (*message).to_owned())
+            .or_else(|| info.payload().downcast_ref::<String>().cloned())
+            .unwrap_or_else(|| "panic".to_owned());
+        let location = info
+            .location()
+            .map(|location| format!("{}:{}", location.file(), location.line()))
+            .unwrap_or_default();
+        tracing::error!(
+            event = "process.uncaught_exception",
+            error = %message,
+            location = %location,
+        );
+        previous(info);
+    }));
 }
 
 fn build_tracer_provider(service_name: &str) -> Option<SdkTracerProvider> {

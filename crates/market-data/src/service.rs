@@ -632,6 +632,10 @@ impl MarketDataService {
         self.inner.metrics.http.clone()
     }
 
+    pub fn health_metrics(&self) -> trading_bot_observability::HealthMetrics {
+        self.inner.metrics.health.clone()
+    }
+
     pub async fn readiness(&self) -> ReadinessPayload {
         let db_ok = self.inner.database.ping().await.is_ok();
         self.inner

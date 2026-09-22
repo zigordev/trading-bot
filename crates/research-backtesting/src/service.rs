@@ -656,6 +656,10 @@ impl ResearchBacktestingService {
         self.inner.metrics.http.clone()
     }
 
+    pub fn health_metrics(&self) -> trading_bot_observability::HealthMetrics {
+        self.inner.metrics.health.clone()
+    }
+
     pub async fn status(&self) -> RuntimeStatus {
         self.inner.status.read().await.clone()
     }

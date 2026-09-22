@@ -279,6 +279,10 @@ impl ExecutionService {
         self.inner.metrics.http.clone()
     }
 
+    pub fn health_metrics(&self) -> trading_bot_observability::HealthMetrics {
+        self.inner.metrics.health.clone()
+    }
+
     pub async fn active_promotion(&self) -> Option<ExecutionPromotionRecord> {
         self.inner.status.read().await.active_promotion.clone()
     }
