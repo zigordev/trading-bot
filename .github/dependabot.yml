@@ -27,6 +27,7 @@ updates:
       dev-dependencies:
         dependency-type: development
         update-types: [minor, patch]
+        exclude-patterns: ['@vitest/*']
       production-patch:
         dependency-type: production
         update-types: [patch]
@@ -156,6 +157,9 @@ updates:
     # urgent enough to be worth being the first to install it.
     cooldown:
       default-days: 7
+    groups:
+      codeql:
+        patterns: ['github/codeql-action/*']
     commit-message:
       prefix: ci
       include: scope
