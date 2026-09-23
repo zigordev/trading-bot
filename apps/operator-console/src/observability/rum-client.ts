@@ -17,13 +17,36 @@
  * - The user id made every event personally identifying for a signal that is
  *   aggregate by nature.
  * - Stack traces can contain values from the code that threw.
- *
- * Everything sent is either a bounded enum or a number. That is what makes an
- * unauthenticated ingest endpoint acceptable: there is nothing worth stealing
- * in the payload and nothing unbounded in it.
  */
 
+import {
+  onCLS,
+  onFCP,
+  onINP,
+  onLCP,
+  onTTFB,
+  type CLSMetricWithAttribution,
+  type FCPMetricWithAttribution,
+  type INPMetricWithAttribution,
+  type LCPMetricWithAttribution,
+  type TTFBMetricWithAttribution,
+} from 'web-vitals/attribution';
+
+import { maskMessage } from './mask';
+
 export type RumEventType = 'performance' | 'error' | 'interaction' | 'navigation' | 'frustration';
+
+interface StackFrame {
+  file: string;
+  line: number;
+  column: number;
+}
+
+interface ErrorDetail {
+  type: string;
+  message: string;
+  frame?: StackFrame;
+}
 
 interface OutboundEvent {
   type: RumEventType;
@@ -31,7 +54,18 @@ interface OutboundEvent {
   value?: number;
   page: string;
   navigationDepth?: number;
+  traceId?: string;
+  rating?: 'poor';
+  target?: string;
+  error?: ErrorDetail;
 }
+
+type VitalMetric =
+  | CLSMetricWithAttribution
+  | FCPMetricWithAttribution
+  | INPMetricWithAttribution
+  | LCPMetricWithAttribution
+  | TTFBMetricWithAttribution;
 
 export interface RumOptions {
   /** Where beacons are posted. Same-origin by default, which is what keeps the
@@ -50,6 +84,64 @@ const MUTATION_MEMORY_MS = 2000;
 const MAX_TRACKED_MUTATIONS = 1000;
 const SLOW_LOAD_MS = 3000;
 const MAX_PATH_DEPTH = 20;
+const MAX_ERROR_DETAILS = 10;
+const TARGET_LIMIT = 120;
+const TRACE_LINKED: ReadonlySet<string> = new Set(['FCP', 'LCP', 'TTFB']);
+const TRACEPARENT = /^00-([0-9a-f]{32})-[0-9a-f]{16}-01$/;
+const FRAME = /(https?:\/\/[^\s()]+?):(\d+):(\d+)/;
+
+function pageTraceId(): string | undefined {
+  const traceparent = document.querySelector('meta[name="traceparent"]')?.getAttribute('content');
+  return traceparent ? TRACEPARENT.exec(traceparent)?.[1] : undefined;
+}
+
+function targetOf(metric: VitalMetric): string | undefined {
+  switch (metric.name) {
+    case 'LCP':
+      return metric.attribution.target;
+    case 'INP':
+      return metric.attribution.interactionTarget;
+    case 'CLS':
+      return metric.attribution.largestShiftTarget;
+    default:
+      return undefined;
+  }
+}
+
+function ownFrame(url: string | undefined, line: number, column: number): StackFrame | undefined {
+  if (!url || !line || !column) return undefined;
+  try {
+    const parsed = new URL(url, window.location.href);
+    if (parsed.origin !== window.location.origin) return undefined;
+    if (!/^\/(?:_next\/static|assets)\//.test(parsed.pathname)) return undefined;
+    return { file: parsed.pathname, line, column };
+  } catch {
+    return undefined;
+  }
+}
+
+function topFrame(stack: unknown): StackFrame | undefined {
+  if (typeof stack !== 'string') return undefined;
+  for (const line of stack.split('\n')) {
+    const match = FRAME.exec(line);
+    if (!match) continue;
+    const frame = ownFrame(match[1], Number(match[2]), Number(match[3]));
+    if (frame) return frame;
+  }
+  return undefined;
+}
+
+function describeError(
+  error: unknown,
+  fallback: { message?: string; frame?: StackFrame } = {}
+): ErrorDetail {
+  const type = error instanceof Error && error.name ? error.name : 'Error';
+  const raw =
+    error instanceof Error ? error.message : typeof error === 'string' ? error : fallback.message;
+  const message = maskMessage(raw);
+  const frame = (error instanceof Error ? topFrame(error.stack) : undefined) ?? fallback.frame;
+  return frame ? { type, message, frame } : { type, message };
+}
 
 function leavesThePage(control: Element): boolean {
   if (!(control instanceof HTMLAnchorElement) || !control.hasAttribute('href')) return false;
@@ -68,6 +160,7 @@ class RumClient {
   private clickTimestamps: number[] = [];
   private recentMutations: { target: Node; at: number }[] = [];
   private lastScrollAt = -Infinity;
+  private errorDetailsSent = 0;
   private flushTimer?: ReturnType<typeof setInterval>;
   private started = false;
 
@@ -111,66 +204,29 @@ class RumClient {
   // --- Core Web Vitals ------------------------------------------------------
 
   private trackWebVitals(): void {
-    if (!('PerformanceObserver' in window)) return;
-
-    this.observe('largest-contentful-paint', (entries) => {
-      const last = entries.at(-1) as
-        (PerformanceEntry & { renderTime?: number; loadTime?: number }) | undefined;
-      if (!last) return;
+    const traceId = pageTraceId();
+    const report = (metric: VitalMetric) => {
+      const poor = metric.rating === 'poor';
+      const target = poor ? targetOf(metric)?.slice(0, TARGET_LIMIT) : undefined;
       this.record({
         type: 'performance',
-        name: 'LCP',
-        value: last.renderTime || last.loadTime || last.startTime,
+        name: metric.name,
+        value: metric.value,
+        ...(traceId && TRACE_LINKED.has(metric.name) ? { traceId } : {}),
+        ...(poor ? { rating: 'poor' as const } : {}),
+        ...(target ? { target } : {}),
       });
-    });
+    };
 
-    // INP, which replaced First Input Delay as a Core Web Vital in March 2024.
-    // FID timed only the delay before the *first* interaction's handler
-    // started, ignoring how long it ran and every later interaction — a page
-    // could score perfectly while every click after the first took a second.
-    // `durationThreshold: 40` skips interactions too fast to be worth a beacon.
-    try {
-      let worst = 0;
-      new PerformanceObserver((list) => {
-        for (const entry of list.getEntries() as (PerformanceEntry & {
-          interactionId?: number;
-        })[]) {
-          if (!entry.interactionId || entry.duration <= worst) continue;
-          worst = entry.duration;
-          this.record({ type: 'performance', name: 'INP', value: entry.duration });
-        }
-      }).observe({
-        type: 'event',
-        buffered: true,
-        durationThreshold: 40,
-      } as PerformanceObserverInit);
-    } catch {
-      // Safari has no `event` timing entries yet.
-    }
+    onCLS(report);
+    onFCP(report);
+    onINP(report);
+    onLCP(report);
+    onTTFB(report);
 
-    let cls = 0;
-    let reportedCls = 0;
-    this.observe('layout-shift', (entries) => {
-      for (const entry of entries as (PerformanceEntry & {
-        value?: number;
-        hadRecentInput?: boolean;
-      })[]) {
-        if (!entry.hadRecentInput) cls += entry.value ?? 0;
-      }
-    });
-    document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState !== 'hidden' || cls === reportedCls) return;
-      reportedCls = cls;
-      this.record({ type: 'performance', name: 'CLS', value: cls });
-    });
-
+    if (!('PerformanceObserver' in window)) return;
     this.observe('navigation', (entries) => {
       for (const entry of entries as PerformanceNavigationTiming[]) {
-        this.record({
-          type: 'performance',
-          name: 'TTFB',
-          value: entry.responseStart - entry.requestStart,
-        });
         this.record({
           type: 'performance',
           name: 'DOMContentLoaded',
@@ -199,15 +255,15 @@ class RumClient {
   // --- Errors ---------------------------------------------------------------
 
   private trackErrors(): void {
-    // The counter is the signal; the message and stack are not sent. Diagnosing
-    // a specific error is the job of a error tracker, not of a Prometheus
-    // counter, and stack traces can carry values from the code that threw.
-    window.addEventListener('error', () => {
-      this.record({ type: 'error', name: 'JavaScript Error' });
+    window.addEventListener('error', (event) => {
+      this.recordError('JavaScript Error', event.error, {
+        message: event.message,
+        frame: ownFrame(event.filename, event.lineno, event.colno),
+      });
     });
 
-    window.addEventListener('unhandledrejection', () => {
-      this.record({ type: 'error', name: 'Unhandled Promise Rejection' });
+    window.addEventListener('unhandledrejection', (event) => {
+      this.recordError('Unhandled Promise Rejection', event.reason);
     });
 
     window.addEventListener('load', () => {
@@ -218,6 +274,19 @@ class RumClient {
         this.record({ type: 'frustration', name: 'Slow Page Load', value: loadTime });
       }
     });
+  }
+
+  private recordError(
+    name: string,
+    error: unknown,
+    fallback?: { message?: string; frame?: StackFrame }
+  ): void {
+    if (this.errorDetailsSent >= MAX_ERROR_DETAILS) {
+      this.record({ type: 'error', name });
+      return;
+    }
+    this.errorDetailsSent += 1;
+    this.record({ type: 'error', name, error: describeError(error, fallback) });
   }
 
   // --- Navigation -----------------------------------------------------------
@@ -386,6 +455,10 @@ class RumClient {
   trackEvent(name: string): void {
     this.record({ type: 'interaction', name });
   }
+
+  trackError(error: unknown): void {
+    this.recordError('Custom Error', error);
+  }
 }
 
 let instance: RumClient | null = null;
@@ -400,4 +473,8 @@ export function initRum(options?: RumOptions): void {
 /** Records a product event by name. A no-op before `initRum` or on the server. */
 export function trackEvent(name: string): void {
   instance?.trackEvent(name);
+}
+
+export function trackError(error: unknown): void {
+  instance?.trackError(error);
 }

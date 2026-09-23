@@ -279,6 +279,10 @@ impl ExecutionService {
         self.inner.metrics.http.clone()
     }
 
+    pub fn health_metrics(&self) -> trading_bot_observability::HealthMetrics {
+        self.inner.metrics.health.clone()
+    }
+
     pub async fn active_promotion(&self) -> Option<ExecutionPromotionRecord> {
         self.inner.status.read().await.active_promotion.clone()
     }
@@ -299,7 +303,7 @@ impl ExecutionService {
             loop {
                 interval.tick().await;
                 if let Err(error) = refresh_service.refresh_from_control_plane().await {
-                    warn!(error = %error, "execution control-plane refresh failed");
+                    warn!(event = "control_plane.refresh_failed", error = %error, "execution control-plane refresh failed");
                 }
             }
         });
@@ -515,7 +519,10 @@ impl ExecutionService {
         ensure_no_open_orders(&open_orders)?;
         let account = binance.get_account_information().await?;
         if !has_any_free_balance(&account) {
-            warn!("live startup reconciliation found no free balance");
+            warn!(
+                event = "reconciliation.no_free_balance",
+                "live startup reconciliation found no free balance"
+            );
         }
 
         let listen_key = binance.create_listen_key().await?;
@@ -580,22 +587,22 @@ impl ExecutionService {
                         match serde_json::from_str::<NormalizedKlineEvent>(payload) {
                             Ok(event) => {
                                 if let Err(error) = self.process_live_kline_event(event).await {
-                                    warn!(error = %error, "execution failed to process live kline event");
+                                    warn!(event = "kline.processing_failed", error = %error, "execution failed to process live kline event");
                                 }
                             }
                             Err(error) => {
-                                warn!(error = %error, "execution failed to deserialize live kline event");
+                                warn!(event = "kline.decode_failed", error = %error, "execution failed to deserialize live kline event");
                             }
                         }
                     } else if topic == self.inner.config.market_data_trade_events_topic {
                         match serde_json::from_str::<NormalizedTradeEvent>(payload) {
                             Ok(event) => {
                                 if let Err(error) = self.process_live_trade_event(event).await {
-                                    warn!(error = %error, "execution failed to process live trade event");
+                                    warn!(event = "trade.processing_failed", error = %error, "execution failed to process live trade event");
                                 }
                             }
                             Err(error) => {
-                                warn!(error = %error, "execution failed to deserialize live trade event");
+                                warn!(event = "trade.decode_failed", error = %error, "execution failed to deserialize live trade event");
                             }
                         }
                     }
@@ -654,7 +661,7 @@ impl ExecutionService {
                 }
 
                 let Some(evaluator) = state.evaluator.as_mut() else {
-                    warn!(
+                    tracing::debug!(event = "kline.skipped_not_warmed",
                         pair_code = %analysis.pair_code,
                         timeframe = %analysis.timeframe_code,
                         analysis_setting_id = %analysis.id,
@@ -1069,7 +1076,7 @@ impl ExecutionService {
             fees_usd: 0.0,
         };
         self.post_execution_trade(&trade_record).await?;
-        info!(trade_id = %position.trade_id, close_reason = %normalized_close_reason, pnl_percent, "paper trade closed");
+        info!(event = "paper_trade.closed", trade_id = %position.trade_id, close_reason = %normalized_close_reason, pnl_percent, "paper trade closed");
         {
             let mut runtime = self.inner.runtime.lock().await;
             if let Some(state) = runtime.promotion_states.get_mut(&position.promotion_id) {

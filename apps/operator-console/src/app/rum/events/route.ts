@@ -1,11 +1,8 @@
+import { withRouteMetrics } from '@/observability/http-metrics';
 import { createRumIngestRoute } from '@/observability/next';
+import { RUM_PAGES } from '@/observability/rum-pages';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-/**
- * RUM ingest. Unauthenticated by necessity — anonymous visitors report here,
- * often during page unload — so the handler carries the same-origin check, the
- * body-size cap, the per-client rate limit and the field validation.
- */
-export const POST = createRumIngestRoute();
+export const POST = withRouteMetrics('/rum/events', createRumIngestRoute({ pages: RUM_PAGES }));

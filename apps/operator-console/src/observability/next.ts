@@ -1,6 +1,7 @@
+import { recordCspReports } from './csp-reports';
 import { clientKeyFrom, ingestRumBatch, MAX_BODY_BYTES } from './rum-ingest';
 import { registry } from './metrics.registry';
-import { allowCustomInteractions } from './rum-metrics';
+import { allowCustomInteractions, allowPages, rumRejectedTotal } from './rum-metrics';
 
 /** The Next.js adapter, mirroring `nest.ts` and `fastify.ts`. */
 
@@ -13,7 +14,7 @@ import { allowCustomInteractions } from './rum-metrics';
 export function createMetricsRoute() {
   return async function GET(): Promise<Response> {
     return new Response(await registry.metrics(), {
-      headers: { 'Content-Type': 'text/plain; version=0.0.4; charset=utf-8' },
+      headers: { 'Content-Type': registry.contentType },
     });
   };
 }
@@ -37,44 +38,70 @@ export function createMetricsRoute() {
  * allow-lists.
  */
 export function createRumIngestRoute(
-  options: { allowedOrigin?: string; customInteractions?: readonly string[] } = {}
+  options: {
+    allowedOrigin?: string;
+    customInteractions?: readonly string[];
+    pages?: readonly string[];
+  } = {}
 ) {
   // Declared once, at module load, so the app's business-event names are known
   // before the first beacon arrives.
   if (options.customInteractions?.length) {
     allowCustomInteractions(options.customInteractions);
   }
+  if (options.pages?.length) allowPages(options.pages);
 
   return async function POST(request: Request): Promise<Response> {
     const origin = request.headers.get('origin');
     if (origin && !isSameOrigin(origin, request.headers.get('host'), options.allowedOrigin)) {
+      rumRejectedTotal.inc({ reason: 'cross_origin' });
       return new Response(null, { status: 403 });
     }
 
-    const declaredLength = Number(request.headers.get('content-length') ?? '0');
-    if (Number.isFinite(declaredLength) && declaredLength > MAX_BODY_BYTES) {
-      return new Response(null, { status: 413 });
-    }
+    const read = await readJsonBody(request);
+    if (!read.ok) return new Response(null, { status: read.status });
 
-    let body: unknown;
-    try {
-      const text = await request.text();
-      if (text.length > MAX_BODY_BYTES) {
-        return new Response(null, { status: 413 });
-      }
-      body = JSON.parse(text);
-    } catch {
-      return new Response(null, { status: 400 });
-    }
-
-    const outcome = ingestRumBatch(body, clientKeyFrom(request.headers));
+    const outcome = ingestRumBatch(read.body, clientKeyFrom(request.headers));
     if (!outcome.ok) {
       return new Response(null, { status: outcome.status });
     }
+    await Promise.allSettled(outcome.details);
 
     // 204: nothing to say, and nothing for a prober to learn.
     return new Response(null, { status: 204 });
   };
+}
+
+export function createCspReportRoute(options: { pages?: readonly string[] } = {}) {
+  if (options.pages?.length) allowPages(options.pages);
+
+  return async function POST(request: Request): Promise<Response> {
+    const read = await readJsonBody(request);
+    if (!read.ok) {
+      if (read.status === 400) rumRejectedTotal.inc({ reason: 'csp_malformed' });
+      return new Response(null, { status: read.status });
+    }
+
+    const outcome = recordCspReports(read.body, clientKeyFrom(request.headers));
+    return new Response(null, { status: outcome.ok ? 204 : outcome.status });
+  };
+}
+
+async function readJsonBody(
+  request: Request
+): Promise<{ ok: true; body: unknown } | { ok: false; status: 400 | 413 }> {
+  const declaredLength = Number(request.headers.get('content-length') ?? '0');
+  if (Number.isFinite(declaredLength) && declaredLength > MAX_BODY_BYTES) {
+    return { ok: false, status: 413 };
+  }
+
+  try {
+    const text = await request.text();
+    if (text.length > MAX_BODY_BYTES) return { ok: false, status: 413 };
+    return { ok: true, body: JSON.parse(text) };
+  } catch {
+    return { ok: false, status: 400 };
+  }
 }
 
 function isSameOrigin(origin: string, host: string | null, allowedOrigin?: string): boolean {
@@ -89,5 +116,6 @@ function isSameOrigin(origin: string, host: string | null, allowedOrigin?: strin
 
 export { initRum } from './rum-client';
 export type { RumOptions } from './rum-client';
-export { allowCustomInteractions, normalizePage } from './rum-metrics';
+export { allowCustomInteractions, allowPages, normalizePage } from './rum-metrics';
+export { traceServerTiming, withServerTiming } from './server-timing';
 export { registry } from './metrics.registry';

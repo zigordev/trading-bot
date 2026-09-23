@@ -1,4 +1,11 @@
-import { recordRumEvent, rumRejectedTotal, type RumEvent, type RumEventType } from './rum-metrics';
+import { logClientError, logPoorVital, sanitizeErrorDetail, sanitizeTarget } from './rum-details';
+import {
+  pageLabel,
+  recordRumEvent,
+  rumRejectedTotal,
+  type RumEvent,
+  type RumEventType,
+} from './rum-metrics';
 
 /**
  * Validation and rate limiting for the public RUM ingest endpoint.
@@ -15,6 +22,8 @@ const MAX_EVENTS_PER_BATCH = 50;
 /** Bodies larger than this are refused unread. 64 KB is far above a legitimate
  *  batch and far below anything that would tie up the process. */
 export const MAX_BODY_BYTES = 64 * 1024;
+
+const TRACE_ID = /^(?!0{32})[0-9a-f]{32}$/;
 
 const VALID_TYPES: ReadonlySet<string> = new Set([
   'performance',
@@ -33,7 +42,7 @@ const VALID_TYPES: ReadonlySet<string> = new Set([
  * is what you are protecting. It is a floor, not a security boundary: a
  * distributed flood still needs the reverse proxy in front of it.
  */
-class FixedWindowLimiter {
+export class FixedWindowLimiter {
   private readonly hits = new Map<string, { count: number; resetAt: number }>();
 
   constructor(
@@ -67,7 +76,7 @@ class FixedWindowLimiter {
 const limiter = new FixedWindowLimiter(60, 60_000);
 
 export type IngestOutcome =
-  | { ok: true; accepted: number; rejected: number }
+  | { ok: true; accepted: number; rejected: number; details: Promise<void>[] }
   | { ok: false; status: 400 | 413 | 429; reason: string };
 
 /**
@@ -112,6 +121,7 @@ export function ingestRumBatch(body: unknown, clientKey: string): IngestOutcome 
 
   let accepted = 0;
   let rejected = 0;
+  const details: Promise<void>[] = [];
 
   for (const raw of events.slice(0, MAX_EVENTS_PER_BATCH)) {
     if (typeof raw !== 'object' || raw === null) {
@@ -142,10 +152,27 @@ export function ingestRumBatch(body: unknown, clientKey: string): IngestOutcome 
       page: typeof candidate.page === 'string' ? candidate.page.slice(0, 512) : '/',
       navigationDepth:
         typeof candidate.navigationDepth === 'number' ? candidate.navigationDepth : undefined,
+      traceId:
+        type === 'performance' &&
+        typeof candidate.traceId === 'string' &&
+        TRACE_ID.test(candidate.traceId)
+          ? candidate.traceId
+          : undefined,
     };
 
     if (recordRumEvent(event)) {
       accepted += 1;
+      const page = pageLabel(event.page ?? '/');
+      if (type === 'error') {
+        const detail = sanitizeErrorDetail(candidate.error);
+        if (detail) details.push(logClientError(detail, page));
+      } else if (
+        type === 'performance' &&
+        candidate.rating === 'poor' &&
+        typeof event.value === 'number'
+      ) {
+        logPoorVital(name, event.value, sanitizeTarget(candidate.target), page);
+      }
     } else {
       rejected += 1;
       rumRejectedTotal.inc({ reason: 'unrecordable' });
@@ -158,5 +185,5 @@ export function ingestRumBatch(body: unknown, clientKey: string): IngestOutcome 
     rumRejectedTotal.inc({ reason: 'batch_too_large' }, dropped);
   }
 
-  return { ok: true, accepted, rejected };
+  return { ok: true, accepted, rejected, details };
 }

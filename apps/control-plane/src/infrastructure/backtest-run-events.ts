@@ -10,6 +10,7 @@ import {
   upsertBacktestRunProjection,
 } from '../features/ops.js';
 import { publishOpsEvent } from './ops-events.js';
+import { countProjection } from '../domain-metrics.js';
 
 export type BacktestCompletedEventEnvelope = {
   eventId: string;
@@ -275,15 +276,9 @@ export const createBacktestRunProjectionConsumer = (
         });
       }
 
-      logger.info(
-        { hydratedRuns: payload.length },
-        'Backtest projection hydrated from research-backtesting'
-      );
+      logger.info({ event: 'backtest.projection_hydrated', hydratedRuns: payload.length });
     } catch (error) {
-      logger.warn(
-        { err: error },
-        'Failed to hydrate backtest projection from research-backtesting'
-      );
+      logger.warn({ event: 'backtest.projection_hydration_failed', error });
     }
   };
 
@@ -343,19 +338,19 @@ export const createBacktestRunProjectionConsumer = (
                 },
               });
             }
+            countProjection('backtest_completed', 'projected');
           } catch (error) {
-            logger.error({ err: error, rawValue }, 'Failed to project backtest-completed event');
+            countProjection('backtest_completed', 'failed');
+            logger.error({ event: 'backtest.completed_projection_failed', error, rawValue });
           }
         },
       });
       started = true;
-      logger.info(
-        {
-          groupId: config.backtestCompletedEventsConsumerGroupId,
-          topic: config.backtestCompletedEventsTopic,
-        },
-        'Backtest projection consumer started'
-      );
+      logger.info({
+        event: 'kafka.consumer_started',
+        groupId: config.backtestCompletedEventsConsumerGroupId,
+        topic: config.backtestCompletedEventsTopic,
+      });
     },
     stop: async () => {
       if (!started || stopped) {

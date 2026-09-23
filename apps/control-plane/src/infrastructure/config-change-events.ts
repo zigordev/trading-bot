@@ -4,6 +4,7 @@ import type { FastifyBaseLogger } from 'fastify';
 import { Kafka, logLevel, type Producer } from 'kafkajs';
 
 import type { AppConfig } from '../config.js';
+import { countConfigChange } from '../domain-metrics.js';
 
 export type ConfigChangeOperation = 'created' | 'updated' | 'deleted';
 
@@ -86,7 +87,7 @@ export const createConfigChangeEventPublisher = (
     try {
       await producer.disconnect();
     } catch (error) {
-      logger.warn({ err: error }, 'Failed to disconnect config-change producer cleanly');
+      logger.warn({ event: 'kafka.producer_disconnect_failed', error });
     } finally {
       producerConnected = false;
     }
@@ -99,13 +100,11 @@ export const createConfigChangeEventPublisher = (
 
     await producer.connect();
     producerConnected = true;
-    logger.info(
-      {
-        brokers: config.kafkaBootstrapServers,
-        topic: config.configChangeEventsTopic,
-      },
-      'Config-change producer connected'
-    );
+    logger.info({
+      event: 'kafka.producer_connected',
+      brokers: config.kafkaBootstrapServers,
+      topic: config.configChangeEventsTopic,
+    });
   };
 
   const ensureTopicExists = async (): Promise<void> => {
@@ -152,14 +151,14 @@ export const createConfigChangeEventPublisher = (
     },
     publish: async (params) => {
       if (stopped) {
-        logger.warn(
-          {
-            resourceType: params.resourceType,
-            operation: params.operation,
-            resourceId: params.resourceId,
-          },
-          'Skipping config-change publish because the publisher is stopping'
-        );
+        countConfigChange('skipped');
+        logger.warn({
+          event: 'config.publish_skipped',
+          reason: 'stopping',
+          resourceType: params.resourceType,
+          operation: params.operation,
+          resourceId: params.resourceId,
+        });
         return;
       }
 
@@ -176,17 +175,17 @@ export const createConfigChangeEventPublisher = (
             },
           ],
         });
+        countConfigChange('published');
       } catch (error) {
-        logger.error(
-          {
-            err: error,
-            eventId: envelope.eventId,
-            resourceType: envelope.resourceType,
-            operation: envelope.operation,
-            resourceId: envelope.resourceId,
-          },
-          'Failed to publish config-change event directly to Kafka'
-        );
+        countConfigChange('failed');
+        logger.error({
+          event: 'config.publish_failed',
+          error,
+          eventId: envelope.eventId,
+          resourceType: envelope.resourceType,
+          operation: envelope.operation,
+          resourceId: envelope.resourceId,
+        });
         await disconnectProducer();
       }
     },

@@ -2,7 +2,6 @@ use std::collections::{BTreeMap, VecDeque};
 
 use anyhow::{Context, Result, bail};
 use serde_json::{Value, json};
-use tracing::info;
 
 use crate::models::{MarketDataKlineEvent, PersistedKlineRecord, ResolvedAnalysisSettingsRecord};
 
@@ -473,7 +472,7 @@ impl AnalysisEvaluator {
             StrategyDefinition::LegacyStrategy2(config) => self.evaluate_legacy_strategy2(config),
         }?;
 
-        info!(
+        tracing::debug!(event = "strategy.candle_evaluated",
             analysis_setting_id = %self.spec.analysis_setting_id,
             pair_code = %self.spec.pair_code,
             timeframe_code = %self.spec.timeframe_code,

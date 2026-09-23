@@ -8,11 +8,19 @@ import fastifyHelmet from '@fastify/helmet';
 import fastifySwagger from '@fastify/swagger';
 import fastifySwaggerUi from '@fastify/swagger-ui';
 import fastifyWebsocket from '@fastify/websocket';
-import Fastify from 'fastify';
+import Fastify, { LogController } from 'fastify';
 import { Gauge } from 'prom-client';
 
 import { loadConfig } from './config.js';
-import { fastifyLoggerOptions, registerHttpMetrics, registry } from './observability/index.js';
+import { startDomainMetricsAtZero } from './domain-metrics.js';
+import {
+  fastifyLoggerOptions,
+  logServiceStarted,
+  logServiceStopping,
+  observeProcessFailures,
+  registerHttpMetrics,
+  registry,
+} from './observability/index.js';
 import { createConfigStores, ensureControlPlaneSchema } from './features/config-resources.js';
 import { ensureOpsSchema } from './features/ops.js';
 import { registerProblemErrorHandler } from './problem-details.js';
@@ -32,13 +40,19 @@ const config = loadConfig();
 // The shared registry from the kit, so the default metrics carry the same
 // names here as on the Nest services. They used to be prefixed `trading_bot_`,
 // which made every cross-service query need a special case for this one.
+observeProcessFailures();
+startDomainMetricsAtZero();
+
 const databaseReadinessGauge = new Gauge({
   name: 'trading_bot_control_plane_database_ready',
   help: 'Whether the control-plane can reach PostgreSQL',
   registers: [registry],
 });
 
-const app = Fastify({ logger: fastifyLoggerOptions });
+const app = Fastify({
+  logger: fastifyLoggerOptions,
+  logController: new LogController({ disableRequestLogging: true }),
+});
 const pool = createPool(config);
 await ensureControlPlaneSchema(pool);
 await ensureOpsSchema(pool);
@@ -130,7 +144,7 @@ const close = async () => {
 
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.on(signal, async () => {
-    app.log.info({ signal }, 'Shutting down control-plane');
+    logServiceStopping(signal);
     await close();
     process.exit(0);
   });
@@ -141,11 +155,4 @@ await app.listen({
   port: config.port,
 });
 
-app.log.info(
-  {
-    port: config.port,
-    service: config.serviceName,
-    environment: config.appEnv,
-  },
-  'Trading bot control-plane started'
-);
+logServiceStarted({ port: config.port, environment: config.appEnv });

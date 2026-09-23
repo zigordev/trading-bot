@@ -50,6 +50,7 @@ async fn main() -> Result<()> {
     let address = SocketAddr::from(([0, 0, 0, 0], config.port));
     let listener = tokio::net::TcpListener::bind(address).await?;
     tracing::info!(
+        event = "service.started",
         port = config.port,
         service = config.service_name,
         environment = config.app_env,
@@ -80,14 +81,19 @@ async fn shutdown_signal() {
     #[cfg(not(unix))]
     let terminate = std::future::pending::<()>();
 
-    tokio::select! {
-        _ = ctrl_c => {},
-        _ = terminate => {},
-    }
+    let signal = tokio::select! {
+        _ = ctrl_c => "SIGINT",
+        _ = terminate => "SIGTERM",
+    };
+    tracing::info!(event = "service.stopping", signal);
 }
 
 async fn health(State(state): State<AppState>) -> Response {
     let payload = state.service.readiness().await;
+    state
+        .service
+        .health_metrics()
+        .record(&serde_json::to_value(&payload).unwrap_or_default());
     let status_code = if payload.status == "ok" {
         StatusCode::OK
     } else {

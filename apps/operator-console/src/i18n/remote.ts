@@ -1,6 +1,8 @@
 import JSZip from 'jszip';
 import type { Locale } from './config';
 import type { Messages } from './translator';
+import { reportComponent, type ComponentStatus } from '@/observability/health';
+import { writeLogRecord } from '@/observability/json-logger';
 
 type CacheEntry = {
   messages: Messages;
@@ -34,6 +36,15 @@ async function parseZip(buffer: ArrayBuffer): Promise<Messages | null> {
   if (!jsonFile) return null;
   const content = await jsonFile.async('string');
   return JSON.parse(content) as Messages;
+}
+
+async function errorCode(response: Response): Promise<string | undefined> {
+  try {
+    const body = (await response.json()) as { code?: unknown };
+    return typeof body.code === 'string' ? body.code : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function tolgeeIsConfigured(): boolean {
@@ -73,6 +84,20 @@ export async function loadRemoteMessages(locale: Locale): Promise<Messages | nul
   // reason a page fails to render: a connection error, a timeout or a malformed
   // body all fall back to the cached copy, and failing that to null, which
   // `loadMessages` resolves from the committed message files instead.
+  const fallBack = (
+    error?: { name: string; message: string },
+    tolgee: ComponentStatus = 'down'
+  ) => {
+    reportComponent('tolgee', tolgee);
+    writeLogRecord('warn', {
+      event: 'i18n.fallback',
+      locale,
+      source: cached ? 'cached' : 'local',
+      error,
+    });
+    return cached?.messages ?? null;
+  };
+
   try {
     const response = await fetch(url.toString(), {
       headers,
@@ -82,10 +107,17 @@ export async function loadRemoteMessages(locale: Locale): Promise<Messages | nul
 
     if (response.status === 304 && cached) {
       cached.updatedAt = Date.now();
+      reportComponent('tolgee', 'up');
       return cached.messages;
     }
     if (!response.ok) {
-      return cached?.messages ?? null;
+      if (response.status === 400 && (await errorCode(response)) === 'no_exported_result') {
+        return fallBack(
+          { name: 'NoExport', message: `Tolgee has no ${locale} translations to export` },
+          'up'
+        );
+      }
+      return fallBack({ name: 'HttpError', message: `Tolgee answered ${response.status}` });
     }
 
     const etag = response.headers.get('etag');
@@ -103,7 +135,7 @@ export async function loadRemoteMessages(locale: Locale): Promise<Messages | nul
       messages = (await response.json()) as Messages;
     }
 
-    if (!messages) return cached?.messages ?? null;
+    if (!messages) return fallBack({ name: 'EmptyExport', message: 'Tolgee returned no messages' });
 
     cache.set(locale, {
       messages,
@@ -112,13 +144,11 @@ export async function loadRemoteMessages(locale: Locale): Promise<Messages | nul
       updatedAt: Date.now(),
     });
 
+    reportComponent('tolgee', 'up');
     return messages;
   } catch (error) {
-    console.warn(
-      // nosemgrep: javascript.lang.security.audit.unsafe-formatstring.unsafe-formatstring
-      `[i18n] Tolgee fetch failed for "${locale}"; using ${cached ? 'cached' : 'local'} messages.`,
-      error instanceof Error ? error.message : error
+    return fallBack(
+      error instanceof Error ? { name: error.name, message: error.message } : undefined
     );
-    return cached?.messages ?? null;
   }
 }

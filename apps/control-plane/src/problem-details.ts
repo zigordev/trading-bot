@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 
 import { defaultCodeFor, HttpError } from './http-error.js';
+import { logRequestFailed } from './observability/index.js';
 
 export const PROBLEM_TYPE_BASE = 'https://zigordev.com/problems';
 export const PROBLEM_CONTENT_TYPE = 'application/problem+json';
@@ -80,9 +81,12 @@ export const registerProblemErrorHandler = (app: FastifyInstance): void => {
     const problem = problemFrom(error, request.url);
 
     if (problem.status >= 500) {
-      app.log.error(error, 'Unhandled control-plane error');
-    } else {
-      app.log.warn({ err: error, statusCode: problem.status }, 'Control-plane request failed');
+      logRequestFailed({
+        method: request.method,
+        route: request.routeOptions?.url ?? 'unmatched',
+        status: problem.status,
+        error,
+      });
     }
 
     reply.code(problem.status).type(PROBLEM_CONTENT_TYPE).send(problem);

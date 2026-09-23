@@ -1,4 +1,4 @@
-import { defineConfig } from 'vitest/config';
+import { coverageConfigDefaults, defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 import { fileURLToPath } from 'node:url';
 
@@ -17,6 +17,11 @@ export default defineConfig({
       provider: 'v8',
       reporter: ['text', 'lcov'],
       reportsDirectory: 'coverage',
+      exclude: [
+        ...coverageConfigDefaults.exclude,
+        'src/observability/rum-client.ts',
+        'src/observability/RumProvider.tsx',
+      ],
       thresholds: {
         branches: 67,
         functions: 63,

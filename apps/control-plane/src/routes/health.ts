@@ -12,6 +12,8 @@ export const registerHealthRoutes = (
   databaseReadinessGauge: Gauge<string>,
   config: AppConfig
 ): void => {
+  let databaseUp: boolean | undefined;
+
   app.get(
     '/health',
     {
@@ -57,6 +59,8 @@ export const registerHealthRoutes = (
       try {
         await checkDatabaseReadiness(pool);
         databaseReadinessGauge.set(1);
+        if (databaseUp === false) app.log.info({ event: 'postgres.recovered' });
+        databaseUp = true;
 
         const components = { db: { status: 'up' as const } };
         // The same judgement the response carries, as a metric — otherwise no
@@ -66,7 +70,8 @@ export const registerHealthRoutes = (
         return { status: 'ok', service: config.serviceName, components };
       } catch (error) {
         databaseReadinessGauge.set(0);
-        app.log.error(error, 'Database readiness check failed');
+        if (databaseUp !== false) app.log.error({ event: 'postgres.unavailable', error });
+        databaseUp = false;
         reply.code(503);
 
         const components = { db: { status: 'down' as const } };

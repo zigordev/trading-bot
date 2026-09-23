@@ -1,12 +1,13 @@
 use anyhow::Result;
 use prometheus::{Encoder, IntCounter, IntCounterVec, IntGauge, Registry, TextEncoder};
-use trading_bot_observability::HttpMetrics;
+use trading_bot_observability::{HealthMetrics, HttpMetrics};
 
 #[derive(Clone)]
 pub struct Metrics {
     registry: Registry,
     /// The estate-wide HTTP metrics every shared alert is built on.
     pub http: HttpMetrics,
+    pub health: HealthMetrics,
     pub runtime_config_loaded: IntGauge,
     pub kafka_producer_connected: IntGauge,
     pub kafka_consumer_connected: IntGauge,
@@ -137,6 +138,10 @@ impl Metrics {
         registry.register(Box::new(binance_rest_limit_weight_1m.clone()))?;
         registry.register(Box::new(config_refresh_total.clone()))?;
         registry.register(Box::new(backfill_total.clone()))?;
+        config_refresh_total.with_label_values(&["success"]);
+        for outcome in ["success", "failure"] {
+            backfill_total.with_label_values(&[outcome]);
+        }
         registry.register(Box::new(binance_rest_requests_total.clone()))?;
         registry.register(Box::new(binance_rest_rate_limit_responses_total.clone()))?;
         registry.register(Box::new(binance_rest_limiter_waits_total.clone()))?;
@@ -147,10 +152,13 @@ impl Metrics {
         registry.register(Box::new(trade_store_failures_total.clone()))?;
 
         let http = HttpMetrics::register(&registry)?;
+        let health = HealthMetrics::register(&registry)?;
+        trading_bot_observability::register_build_info(&registry)?;
 
         Ok(Self {
             registry,
             http,
+            health,
             runtime_config_loaded,
             kafka_producer_connected,
             kafka_consumer_connected,
