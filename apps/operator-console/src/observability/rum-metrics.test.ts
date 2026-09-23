@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 
 import { test } from 'vitest';
 
-import { normalizePage } from './rum-metrics';
+import { registry } from './metrics.registry';
+import { normalizePage, pageLabel, recordRumEvent, registerRumVocabulary } from './rum-metrics';
 
 /**
  * `normalizePage` turns a browser-supplied path into a Prometheus label. It is
@@ -54,4 +55,57 @@ test('bounds depth and total length', () => {
 test('collapses characters a route would not contain', () => {
   assert.equal(normalizePage('/pools/<script>'), '/pools/:id');
   assert.equal(normalizePage('/pools/a b'), '/pools/:id');
+});
+
+const rejections = async (reason: string) => {
+  const metric = await registry.getSingleMetric('rum_rejected_total')?.get();
+  return metric?.values.find((value) => value.labels.reason === reason)?.value;
+};
+
+const interactions = async (name: string) => {
+  const metric = await registry.getSingleMetric('rum_interactions_total')?.get();
+  return metric?.values.find(
+    (value) => value.labels.interaction_type === name && value.labels.page === '/'
+  )?.value;
+};
+
+test('every rejection reason is exported at zero before the first rejection', async () => {
+  for (const reason of [
+    'rate_limited',
+    'malformed',
+    'unknown_type',
+    'bad_name',
+    'unrecordable',
+    'batch_too_large',
+    'cross_origin',
+    'csp_malformed',
+    'csp_rate_limited',
+  ]) {
+    assert.equal(await rejections(reason), 0, reason);
+  }
+});
+
+test('an app declares its vocabulary at startup, before any beacon has arrived', async () => {
+  registerRumVocabulary({ customInteractions: ['pool-created'], pages: ['/', '/pools'] });
+
+  assert.equal(await interactions('pool-created'), 0);
+  assert.equal(pageLabel('/pools'), '/pools');
+  assert.equal(pageLabel('/somewhere-else'), 'other');
+});
+
+test('declaring the same vocabulary twice keeps the counts already recorded', async () => {
+  registerRumVocabulary({ customInteractions: ['team-created'], pages: ['/'] });
+  recordRumEvent({ type: 'interaction', name: 'team-created', page: '/' });
+  registerRumVocabulary({ customInteractions: ['team-created'], pages: ['/'] });
+
+  assert.equal(await interactions('team-created'), 1);
+});
+
+test('a name the app never declared still collapses to other', async () => {
+  registerRumVocabulary({ customInteractions: ['match-assigned'], pages: ['/'] });
+  recordRumEvent({ type: 'interaction', name: 'match-assigned', page: '/' });
+  recordRumEvent({ type: 'interaction', name: 'never-declared', page: '/' });
+
+  assert.equal(await interactions('match-assigned'), 1);
+  assert.equal(await interactions('other'), 1);
 });
