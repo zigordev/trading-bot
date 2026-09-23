@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.17](https://github.com/zigordev/trading-bot/compare/v0.1.16...v0.1.17) (2026-09-23)
+
+
+### Features
+
+* **observability:** events, lifecycle and domain metrics across trading-bot ([#158](https://github.com/zigordev/trading-bot/issues/158)) ([6de1264](https://github.com/zigordev/trading-bot/commit/6de1264460548d41bd39d2377a593da775005e56))
+
 ## [0.1.16](https://github.com/zigordev/trading-bot/compare/v0.1.15...v0.1.16) (2026-09-21)
 
 
