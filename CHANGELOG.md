@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.19](https://github.com/zigordev/trading-bot/compare/v0.1.18...v0.1.19) (2026-09-23)
+
+
+### Bug Fixes
+
+* **observability:** make the stream and producer gauges tell the truth ([#162](https://github.com/zigordev/trading-bot/issues/162)) ([d50c4cc](https://github.com/zigordev/trading-bot/commit/d50c4ccb1265b0eb3d0eeb28dded1f25c9233327))
+
 ## [0.1.18](https://github.com/zigordev/trading-bot/compare/v0.1.17...v0.1.18) (2026-09-23)
 
 
