@@ -10,10 +10,10 @@ Legacy code was moved to `../trading-bot-legacy/`.
 - `apps/operator-console/` — Next.js operator console (`@trading-bot/operator-console`)
 - `crates/market-data/`, `crates/research-backtesting/`, `crates/execution/` — Rust services
 - `crates/strategy-engine/`, `crates/observability/` — Rust crates shared by those services
-- `docker/` — app-local, app-dev and CI compose manifests + env templates
-- `scripts/` — local stack, OpenBao startup, gitleaks pre-commit, licence and audit gates
-- `.github/workflows/` — CI, release, governance workflows
-- `docs/` — first-run guide, with the design notes under `docs/architecture/`
+- `docker/` — app-local, app-dev, app-prod and CI compose manifests + env templates
+- `scripts/` — local stack, OpenBao startup, remote prod deploy, gitleaks pre-commit, licence and audit gates
+- `.github/workflows/` — CI, release, deploy, governance workflows
+- `docs/` — first-run and first-deploy guides, with the design notes under `docs/architecture/`
 
 ## Quick start
 
@@ -89,11 +89,19 @@ runs with `npm run test:integration`.
 ## Release + deploy model
 
 - `Release Please` manages versioning/changelog + release PR.
-- There is no deploy workflow yet. CI builds every image and scans it (SBOM +
-  Trivy per image), but nothing is pushed to ECR and nothing is deployed —
-  wiring that up is the next milestone for this repository.
+- CI builds every image and scans it (SBOM + Trivy per image).
+- `Deploy AWS App (EC2 Compose, manual dispatch only)` builds, signs, attests
+  and ships the five production images, then deploys the stack over SSM. It is
+  `workflow_dispatch` only: merging a pull request or cutting a release cannot
+  deploy this repository.
+- That is a capacity decision, not an oversight. The stack measured ~10.6 GiB
+  resident locally, ClickHouse ~5.57 GiB of it, against a shared production host
+  that is one t3.large (8 GiB) already running 23 containers. The dispatch takes
+  a `capacity_confirmed` input, and the host-side deploy script refuses to start
+  with less than 12 GiB available. See `docs/cloud-first-deploy.md`.
 - Platform infra/ops services are owned by `platform-ops`; this repo only ships
-  app stack compose + app config under `docker/`.
+  app stack compose + app config under `docker/`. Ingress routes and DNS records
+  for the public names live in `platform-ops`.
 
 ## Current scope
 
@@ -175,3 +183,4 @@ No live order execution has been added yet.
 - `docs/architecture/research-settings-architecture.md`
 - `docs/architecture/postgres-seed-data.md`
 - `docs/local-first-start.md`
+- `docs/cloud-first-deploy.md`
