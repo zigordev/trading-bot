@@ -103,6 +103,7 @@ test('the metrics route serves the registry in the format Prometheus scrapes', a
     }
   );
 
+  assert.equal(headers['Content-Type'], registry.contentType);
   assert.match(headers['Content-Type'] ?? '', /^text\/plain; version=0\.0\.4/);
   assert.match(String(body), /http_request_duration_seconds/);
 });
