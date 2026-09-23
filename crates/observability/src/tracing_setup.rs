@@ -20,7 +20,7 @@ use std::fmt;
 use opentelemetry::{KeyValue, trace::TracerProvider as _};
 use opentelemetry_otlp::{Protocol, WithExportConfig};
 use opentelemetry_sdk::{Resource, trace::SdkTracerProvider};
-use opentelemetry_semantic_conventions::resource::SERVICE_NAME;
+use opentelemetry_semantic_conventions::resource::{SERVICE_NAME, SERVICE_VERSION};
 use tracing::{Event, Subscriber};
 use tracing_subscriber::{
     EnvFilter,
@@ -151,11 +151,10 @@ fn build_tracer_provider(service_name: &str) -> Option<SdkTracerProvider> {
         Ok(exporter) => Some(
             SdkTracerProvider::builder()
                 .with_batch_exporter(exporter)
-                .with_resource(
-                    Resource::builder()
-                        .with_attributes([KeyValue::new(SERVICE_NAME, service_name.to_owned())])
-                        .build(),
-                )
+                .with_resource(trace_resource(
+                    service_name,
+                    &crate::current_release().unwrap_or_else(|| "dev".to_owned()),
+                ))
                 .build(),
         ),
         Err(error) => {
@@ -164,6 +163,15 @@ fn build_tracer_provider(service_name: &str) -> Option<SdkTracerProvider> {
             None
         }
     }
+}
+
+fn trace_resource(service_name: &str, release: &str) -> Resource {
+    Resource::builder()
+        .with_attributes([
+            KeyValue::new(SERVICE_NAME, service_name.to_owned()),
+            KeyValue::new(SERVICE_VERSION, release.to_owned()),
+        ])
+        .build()
 }
 
 /// One JSON object per line, in the estate's shape.
@@ -338,6 +346,21 @@ fn civil_from_days(days: i64) -> (i64, u32, u32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_trace_resource_names_the_service_and_its_release() {
+        use opentelemetry::Key;
+
+        let resource = trace_resource("trading-bot-market-data", "v0.1.17");
+        assert_eq!(
+            resource.get(&Key::from_static_str(SERVICE_NAME)),
+            Some("trading-bot-market-data".into())
+        );
+        assert_eq!(
+            resource.get(&Key::from_static_str(SERVICE_VERSION)),
+            Some("v0.1.17".into())
+        );
+    }
 
     #[test]
     fn formats_a_known_instant() {

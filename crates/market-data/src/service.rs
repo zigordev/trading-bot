@@ -1,6 +1,9 @@
 use std::{
     collections::{BTreeMap, HashMap},
-    sync::Arc,
+    sync::{
+        Arc,
+        atomic::{AtomicU32, Ordering},
+    },
     time::{Duration, Instant},
 };
 
@@ -10,6 +13,7 @@ use futures_util::StreamExt;
 use rdkafka::{
     ClientConfig, Message,
     consumer::{Consumer, StreamConsumer},
+    error::{KafkaError, RDKafkaErrorCode},
     producer::{FutureProducer, FutureRecord},
 };
 use reqwest::StatusCode;
@@ -40,6 +44,8 @@ use crate::{
     },
 };
 
+const KAFKA_PRODUCER_DISCONNECT_FAILURES: u32 = 3;
+
 #[derive(Clone)]
 pub struct MarketDataService {
     inner: Arc<Inner>,
@@ -53,6 +59,7 @@ struct Inner {
     binance_rest_base_url: Url,
     binance_weight_limiter: BinanceWeightLimiter,
     kafka_producer: FutureProducer,
+    kafka_publish_failures: AtomicU32,
     runtime_status: RwLock<RuntimeStatus>,
     required_kline_history_ms: RwLock<HashMap<String, i64>>,
     required_trade_history_ms: RwLock<HashMap<String, i64>>,
@@ -463,6 +470,18 @@ fn parse_used_weight_1m(headers: &reqwest::header::HeaderMap) -> Option<u64> {
         .and_then(|value| value.parse::<u64>().ok())
 }
 
+fn producer_error_is_disconnect(error: &KafkaError) -> bool {
+    matches!(
+        error,
+        KafkaError::MessageProduction(
+            RDKafkaErrorCode::AllBrokersDown
+                | RDKafkaErrorCode::BrokerTransportFailure
+                | RDKafkaErrorCode::MessageTimedOut
+                | RDKafkaErrorCode::Resolve
+        )
+    )
+}
+
 impl MarketDataService {
     pub async fn new(config: AppConfig) -> Result<Self> {
         let database = Database::connect(&config).await?;
@@ -484,6 +503,7 @@ impl MarketDataService {
             .build()?;
         let metrics = Metrics::new()?;
         metrics.database_connected.set(1);
+        metrics.kafka_producer_connected.set(1);
         metrics.binance_rest_limit_weight_1m.set(
             config
                 .binance_rest_request_weight_limit_per_minute
@@ -534,6 +554,7 @@ impl MarketDataService {
             binance_rest_base_url,
             binance_weight_limiter: BinanceWeightLimiter::new(),
             kafka_producer,
+            kafka_publish_failures: AtomicU32::new(0),
             runtime_status: RwLock::new(runtime_status),
             required_kline_history_ms: RwLock::new(HashMap::new()),
             required_trade_history_ms: RwLock::new(HashMap::new()),
@@ -1236,34 +1257,90 @@ impl MarketDataService {
 
     async fn publish_kline_event(&self, event: &NormalizedKlineEvent) -> Result<()> {
         let payload = serde_json::to_string(event)?;
-        self.inner
-            .kafka_producer
-            .send(
-                FutureRecord::to(&self.inner.config.market_data_kline_events_topic)
-                    .key(&event.event_id)
-                    .payload(&payload),
-                Duration::from_secs(5),
-            )
-            .await
-            .map_err(|(error, _)| anyhow::anyhow!(error))
-            .context("failed to publish market-data kline event")?;
-        Ok(())
+        self.publish_event(
+            &self.inner.config.market_data_kline_events_topic,
+            &event.event_id,
+            &payload,
+        )
+        .await
+        .context("failed to publish market-data kline event")
     }
 
     async fn publish_trade_event(&self, event: &crate::models::NormalizedTradeEvent) -> Result<()> {
         let payload = serde_json::to_string(event)?;
-        self.inner
+        self.publish_event(
+            &self.inner.config.market_data_trade_events_topic,
+            &event.event_id,
+            &payload,
+        )
+        .await
+        .context("failed to publish market-data trade event")
+    }
+
+    async fn publish_event(&self, topic: &str, key: &str, payload: &str) -> Result<()> {
+        let delivery = self
+            .inner
             .kafka_producer
             .send(
-                FutureRecord::to(&self.inner.config.market_data_trade_events_topic)
-                    .key(&event.event_id)
-                    .payload(&payload),
+                FutureRecord::to(topic).key(key).payload(payload),
                 Duration::from_secs(5),
             )
+            .await;
+
+        match delivery {
+            Ok(_) => {
+                self.mark_kafka_publish_succeeded().await;
+                Ok(())
+            }
+            Err((error, _)) => {
+                self.mark_kafka_publish_failed(&error).await;
+                Err(anyhow::anyhow!(error))
+            }
+        }
+    }
+
+    async fn mark_kafka_publish_succeeded(&self) {
+        self.inner
+            .kafka_publish_failures
+            .store(0, Ordering::Relaxed);
+        let connected = self
+            .inner
+            .runtime_status
+            .read()
             .await
-            .map_err(|(error, _)| anyhow::anyhow!(error))
-            .context("failed to publish market-data trade event")?;
-        Ok(())
+            .kafka
+            .producer_connected;
+        if !connected {
+            self.mark_kafka_producer(true, None).await;
+        }
+    }
+
+    async fn mark_kafka_publish_failed(&self, error: &KafkaError) {
+        if !producer_error_is_disconnect(error) {
+            return;
+        }
+        let failures = self
+            .inner
+            .kafka_publish_failures
+            .fetch_add(1, Ordering::Relaxed)
+            .saturating_add(1);
+        if failures < KAFKA_PRODUCER_DISCONNECT_FAILURES {
+            return;
+        }
+        self.mark_kafka_producer(false, Some(error.to_string()))
+            .await;
+    }
+
+    async fn mark_kafka_producer(&self, connected: bool, error: Option<String>) {
+        self.inner
+            .metrics
+            .kafka_producer_connected
+            .set(if connected { 1 } else { 0 });
+        let mut status = self.inner.runtime_status.write().await;
+        status.kafka.producer_connected = connected;
+        if let Some(error) = error {
+            status.kafka.last_error = Some(error);
+        }
     }
 
     async fn mark_stream(
@@ -1273,6 +1350,10 @@ impl MarketDataService {
         last_message_at: Option<String>,
         error: Option<String>,
     ) {
+        self.inner
+            .metrics
+            .stream_connected
+            .set(if connected { 1 } else { 0 });
         let mut status = self.inner.runtime_status.write().await;
         status.stream.connected = connected;
         if let Some(stream_url) = stream_url {
@@ -1877,18 +1958,12 @@ impl MarketDataService {
         };
         let payload = serde_json::to_string(&envelope)?;
 
-        self.inner
-            .kafka_producer
-            .send(
-                FutureRecord::to(&self.inner.config.data_readiness_events_topic)
-                    .key("snapshot")
-                    .payload(&payload),
-                Duration::from_secs(5),
-            )
-            .await
-            .map_err(|(error, _)| anyhow::anyhow!(error))?;
-
-        Ok(())
+        self.publish_event(
+            &self.inner.config.data_readiness_events_topic,
+            "snapshot",
+            &payload,
+        )
+        .await
     }
 
     fn build_required_history_plan(
@@ -3602,6 +3677,36 @@ mod tests {
         },
         subscriptions::derive_active_subscriptions,
     };
+
+    #[test]
+    fn only_broker_level_failures_take_the_producer_flag_down() {
+        use rdkafka::error::{KafkaError, RDKafkaErrorCode};
+
+        for code in [
+            RDKafkaErrorCode::AllBrokersDown,
+            RDKafkaErrorCode::BrokerTransportFailure,
+            RDKafkaErrorCode::MessageTimedOut,
+            RDKafkaErrorCode::Resolve,
+        ] {
+            assert!(
+                super::producer_error_is_disconnect(&KafkaError::MessageProduction(code)),
+                "{code:?}"
+            );
+        }
+
+        for code in [
+            RDKafkaErrorCode::QueueFull,
+            RDKafkaErrorCode::UnknownTopicOrPartition,
+            RDKafkaErrorCode::MessageSizeTooLarge,
+        ] {
+            assert!(
+                !super::producer_error_is_disconnect(&KafkaError::MessageProduction(code)),
+                "{code:?}"
+            );
+        }
+
+        assert!(!super::producer_error_is_disconnect(&KafkaError::Canceled));
+    }
 
     #[test]
     fn merge_aggregate_trade_id_ranges_merges_overlaps_and_touching_ranges() {
