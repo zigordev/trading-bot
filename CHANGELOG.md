@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.20](https://github.com/zigordev/trading-bot/compare/v0.1.19...v0.1.20) (2026-09-23)
+
+
+### Features
+
+* **observability:** vendor the kit's remote flags and route naming into both apps ([#164](https://github.com/zigordev/trading-bot/issues/164)) ([fbe8256](https://github.com/zigordev/trading-bot/commit/fbe8256946da4b317f48f37c2d2badf040ab58c1))
+
 ## [0.1.19](https://github.com/zigordev/trading-bot/compare/v0.1.18...v0.1.19) (2026-09-23)
 
 
