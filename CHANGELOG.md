@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.18](https://github.com/zigordev/trading-bot/compare/v0.1.17...v0.1.18) (2026-09-23)
+
+
+### Bug Fixes
+
+* **observability:** declare the console's RUM vocabulary when the process boots ([#160](https://github.com/zigordev/trading-bot/issues/160)) ([65e2dcf](https://github.com/zigordev/trading-bot/commit/65e2dcfac879280793303002644e5055645a90e2))
+
 ## [0.1.17](https://github.com/zigordev/trading-bot/compare/v0.1.16...v0.1.17) (2026-09-23)
 
 
