@@ -1,6 +1,7 @@
 import * as client from 'prom-client';
 import { currentRelease } from './json-logger';
 import { registry } from './metrics.registry';
+import { startAtZero } from './start-at-zero';
 
 /**
  * Real User Monitoring metrics, shared by every UI in the estate.
@@ -90,6 +91,18 @@ export const rumRejectedTotal = new client.Counter({
   registers: [registry],
 });
 
+const REJECTION_REASONS = [
+  'rate_limited',
+  'malformed',
+  'unknown_type',
+  'bad_name',
+  'unrecordable',
+  'batch_too_large',
+  'cross_origin',
+  'csp_malformed',
+  'csp_rate_limited',
+] as const;
+
 export type RumEventType = 'performance' | 'error' | 'interaction' | 'navigation' | 'frustration';
 
 export interface RumEvent {
@@ -159,7 +172,15 @@ function initialiseHomePageSeries(): void {
   }
 }
 
+function initialiseRejectionSeries(): void {
+  startAtZero(
+    rumRejectedTotal,
+    REJECTION_REASONS.map((reason) => ({ reason }))
+  );
+}
+
 initialiseHomePageSeries();
+initialiseRejectionSeries();
 
 /**
  * Product-specific interaction names, added by the app at startup.
@@ -185,6 +206,18 @@ export function allowCustomInteractions(names: readonly string[]): void {
 
 export function allowPages(pages: readonly string[]): void {
   allowedPages = new Set(pages.filter((page) => typeof page === 'string' && page.startsWith('/')));
+}
+
+export interface RumVocabulary {
+  readonly customInteractions?: readonly string[];
+  readonly pages?: readonly string[];
+}
+
+export function registerRumVocabulary(vocabulary: RumVocabulary): void {
+  if (vocabulary.customInteractions?.length) {
+    allowCustomInteractions(vocabulary.customInteractions);
+  }
+  if (vocabulary.pages?.length) allowPages(vocabulary.pages);
 }
 
 export function pageLabel(rawPage: string): string {

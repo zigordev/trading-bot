@@ -5,6 +5,10 @@ export async function register() {
     await import('@/observability/tracing');
     const { logServiceStarted, logServiceStopping, observeProcessFailures } =
       await import('@/observability/standard-events');
+    const { registerRumVocabulary } = await import('@/observability/rum-metrics');
+    const { RUM_PAGES } = await import('@/observability/rum-pages');
+
+    registerRumVocabulary({ pages: RUM_PAGES });
 
     observeProcessFailures({ rejections: 'observe' });
     process.once('SIGTERM', () => logServiceStopping('SIGTERM'));

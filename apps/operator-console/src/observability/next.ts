@@ -1,7 +1,7 @@
 import { recordCspReports } from './csp-reports';
 import { clientKeyFrom, ingestRumBatch, MAX_BODY_BYTES } from './rum-ingest';
 import { registry } from './metrics.registry';
-import { allowCustomInteractions, allowPages, rumRejectedTotal } from './rum-metrics';
+import { registerRumVocabulary, rumRejectedTotal } from './rum-metrics';
 
 /** The Next.js adapter, mirroring `nest.ts` and `fastify.ts`. */
 
@@ -44,12 +44,11 @@ export function createRumIngestRoute(
     pages?: readonly string[];
   } = {}
 ) {
-  // Declared once, at module load, so the app's business-event names are known
-  // before the first beacon arrives.
-  if (options.customInteractions?.length) {
-    allowCustomInteractions(options.customInteractions);
-  }
-  if (options.pages?.length) allowPages(options.pages);
+  // Declared once, when Next first loads this route module — which is on the
+  // first beacon, not at process start. An app that wants its business-event
+  // names known from the first scrape calls `registerRumVocabulary` from
+  // `instrumentation.ts` as well; declaring them twice is harmless.
+  registerRumVocabulary(options);
 
   return async function POST(request: Request): Promise<Response> {
     const origin = request.headers.get('origin');
@@ -73,7 +72,7 @@ export function createRumIngestRoute(
 }
 
 export function createCspReportRoute(options: { pages?: readonly string[] } = {}) {
-  if (options.pages?.length) allowPages(options.pages);
+  registerRumVocabulary(options);
 
   return async function POST(request: Request): Promise<Response> {
     const read = await readJsonBody(request);
@@ -116,6 +115,12 @@ function isSameOrigin(origin: string, host: string | null, allowedOrigin?: strin
 
 export { initRum } from './rum-client';
 export type { RumOptions } from './rum-client';
-export { allowCustomInteractions, allowPages, normalizePage } from './rum-metrics';
+export {
+  allowCustomInteractions,
+  allowPages,
+  normalizePage,
+  registerRumVocabulary,
+} from './rum-metrics';
+export type { RumVocabulary } from './rum-metrics';
 export { traceServerTiming, withServerTiming } from './server-timing';
 export { registry } from './metrics.registry';
