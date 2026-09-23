@@ -252,6 +252,9 @@ const toNonNegativeNumberOrNull = (value: unknown): number | null => {
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
 };
 
+export const normalizeProgressPercent = (value: number): number =>
+  Number.isFinite(value) ? Math.min(100, Math.max(0, value)) : 0;
+
 export const strategyPromotionThresholdsFromParameters = (
   parameters: Record<string, unknown> | null | undefined
 ): StrategyPromotionThresholds => {
@@ -974,7 +977,7 @@ export const updateBacktestJobProgress = async (
     `
       UPDATE ops_backtest_jobs
          SET stage = $2,
-             progress_percent = LEAST(100, GREATEST(0, $3)),
+             progress_percent = LEAST(100, GREATEST(0, $3::double precision)),
              updated_at = NOW()
        WHERE id = $1
          AND status IN ('queued', 'running')
@@ -999,7 +1002,7 @@ export const updateBacktestJobProgress = async (
         started_at,
         finished_at
     `,
-    [payload.jobId, payload.stage, payload.progressPercent]
+    [payload.jobId, payload.stage, normalizeProgressPercent(payload.progressPercent)]
   );
 
   return result.rowCount === 0 ? null : mapBacktestJobRow(result.rows[0]);
@@ -1043,7 +1046,7 @@ export const upsertBacktestJobFromProgressEvent = async (
         $5,
         $6,
         $7,
-        LEAST(100, GREATEST(0, $8)),
+        LEAST(100, GREATEST(0, $8::double precision)),
         NOW(),
         NOW(),
         NOW()
@@ -1092,7 +1095,7 @@ export const upsertBacktestJobFromProgressEvent = async (
       payload.timeframeCode,
       payload.strategyName,
       payload.stage,
-      payload.progressPercent,
+      normalizeProgressPercent(payload.progressPercent),
     ]
   );
 
@@ -1114,9 +1117,6 @@ export const upsertBacktestBatchFromProgressEvent = async (
     runningCount: number;
   }
 ): Promise<BacktestBatchRecord> => {
-  const normalizedProgressPercent = Number.isFinite(payload.progressPercent)
-    ? Math.min(100, Math.max(0, payload.progressPercent))
-    : 0;
   const result = await pool.query(
     `
       INSERT INTO ops_backtest_batches (
@@ -1135,7 +1135,7 @@ export const upsertBacktestBatchFromProgressEvent = async (
       )
       VALUES (
         $1, $2, $3, $4, $5, $6,
-        LEAST(100, GREATEST(0, $7)),
+        LEAST(100, GREATEST(0, $7::double precision)),
         GREATEST(0, $8),
         GREATEST(0, $9),
         GREATEST(0, $10),
@@ -1174,7 +1174,7 @@ export const upsertBacktestBatchFromProgressEvent = async (
       payload.requestedStartTime,
       payload.requestedEndTime,
       payload.stage,
-      normalizedProgressPercent,
+      normalizeProgressPercent(payload.progressPercent),
       payload.totalCount,
       payload.completedCount,
       payload.runningCount,
