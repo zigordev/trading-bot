@@ -59,7 +59,7 @@ export function registerHttpMetrics(app: FastifyInstance): void {
     // ignores the key; @fastify/swagger reads it.
     { schema: { hide: true } },
     async (_request, reply) => {
-      reply.header('Content-Type', 'text/plain; version=0.0.4; charset=utf-8');
+      reply.header('Content-Type', registry.contentType);
       return registry.metrics();
     }
   );

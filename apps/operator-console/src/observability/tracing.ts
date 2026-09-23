@@ -6,6 +6,7 @@ import { ATTR_SERVICE_NAME, ATTR_SERVICE_VERSION } from '@opentelemetry/semantic
 
 import { currentRelease } from './json-logger';
 import { isUnsampledPath, pathOfSpan } from './probe-paths';
+import { RouteNameProcessor } from './route-names';
 
 /**
  * The OpenTelemetry bootstrap.
@@ -69,7 +70,10 @@ function start(): NodeSDK {
     sampler: new ProbeSampler(
       new tracing.ParentBasedSampler({ root: new tracing.AlwaysOnSampler() })
     ),
-    traceExporter: new OTLPTraceExporter({ url: `${endpoint}/v1/traces` }),
+    spanProcessors: [
+      new RouteNameProcessor(),
+      new tracing.BatchSpanProcessor(new OTLPTraceExporter({ url: `${endpoint}/v1/traces` })),
+    ],
     instrumentations: [
       getNodeAutoInstrumentations({
         // A span per file read drowns everything else.
