@@ -380,6 +380,15 @@ impl ExecutionService {
             })
             .collect::<Vec<_>>();
 
+        for context in &next_contexts {
+            self.inner.metrics.start_trade_counters_at_zero(
+                &context.promotion.mode,
+                &context.promotion.pair_code,
+                &context.promotion.timeframe_code,
+                &context.promotion.strategy_name,
+            );
+        }
+
         let next_analysis_ids = next_analyses
             .iter()
             .map(analysis_runtime_key)
@@ -942,6 +951,7 @@ impl ExecutionService {
             fees_usd: 0.0,
         };
         self.post_execution_trade(&trade).await?;
+        self.count_trade_opened(&trade);
         Ok(())
     }
 
@@ -1019,6 +1029,7 @@ impl ExecutionService {
             fees_usd: 0.0,
         };
         self.post_execution_trade(&trade).await?;
+        self.count_trade_opened(&trade);
         {
             let mut runtime = self.inner.runtime.lock().await;
             if let Some(state) = runtime
@@ -1076,6 +1087,7 @@ impl ExecutionService {
             fees_usd: 0.0,
         };
         self.post_execution_trade(&trade_record).await?;
+        self.count_trade_closed(&trade_record, &normalized_close_reason);
         info!(event = "paper_trade.closed", trade_id = %position.trade_id, close_reason = %normalized_close_reason, pnl_percent, "paper trade closed");
         {
             let mut runtime = self.inner.runtime.lock().await;
@@ -1087,6 +1099,27 @@ impl ExecutionService {
         }
         self.refresh_open_positions_status().await;
         Ok(())
+    }
+
+    fn count_trade_opened(&self, trade: &ExecutionTradeRecord) {
+        self.inner.metrics.count_trade_opened(
+            &trade.mode,
+            &trade.pair_code,
+            &trade.timeframe_code,
+            &trade.strategy_name,
+            &trade.side,
+        );
+    }
+
+    fn count_trade_closed(&self, trade: &ExecutionTradeRecord, close_reason: &str) {
+        self.inner.metrics.count_trade_closed(
+            &trade.mode,
+            &trade.pair_code,
+            &trade.timeframe_code,
+            &trade.strategy_name,
+            &trade.side,
+            close_reason,
+        );
     }
 
     async fn refresh_open_positions_status(&self) {

@@ -791,6 +791,9 @@ impl ResearchBacktestingService {
             .inc();
         self.inner
             .metrics
+            .record_backtest_summary(&completed.response.analysis, &completed.response.summary);
+        self.inner
+            .metrics
             .replayed_klines_total
             .inc_by(completed.response.dataset.replay_kline_count as u64);
         self.inner
@@ -1415,6 +1418,9 @@ impl ResearchBacktestingService {
             .backtest_runs_total
             .with_label_values(&["success"])
             .inc();
+        self.inner
+            .metrics
+            .record_backtest_summary(&completed.response.analysis, &completed.response.summary);
         self.inner
             .metrics
             .replayed_klines_total
