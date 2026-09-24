@@ -10,4 +10,5 @@ package-lock.json
 next-env.d.ts
 apps/web/src/lib/api/generated.ts
 _ds_manifest.json
+observability.kit.json
 CHANGELOG.md
