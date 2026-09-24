@@ -4,7 +4,13 @@ import type { Pool } from 'pg';
 
 import type { AppConfig } from '../config.js';
 import { checkDatabaseReadiness } from '../infrastructure/database.js';
+import { currentRelease } from '../observability/json-logger.js';
 import { recordHealth } from '../observability/index.js';
+
+const releaseField = (): { release?: string } => {
+  const release = currentRelease();
+  return release ? { release } : {};
+};
 
 export const registerHealthRoutes = (
   app: FastifyInstance,
@@ -25,6 +31,7 @@ export const registerHealthRoutes = (
             properties: {
               status: { type: 'string' },
               service: { type: 'string' },
+              release: { type: 'string' },
               components: {
                 type: 'object',
                 properties: {
@@ -41,6 +48,7 @@ export const registerHealthRoutes = (
             properties: {
               status: { type: 'string' },
               service: { type: 'string' },
+              release: { type: 'string' },
               components: {
                 type: 'object',
                 properties: {
@@ -67,7 +75,7 @@ export const registerHealthRoutes = (
         // rule can read the health contract.
         recordHealth('ok', components);
 
-        return { status: 'ok', service: config.serviceName, components };
+        return { status: 'ok', service: config.serviceName, ...releaseField(), components };
       } catch (error) {
         databaseReadinessGauge.set(0);
         if (databaseUp !== false) app.log.error({ event: 'postgres.unavailable', error });
@@ -77,7 +85,7 @@ export const registerHealthRoutes = (
         const components = { db: { status: 'down' as const } };
         recordHealth('error', components);
 
-        return { status: 'error', service: config.serviceName, components };
+        return { status: 'error', service: config.serviceName, ...releaseField(), components };
       }
     }
   );
