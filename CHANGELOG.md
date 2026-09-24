@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.22](https://github.com/zigordev/trading-bot/compare/v0.1.21...v0.1.22) (2026-09-24)
+
+
+### Features
+
+* **deploy:** add a manual-only production delivery path ([#168](https://github.com/zigordev/trading-bot/issues/168)) ([13f5b26](https://github.com/zigordev/trading-bot/commit/13f5b260595fbfb7bfa1493037c7cce0138ec299))
+
 ## [0.1.21](https://github.com/zigordev/trading-bot/compare/v0.1.20...v0.1.21) (2026-09-24)
 
 
