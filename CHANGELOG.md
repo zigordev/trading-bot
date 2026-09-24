@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.23](https://github.com/zigordev/trading-bot/compare/v0.1.22...v0.1.23) (2026-09-24)
+
+
+### Features
+
+* **metrics:** export realized p&l, label backtest runs and count promotions ([#174](https://github.com/zigordev/trading-bot/issues/174)) ([4968274](https://github.com/zigordev/trading-bot/commit/496827445a566af3178fedd4447f69bcc123acb5))
+
 ## [0.1.22](https://github.com/zigordev/trading-bot/compare/v0.1.21...v0.1.22) (2026-09-24)
 
 
