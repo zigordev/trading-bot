@@ -5,6 +5,7 @@ import { NodeSDK, tracing } from '@opentelemetry/sdk-node';
 import { ATTR_SERVICE_NAME, ATTR_SERVICE_VERSION } from '@opentelemetry/semantic-conventions';
 
 import { currentRelease } from './json-logger.js';
+import { FetchSpanNameProcessor, RedispatchedRequestSpanFilter } from './next-spans.js';
 import { isUnsampledPath, pathOfSpan } from './probe-paths.js';
 import { RouteNameProcessor } from './route-names.js';
 
@@ -37,6 +38,8 @@ class ProbeSampler implements tracing.Sampler {
 }
 
 const tracesEnabled = (process.env.OTEL_TRACES_ENABLED || 'true').toLowerCase() !== 'false';
+
+const onNextServer = process.env.NEXT_RUNTIME === 'nodejs';
 
 const telemetrySdk = tracesEnabled ? start() : null;
 
@@ -72,12 +75,18 @@ function start(): NodeSDK {
     ),
     spanProcessors: [
       new RouteNameProcessor(),
-      new tracing.BatchSpanProcessor(new OTLPTraceExporter({ url: `${endpoint}/v1/traces` })),
+      new FetchSpanNameProcessor(),
+      new RedispatchedRequestSpanFilter(
+        new tracing.BatchSpanProcessor(new OTLPTraceExporter({ url: `${endpoint}/v1/traces` }))
+      ),
     ],
     instrumentations: [
       getNodeAutoInstrumentations({
         // A span per file read drowns everything else.
         '@opentelemetry/instrumentation-fs': { enabled: false },
+        '@opentelemetry/instrumentation-http': {
+          disableIncomingRequestInstrumentation: onNextServer,
+        },
         // Pino services get their trace context from the kit's own log
         // config, under the estate's `traceId` name. Leaving this enabled
         // stamps a second copy as `trace_id`/`span_id`/`trace_flags` on every
