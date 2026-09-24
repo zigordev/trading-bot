@@ -1,9 +1,19 @@
 use anyhow::Result;
-use prometheus::{Encoder, IntCounter, IntCounterVec, IntGauge, Opts, Registry, TextEncoder};
+use prometheus::{
+    CounterVec, Encoder, IntCounter, IntCounterVec, IntGauge, Opts, Registry, TextEncoder,
+};
 use trading_bot_observability::{HealthMetrics, HttpMetrics};
 
 pub const TRADE_SIDES: [&str; 2] = ["long", "short"];
 pub const TRADE_CLOSE_REASONS: [&str; 4] = ["stopLoss", "takeProfit", "reversal", "riskExit"];
+
+const TRADE_LABELS: [&str; 5] = [
+    "mode",
+    "pair_code",
+    "timeframe_code",
+    "strategy_name",
+    "side",
+];
 
 #[derive(Clone)]
 pub struct Metrics {
@@ -17,6 +27,8 @@ pub struct Metrics {
     pub refresh_total: IntCounter,
     pub trades_opened_total: IntCounterVec,
     pub trades_closed_total: IntCounterVec,
+    pub realized_profit_usd_total: CounterVec,
+    pub realized_loss_usd_total: CounterVec,
 }
 
 impl Metrics {
@@ -67,12 +79,29 @@ impl Metrics {
             ],
         )?;
 
+        let realized_profit_usd_total = CounterVec::new(
+            Opts::new(
+                "trading_bot_execution_realized_profit_usd_total",
+                "Cumulative realized profit in USD from closed trades, by promoted configuration and side",
+            ),
+            &TRADE_LABELS,
+        )?;
+        let realized_loss_usd_total = CounterVec::new(
+            Opts::new(
+                "trading_bot_execution_realized_loss_usd_total",
+                "Cumulative realized loss in USD from closed trades, as a positive magnitude",
+            ),
+            &TRADE_LABELS,
+        )?;
+
         registry.register(Box::new(control_plane_connected.clone()))?;
         registry.register(Box::new(active_promotion_loaded.clone()))?;
         registry.register(Box::new(paper_mode_enabled.clone()))?;
         registry.register(Box::new(refresh_total.clone()))?;
         registry.register(Box::new(trades_opened_total.clone()))?;
         registry.register(Box::new(trades_closed_total.clone()))?;
+        registry.register(Box::new(realized_profit_usd_total.clone()))?;
+        registry.register(Box::new(realized_loss_usd_total.clone()))?;
 
         let http = HttpMetrics::register(&registry)?;
         let health = HealthMetrics::register(&registry)?;
@@ -88,6 +117,8 @@ impl Metrics {
             refresh_total,
             trades_opened_total,
             trades_closed_total,
+            realized_profit_usd_total,
+            realized_loss_usd_total,
         })
     }
 
@@ -99,13 +130,12 @@ impl Metrics {
         strategy_name: &str,
     ) {
         for side in TRADE_SIDES {
-            self.trades_opened_total.with_label_values(&[
-                mode,
-                pair_code,
-                timeframe_code,
-                strategy_name,
-                side,
-            ]);
+            let trade_labels = [mode, pair_code, timeframe_code, strategy_name, side];
+            self.trades_opened_total.with_label_values(&trade_labels);
+            self.realized_profit_usd_total
+                .with_label_values(&trade_labels);
+            self.realized_loss_usd_total
+                .with_label_values(&trade_labels);
             for close_reason in TRADE_CLOSE_REASONS {
                 self.trades_closed_total.with_label_values(&[
                     mode,
@@ -153,6 +183,31 @@ impl Metrics {
             .inc();
     }
 
+    pub fn record_realized_pnl(
+        &self,
+        mode: &str,
+        pair_code: &str,
+        timeframe_code: &str,
+        strategy_name: &str,
+        side: &str,
+        realized_pnl_usd: f64,
+    ) {
+        if !realized_pnl_usd.is_finite() {
+            return;
+        }
+
+        let trade_labels = [mode, pair_code, timeframe_code, strategy_name, side];
+        if realized_pnl_usd >= 0.0 {
+            self.realized_profit_usd_total
+                .with_label_values(&trade_labels)
+                .inc_by(realized_pnl_usd);
+        } else {
+            self.realized_loss_usd_total
+                .with_label_values(&trade_labels)
+                .inc_by(-realized_pnl_usd);
+        }
+    }
+
     pub fn encode(&self) -> Result<String> {
         let encoder = TextEncoder::new();
         let families = self.registry.gather();
@@ -185,6 +240,37 @@ mod tests {
     }
 
     #[test]
+    fn realized_pnl_splits_into_two_counters_that_only_ever_rise() {
+        let metrics = Metrics::new().expect("metrics");
+
+        metrics.record_realized_pnl("paper", "BTCUSDT", "1m", "emaCross", "long", 12.5);
+        metrics.record_realized_pnl("paper", "BTCUSDT", "1m", "emaCross", "long", -4.25);
+        metrics.record_realized_pnl("paper", "BTCUSDT", "1m", "emaCross", "long", 2.0);
+
+        let encoded = metrics.encode().expect("encode");
+
+        assert!(encoded.contains(
+            "trading_bot_execution_realized_profit_usd_total{mode=\"paper\",pair_code=\"BTCUSDT\",side=\"long\",strategy_name=\"emaCross\",timeframe_code=\"1m\"} 14.5"
+        ));
+        assert!(encoded.contains(
+            "trading_bot_execution_realized_loss_usd_total{mode=\"paper\",pair_code=\"BTCUSDT\",side=\"long\",strategy_name=\"emaCross\",timeframe_code=\"1m\"} 4.25"
+        ));
+    }
+
+    #[test]
+    fn a_realized_pnl_that_is_not_a_number_never_reaches_a_counter() {
+        let metrics = Metrics::new().expect("metrics");
+
+        metrics.record_realized_pnl("paper", "BTCUSDT", "1m", "emaCross", "long", f64::NAN);
+        metrics.record_realized_pnl("paper", "BTCUSDT", "1m", "emaCross", "long", f64::INFINITY);
+
+        let encoded = metrics.encode().expect("encode");
+
+        assert!(!encoded.contains("trading_bot_execution_realized_profit_usd_total"));
+        assert!(!encoded.contains("trading_bot_execution_realized_loss_usd_total"));
+    }
+
+    #[test]
     fn a_loaded_promotion_starts_both_counters_at_zero() {
         let metrics = Metrics::new().expect("metrics");
 
@@ -197,6 +283,13 @@ mod tests {
         ));
         assert!(encoded.contains(
             "trading_bot_execution_trades_closed_total{close_reason=\"riskExit\",mode=\"paper\",pair_code=\"ETHUSDT\",side=\"short\",strategy_name=\"strategy1\",timeframe_code=\"5m\"} 0"
+        ));
+
+        assert!(encoded.contains(
+            "trading_bot_execution_realized_profit_usd_total{mode=\"paper\",pair_code=\"ETHUSDT\",side=\"long\",strategy_name=\"strategy1\",timeframe_code=\"5m\"} 0"
+        ));
+        assert!(encoded.contains(
+            "trading_bot_execution_realized_loss_usd_total{mode=\"paper\",pair_code=\"ETHUSDT\",side=\"short\",strategy_name=\"strategy1\",timeframe_code=\"5m\"} 0"
         ));
 
         let zero_started = encoded
