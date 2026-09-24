@@ -77,6 +77,41 @@ test('GET /health returns error when the database is down', async () => {
   });
 });
 
+test('GET /health names the release it is serving', async () => {
+  const previousOtel = process.env.OTEL_SERVICE_VERSION;
+  const previousRelease = process.env.APP_RELEASE;
+  delete process.env.OTEL_SERVICE_VERSION;
+  process.env.APP_RELEASE = '0.1.22';
+  onTestFinished(() => {
+    if (previousOtel === undefined) delete process.env.OTEL_SERVICE_VERSION;
+    else process.env.OTEL_SERVICE_VERSION = previousOtel;
+    if (previousRelease === undefined) delete process.env.APP_RELEASE;
+    else process.env.APP_RELEASE = previousRelease;
+  });
+
+  const app = Fastify({ logger: false });
+  onTestFinished(() => app.close());
+
+  registerHealthRoutes(
+    app,
+    {
+      query: async () => ({ rows: [], rowCount: 1 }),
+    } as never,
+    createGauge(),
+    testConfig
+  );
+
+  const response = await app.inject({
+    method: 'GET',
+    url: '/health',
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.json().release, '0.1.22');
+  assert.match(response.body, /"status":"ok"/);
+  assert.match(response.body, /"release":"0\.1\.22"/);
+});
+
 test('GET /v1/runtime-config/analysis-settings returns the injected projection', async () => {
   const app = Fastify({ logger: false });
   onTestFinished(() => app.close());

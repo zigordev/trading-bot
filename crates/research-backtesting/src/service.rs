@@ -710,13 +710,16 @@ impl ResearchBacktestingService {
         if let Err(error) = self.refresh_dependencies().await {
             self.inner
                 .metrics
-                .backtest_runs_total
-                .with_label_values(&["error"])
-                .inc();
+                .count_backtest_run_without_configuration("error");
             return Err(error);
         }
 
-        let resolved = self.resolve_input(&request).await?;
+        let resolved = self.resolve_input(&request).await.inspect_err(|_| {
+            self.inner
+                .metrics
+                .count_backtest_run_without_configuration("error");
+        })?;
+        let analysis = resolved.analysis.clone();
         let progress_context = request
             .control_plane_job_id
             .clone()
@@ -764,12 +767,15 @@ impl ResearchBacktestingService {
                 progress_event_source: self.inner.config.service_name.clone(),
             },
         )
-        .await?;
-        let persisted_run = persisted_backtest_run(&completed.response)?;
+        .await
+        .map_err(|error| self.on_backtest_error(&analysis, error))?;
+        let persisted_run = persisted_backtest_run(&completed.response)
+            .map_err(|error| self.on_backtest_error(&analysis, error))?;
         self.inner
             .historical_store
             .insert_backtest_run(&persisted_run)
-            .await?;
+            .await
+            .map_err(|error| self.on_backtest_error(&analysis, error))?;
         if let Err(error) = self
             .publish_backtest_completed_event(
                 &completed.response,
@@ -786,9 +792,7 @@ impl ResearchBacktestingService {
 
         self.inner
             .metrics
-            .backtest_runs_total
-            .with_label_values(&["success"])
-            .inc();
+            .count_backtest_run("success", &completed.response.analysis);
         self.inner
             .metrics
             .record_backtest_summary(&completed.response.analysis, &completed.response.summary);
@@ -1302,13 +1306,16 @@ impl ResearchBacktestingService {
         if let Err(error) = self.refresh_dependencies().await {
             self.inner
                 .metrics
-                .backtest_runs_total
-                .with_label_values(&["error"])
-                .inc();
+                .count_backtest_run_without_configuration("error");
             return Err(error);
         }
 
-        let resolved = self.resolve_input(&request).await?;
+        let resolved = self.resolve_input(&request).await.inspect_err(|_| {
+            self.inner
+                .metrics
+                .count_backtest_run_without_configuration("error");
+        })?;
+        let analysis = resolved.analysis.clone();
         let progress_context = request
             .control_plane_job_id
             .clone()
@@ -1393,12 +1400,15 @@ impl ResearchBacktestingService {
                 progress_event_source: self.inner.config.service_name.clone(),
             },
         )
-        .await?;
-        let persisted_run = persisted_backtest_run(&completed.response)?;
+        .await
+        .map_err(|error| self.on_backtest_error(&analysis, error))?;
+        let persisted_run = persisted_backtest_run(&completed.response)
+            .map_err(|error| self.on_backtest_error(&analysis, error))?;
         self.inner
             .historical_store
             .insert_backtest_run(&persisted_run)
-            .await?;
+            .await
+            .map_err(|error| self.on_backtest_error(&analysis, error))?;
         if let Err(error) = self
             .publish_backtest_completed_event(
                 &completed.response,
@@ -1415,9 +1425,7 @@ impl ResearchBacktestingService {
 
         self.inner
             .metrics
-            .backtest_runs_total
-            .with_label_values(&["success"])
-            .inc();
+            .count_backtest_run("success", &completed.response.analysis);
         self.inner
             .metrics
             .record_backtest_summary(&completed.response.analysis, &completed.response.summary);
@@ -1442,6 +1450,11 @@ impl ResearchBacktestingService {
         }
 
         Ok(completed.response)
+    }
+
+    fn on_backtest_error<E>(&self, analysis: &ResolvedAnalysisSettingsRecord, error: E) -> E {
+        self.inner.metrics.count_backtest_run("error", analysis);
+        error
     }
 
     async fn resolve_input(&self, request: &BacktestRequest) -> Result<ResolvedBacktestInput> {

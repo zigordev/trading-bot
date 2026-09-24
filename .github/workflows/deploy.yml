@@ -115,8 +115,9 @@ jobs:
           echo "release_tag=$raw_tag" >> "$GITHUB_OUTPUT"
           echo "image_tag=$safe_tag" >> "$GITHUB_OUTPUT"
 
-      - name: Validate required deploy variables
+      - name: Validate required deploy variables and secrets
         env:
+          AWS_DEPLOY_ROLE_ARN: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
           AWS_REGION: ${{ vars.AWS_REGION }}
           AWS_ECR_CONTROL_PLANE_REPOSITORY_URI: ${{ vars.AWS_ECR_CONTROL_PLANE_REPOSITORY_URI }}
           AWS_ECR_OPERATOR_CONSOLE_REPOSITORY_URI: ${{ vars.AWS_ECR_OPERATOR_CONSOLE_REPOSITORY_URI }}
@@ -138,11 +139,12 @@ jobs:
             AWS_DEPLOY_BUCKET
             AWS_DEPLOY_INSTANCE_ID
             AWS_SSM_APP_PREFIX
+            AWS_DEPLOY_ROLE_ARN
           )
 
           for name in "${required[@]}"; do
             if [ -z "$(printenv "$name" || true)" ]; then
-              echo "Missing GitHub environment variable: $name" >&2
+              echo "Missing GitHub environment variable or secret: $name" >&2
               exit 1
             fi
           done
@@ -576,7 +578,7 @@ jobs:
     name: Post Deploy Smoke
     runs-on: ubuntu-latest
     environment: production
-    needs: deploy-app
+    needs: [build-and-push, deploy-app]
     timeout-minutes: 10
 
     steps:
@@ -584,8 +586,19 @@ jobs:
         if: ${{ vars.DEPLOY_HEALTHCHECK_URL != '' }}
         env:
           HEALTHCHECK_URL: ${{ vars.DEPLOY_HEALTHCHECK_URL }}
+          RELEASE_TAG: ${{ needs.build-and-push.outputs.image_tag }}
         run: |
           set -euo pipefail
           body="$(curl -fsS "$HEALTHCHECK_URL")"
-          printf '%s\n' "$body" > /dev/null
-          echo "Health check passed: $HEALTHCHECK_URL"
+
+          if ! grep -q '"status":"ok"' <<<"$body"; then
+            echo "Health check did not report status ok: $body" >&2
+            exit 1
+          fi
+
+          if ! grep -q "\"release\":\"${RELEASE_TAG}\"" <<<"$body"; then
+            echo "Health check is not serving release $RELEASE_TAG: $body" >&2
+            exit 1
+          fi
+
+          echo "Health check passed: $HEALTHCHECK_URL ($RELEASE_TAG)"

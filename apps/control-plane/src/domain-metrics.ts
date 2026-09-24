@@ -14,6 +14,17 @@ export type ProjectionOutcome = (typeof PROJECTION_OUTCOMES)[number];
 export const CONFIG_CHANGE_OUTCOMES = ['published', 'failed', 'skipped'] as const;
 export type ConfigChangeOutcome = (typeof CONFIG_CHANGE_OUTCOMES)[number];
 
+export const PROMOTION_OUTCOMES = [
+  'promoted',
+  'auto_promote_disabled',
+  'selection_value_not_positive',
+  'analysis_not_eligible',
+  'thresholds_not_met',
+  'already_promoted',
+  'outscored_by_active',
+] as const;
+export type PromotionOutcome = (typeof PROMOTION_OUTCOMES)[number];
+
 const projections = new Counter({
   name: 'trading_bot_control_plane_projections_total',
   help: 'Events projected into the control plane from each stream, by outcome',
@@ -24,6 +35,13 @@ const projections = new Counter({
 const configChanges = new Counter({
   name: 'trading_bot_control_plane_config_changes_total',
   help: 'Configuration changes published to the services, by outcome',
+  labelNames: ['outcome'] as const,
+  registers: [registry],
+});
+
+const promotions = new Counter({
+  name: 'trading_bot_control_plane_promotions_total',
+  help: 'Backtested configurations considered for live execution, by what the decision concluded',
   labelNames: ['outcome'] as const,
   registers: [registry],
 });
@@ -39,6 +57,10 @@ export function startDomainMetricsAtZero(): void {
     configChanges,
     CONFIG_CHANGE_OUTCOMES.map((outcome) => ({ outcome }))
   );
+  startAtZero(
+    promotions,
+    PROMOTION_OUTCOMES.map((outcome) => ({ outcome }))
+  );
 }
 
 export function countProjection(stream: ProjectionStream, outcome: ProjectionOutcome): void {
@@ -47,4 +69,8 @@ export function countProjection(stream: ProjectionStream, outcome: ProjectionOut
 
 export function countConfigChange(outcome: ConfigChangeOutcome): void {
   configChanges.inc({ outcome });
+}
+
+export function countPromotion(outcome: PromotionOutcome): void {
+  promotions.inc({ outcome });
 }

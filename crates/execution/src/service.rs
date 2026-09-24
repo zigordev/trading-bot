@@ -1088,6 +1088,7 @@ impl ExecutionService {
         };
         self.post_execution_trade(&trade_record).await?;
         self.count_trade_closed(&trade_record, &normalized_close_reason);
+        self.record_realized_pnl(&trade_record);
         info!(event = "paper_trade.closed", trade_id = %position.trade_id, close_reason = %normalized_close_reason, pnl_percent, "paper trade closed");
         {
             let mut runtime = self.inner.runtime.lock().await;
@@ -1108,6 +1109,21 @@ impl ExecutionService {
             &trade.timeframe_code,
             &trade.strategy_name,
             &trade.side,
+        );
+    }
+
+    fn record_realized_pnl(&self, trade: &ExecutionTradeRecord) {
+        let Some(realized_pnl_usd) = trade.realized_pnl_usd else {
+            return;
+        };
+
+        self.inner.metrics.record_realized_pnl(
+            &trade.mode,
+            &trade.pair_code,
+            &trade.timeframe_code,
+            &trade.strategy_name,
+            &trade.side,
+            realized_pnl_usd,
         );
     }
 
