@@ -211,6 +211,13 @@ jobs:
         run: docker network create platform_ops_shared || true
 
       - name: Render compose manifests
+        env:
+          NEXT_PUBLIC_RELEASE: ci
+          CONTROL_PLANE_IMAGE: trading-bot-control-plane:ci
+          OPERATOR_CONSOLE_IMAGE: trading-bot-operator-console:ci
+          MARKET_DATA_IMAGE: trading-bot-market-data:ci
+          RESEARCH_BACKTESTING_IMAGE: trading-bot-research-backtesting:ci
+          EXECUTION_IMAGE: trading-bot-execution:ci
         run: |
           for f in docker/compose.app.*.yml docker/compose.ci.yml; do
             echo "rendering $f"
