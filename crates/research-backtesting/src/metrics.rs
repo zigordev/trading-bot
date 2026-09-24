@@ -11,6 +11,9 @@ use crate::models::BacktestSummary;
 use trading_bot_strategy_engine::models::ResolvedAnalysisSettingsRecord;
 
 pub const MAX_TRACKED_CONFIGURATIONS: usize = 2_048;
+pub const UNKNOWN_CONFIGURATION: &str = "unknown";
+
+pub const RUN_OUTCOMES: [&str; 2] = ["success", "error"];
 
 const CONFIGURATION_LABELS: [&str; 4] = [
     "strategy_name",
@@ -56,7 +59,13 @@ impl Metrics {
                 "trading_bot_research_backtesting_runs_total",
                 "Number of completed backtest requests",
             ),
-            &["outcome"],
+            &[
+                "outcome",
+                "strategy_name",
+                "pair_code",
+                "timeframe_code",
+                "risk_profile_name",
+            ],
         )?;
         let replayed_klines_total = IntCounter::new(
             "trading_bot_research_backtesting_replayed_klines_total",
@@ -106,8 +115,14 @@ impl Metrics {
         registry.register(Box::new(control_plane_connected.clone()))?;
         registry.register(Box::new(historical_store_connected.clone()))?;
         registry.register(Box::new(backtest_runs_total.clone()))?;
-        for outcome in ["success", "error"] {
-            backtest_runs_total.with_label_values(&[outcome]);
+        for outcome in RUN_OUTCOMES {
+            backtest_runs_total.with_label_values(&[
+                outcome,
+                UNKNOWN_CONFIGURATION,
+                UNKNOWN_CONFIGURATION,
+                UNKNOWN_CONFIGURATION,
+                UNKNOWN_CONFIGURATION,
+            ]);
         }
         registry.register(Box::new(replayed_klines_total.clone()))?;
         registry.register(Box::new(emitted_signals_total.clone()))?;
@@ -139,6 +154,40 @@ impl Metrics {
             last_run_configurations_dropped_total,
             tracked_configurations: Arc::new(Mutex::new(HashSet::new())),
         })
+    }
+
+    pub fn count_backtest_run(&self, outcome: &str, analysis: &ResolvedAnalysisSettingsRecord) {
+        let labels = [
+            analysis.strategy_name.as_str(),
+            analysis.pair_code.as_str(),
+            analysis.timeframe_code.as_str(),
+            analysis.risk_profile_name.as_str(),
+        ];
+
+        if !self.track_configuration(labels) {
+            self.count_backtest_run_without_configuration(outcome);
+            return;
+        }
+
+        for known in RUN_OUTCOMES {
+            self.backtest_runs_total
+                .with_label_values(&[known, labels[0], labels[1], labels[2], labels[3]]);
+        }
+        self.backtest_runs_total
+            .with_label_values(&[outcome, labels[0], labels[1], labels[2], labels[3]])
+            .inc();
+    }
+
+    pub fn count_backtest_run_without_configuration(&self, outcome: &str) {
+        self.backtest_runs_total
+            .with_label_values(&[
+                outcome,
+                UNKNOWN_CONFIGURATION,
+                UNKNOWN_CONFIGURATION,
+                UNKNOWN_CONFIGURATION,
+                UNKNOWN_CONFIGURATION,
+            ])
+            .inc();
     }
 
     pub fn record_backtest_summary(
@@ -332,6 +381,83 @@ mod tests {
             "trading_bot_research_backtesting_last_run_score{pair_code=\"ETHUSDT\",risk_profile_name=\"tight-scalp\",strategy_name=\"strategy1\",timeframe_code=\"5m\"} -6.5"
         ));
         assert_eq!(metrics.tracked_configuration_count(), 2);
+    }
+
+    #[test]
+    fn a_failing_run_names_the_configuration_that_failed() {
+        let metrics = Metrics::new().expect("metrics");
+        let analysis = analysis_record("BTCUSDT", "1m", "emaCross", "default");
+
+        metrics.count_backtest_run("error", &analysis);
+        metrics.count_backtest_run("error", &analysis);
+        metrics.count_backtest_run("success", &analysis);
+
+        let encoded = metrics.encode().expect("encode");
+
+        assert!(encoded.contains(
+            "trading_bot_research_backtesting_runs_total{outcome=\"error\",pair_code=\"BTCUSDT\",risk_profile_name=\"default\",strategy_name=\"emaCross\",timeframe_code=\"1m\"} 2"
+        ));
+        assert!(encoded.contains(
+            "trading_bot_research_backtesting_runs_total{outcome=\"success\",pair_code=\"BTCUSDT\",risk_profile_name=\"default\",strategy_name=\"emaCross\",timeframe_code=\"1m\"} 1"
+        ));
+    }
+
+    #[test]
+    fn the_first_run_of_a_configuration_leaves_its_other_outcome_at_zero() {
+        let metrics = Metrics::new().expect("metrics");
+
+        metrics.count_backtest_run(
+            "success",
+            &analysis_record("ETHUSDT", "5m", "strategy1", "tight-scalp"),
+        );
+
+        let encoded = metrics.encode().expect("encode");
+
+        assert!(encoded.contains(
+            "trading_bot_research_backtesting_runs_total{outcome=\"error\",pair_code=\"ETHUSDT\",risk_profile_name=\"tight-scalp\",strategy_name=\"strategy1\",timeframe_code=\"5m\"} 0"
+        ));
+    }
+
+    #[test]
+    fn a_failure_before_the_configuration_resolves_lands_on_the_unknown_series() {
+        let metrics = Metrics::new().expect("metrics");
+
+        metrics.count_backtest_run_without_configuration("error");
+
+        let encoded = metrics.encode().expect("encode");
+
+        assert!(encoded.contains(
+            "trading_bot_research_backtesting_runs_total{outcome=\"error\",pair_code=\"unknown\",risk_profile_name=\"unknown\",strategy_name=\"unknown\",timeframe_code=\"unknown\"} 1"
+        ));
+        assert_eq!(metrics.tracked_configuration_count(), 0);
+    }
+
+    #[test]
+    fn runs_past_the_configuration_cap_still_count_on_the_unknown_series() {
+        let metrics = Metrics::new().expect("metrics");
+
+        for index in 0..MAX_TRACKED_CONFIGURATIONS {
+            metrics.count_backtest_run(
+                "success",
+                &analysis_record(&format!("PAIR{index}"), "1m", "emaCross", "default"),
+            );
+        }
+
+        metrics.count_backtest_run(
+            "success",
+            &analysis_record("OVERFLOWUSDT", "1m", "emaCross", "default"),
+        );
+
+        let encoded = metrics.encode().expect("encode");
+
+        assert_eq!(
+            metrics.tracked_configuration_count(),
+            MAX_TRACKED_CONFIGURATIONS
+        );
+        assert!(encoded.contains(
+            "trading_bot_research_backtesting_runs_total{outcome=\"success\",pair_code=\"unknown\",risk_profile_name=\"unknown\",strategy_name=\"unknown\",timeframe_code=\"unknown\"} 1"
+        ));
+        assert!(!encoded.contains("OVERFLOWUSDT"));
     }
 
     #[test]
