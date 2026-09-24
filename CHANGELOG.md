@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.21](https://github.com/zigordev/trading-bot/compare/v0.1.20...v0.1.21) (2026-09-24)
+
+
+### Bug Fixes
+
+* **observability:** re-vendor the kit's span fixes into both apps ([#169](https://github.com/zigordev/trading-bot/issues/169)) ([ee28097](https://github.com/zigordev/trading-bot/commit/ee28097f7ccb1fd55772cbc3a7e0383a0d9b8e2e))
+
 ## [0.1.20](https://github.com/zigordev/trading-bot/compare/v0.1.19...v0.1.20) (2026-09-23)
 
 
