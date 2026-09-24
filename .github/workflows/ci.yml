@@ -110,6 +110,9 @@ jobs:
       - name: Format check
         run: npm run format:check
 
+      - name: Vendored kit parity
+        run: npm run check:kit -- --offline
+
       - name: Lint
         run: npm run lint --workspaces --if-present
 

@@ -1,0 +1,157 @@
+{
+  "schema": 1,
+  "kit": {
+    "repo": "zigordev/platform-ops",
+    "ref": "main"
+  },
+  "pinned": {
+    "digest": "c18bfc4b12560e65d3ecdc78b4425f9130d3a3ec724853a0b59da5c2341bda57",
+    "files": {
+      "RumProvider.tsx": "c1e7e67a8bda17c74441b78e957399bd3ec369457e2b8767a5c2d3184259535d",
+      "csp-reports.test.ts": "bf269af13966f0c1939a2224ecff9138ce6edfa4a0f453fec3107de0b2df953d",
+      "csp-reports.ts": "0488371a95168f216636911f65b898ec4f514e5c4b880f66b5ce0dbcc3f6215a",
+      "fastify-rum.test.ts": "5b6258c79d26a468c6ac63e5be4c8532c269cacf72685d39485526f37f61e8b0",
+      "fastify-rum.ts": "9af64983f5e19af7f85491758aee3ec9f0acee65a71014bdfa81027f3f40536c",
+      "fastify.test.ts": "da1903de800fd4800a49e9685a28659ff5e3d66a5623d03662b3ddf3b2d1885d",
+      "fastify.ts": "8e6ba2696a46ad83105b44aff242c35a05aba303d0a4b5084e784a3768dea31d",
+      "feature-flags.test.ts": "1e1c9a48270e98b78c9e6c7e5e3bdecbdc9046c78e29d1ad49b7b9a31c104f2d",
+      "feature-flags.ts": "5ed69fb38cd110f42eda6d6ecc4e2bc354391ee3af633a20c35eeac6a3b85ba5",
+      "framework-logs.test.ts": "2cf2cc8e26fe4d6d1e3480eecd84cf73e15928e123cbbd5340ad58d4247fc153",
+      "framework-logs.ts": "1feec7f6a98f20b7133e0fb9e310f5fb569cbda911a3a16a3faeb7e1c0530141",
+      "health-metrics.test.ts": "13aa3962894ec2bc15566ff23138f8f643850f6791445e1110a23c4080e5aaab",
+      "health-metrics.ts": "7db66e702d7c04e66ee0f2a356920711071c700c71b49da8f27dac55932560f9",
+      "http-metrics.middleware.test.ts": "3ce0d477fd3ef01cb9467e30ead6de8b6d586a44deb1e3ed7b3a5c722ca1a813",
+      "http-metrics.middleware.ts": "cb295aed57806762d16b0620164e112f05bb048987f8aa35ca1338e2cb70776a",
+      "index.fastify.ts": "6bc395252436a6d1663a0605748b9e82e2f8202a96ba2a9f94f3e4925f035aa1",
+      "index.nest.ts": "6d2746ea2572ef7d97fe9954d4c3043b6dce46697f5239f7c94418c78d87ed6b",
+      "index.next.ts": "2e54ce9b29842c0ed4576d1d669995bc7cae7a6f2189ce8b1bc9567c1ae7820b",
+      "json-logger.test.ts": "d2f68271a47e3d787f265739c90a258285da2a09b78d2235600b09df6193f000",
+      "json-logger.ts": "42385bc827f87db3e29b89d3f40f174c55982e5db4d99d1d98e10f3fd6881710",
+      "mask.test.ts": "68bacc0287cd1959a43d8b380cbfc8795dccae2674a9699a4c005b14271064ec",
+      "mask.ts": "2e7690a6df6f156c5c06b9466172e66c20eab75083afe3a089f069188785876c",
+      "metrics.registry.openmetrics.test.ts": "b03025cb49e7b36e52f82de0a1150bef236cee2c07c0073deac6bb56679ccfcf",
+      "metrics.registry.openmetrics.ts": "67a3f0c2c2d1fe7c9e5509102d0d67bfdd596ef32d72199577b1863acca2bf4c",
+      "metrics.registry.test.ts": "72d5f3c3f2c92f63bbfc2c51b7bd347811bdb965c53872fb5c90b06402db488e",
+      "metrics.registry.ts": "271267f5fb6e0c21a7f40d5820a610339a498a8872c44b746d68281488aee40e",
+      "nest.ts": "4857ae813bc3969bc771d7f7225ade77ed41c76f8789a4fc06116913ee9d82db",
+      "next-spans.test.ts": "2497b8ac66de5e2b6cd070dd2bb74402450bb65d0c2e782cb06dc5a5b95fef04",
+      "next-spans.ts": "606555a6b4f261deba3bd10fd1c9a0d8426f6955358eeb607dafa77696be70cf",
+      "next.test.ts": "922d1379f62e095d54a33a02b29c739600f8ea7b69bc2a11cb7a457f115e788d",
+      "next.ts": "dff5d3d5b67853ffd370d85b40e1bc012154cf2644ea41c61928d8e17f1de727",
+      "probe-paths.test.ts": "a34b2f4c138d085112a6ba734037f22cd5874bf48f0b6abf7bb689e628e1ac58",
+      "probe-paths.ts": "1b90f5d40afe5d0fba35fed3e9fbb507b4a0a9e04cd4cf85b7e775c573615e6d",
+      "route-names.test.ts": "13068abe90bb00bbbfc50d2b9e4ec2edce48a618dbfeda9d262f75cd90f4fb9a",
+      "route-names.ts": "e85c5d9fba93ad25ee135efecedbddd4e8a1c300ae490ad7c0f3ac52659605ca",
+      "rum-client.ts": "8782fad289ae0a650eb7df3f5ee3708a62fa810b2f2e17d96583b19c8d1a7eb9",
+      "rum-details.test.ts": "2fc6f538acb83dca18d4a9a83d806606dfbe6ce1d7d795fa81cde18b8f4abb4b",
+      "rum-details.ts": "86f52ce70591947b22a400ec4ec55bd7472fa435cb210750de0f1bc26b97227f",
+      "rum-ingest.test.ts": "8927830923a8c26e49b49b5c003ba63846af3f0190f2f13825a87a119da0c0b2",
+      "rum-ingest.ts": "89e53e6d8e54884ee27a39cac7e1f577af731f882e90c5570780204607901c8e",
+      "rum-metrics.test.ts": "730f128e796009bb93fc85136fec591b82a4007625576aaba2bce33ffbbc39f3",
+      "rum-metrics.ts": "7f60cf66d34aa628a46f897e9c4b7e11efad75f1d02d5efb631985f8efabf34f",
+      "server-timing.test.ts": "1f96d5e56072f488db82e760097e734d4683110a902bc7d29459e28adc711193",
+      "server-timing.ts": "05ad4a08162021551f7f6fa34558e661a81e3bb071fcb30ad572447436952e30",
+      "standard-events.test.ts": "fdaaaf946f45f14f05d6ead7fe4f4f9f60512df23b1fc7f2bdbfad3965f2d341",
+      "standard-events.ts": "68fc287cf7e1ea5f0ba8795b16507fb5be33e7a85052f945fa601332be237523",
+      "start-at-zero.test.ts": "b905baeea13ed75988bf659aac0383cd28edd0c7f242a6656693b39d3fe38e40",
+      "start-at-zero.ts": "e0b400484ade7758949f54ecdd7dd1cdf04d3db1134731a33e77ad2e3b2625c6",
+      "tracing.ts": "32452b208742abaaf7000ad2c15d46d2815a2e45053724c78783139ea930af5c"
+    },
+    "profiles": {
+      "fastify": {
+        "kit": [
+          "fastify.ts",
+          "feature-flags.ts",
+          "framework-logs.ts",
+          "health-metrics.ts",
+          "json-logger.ts",
+          "metrics.registry.ts",
+          "next-spans.ts",
+          "probe-paths.ts",
+          "route-names.ts",
+          "standard-events.ts",
+          "start-at-zero.ts",
+          "tracing.ts"
+        ]
+      },
+      "fastify-web": {
+        "kit": [
+          "csp-reports.ts",
+          "fastify-rum.ts",
+          "fastify.ts",
+          "framework-logs.ts",
+          "health-metrics.ts",
+          "json-logger.ts",
+          "mask.ts",
+          "metrics.registry.ts",
+          "rum-client.ts",
+          "rum-details.ts",
+          "rum-ingest.ts",
+          "rum-metrics.ts",
+          "standard-events.ts",
+          "start-at-zero.ts"
+        ]
+      },
+      "nest": {
+        "kit": [
+          "feature-flags.ts",
+          "framework-logs.ts",
+          "health-metrics.ts",
+          "http-metrics.middleware.ts",
+          "json-logger.ts",
+          "metrics.registry.ts",
+          "nest.ts",
+          "next-spans.ts",
+          "probe-paths.ts",
+          "route-names.ts",
+          "standard-events.ts",
+          "start-at-zero.ts",
+          "tracing.ts"
+        ]
+      },
+      "next": {
+        "kit": [
+          "RumProvider.tsx",
+          "csp-reports.ts",
+          "feature-flags.ts",
+          "health-metrics.ts",
+          "json-logger.ts",
+          "mask.ts",
+          "metrics.registry.openmetrics.ts",
+          "next-spans.ts",
+          "next.ts",
+          "probe-paths.ts",
+          "route-names.ts",
+          "rum-client.ts",
+          "rum-details.ts",
+          "rum-ingest.ts",
+          "rum-metrics.ts",
+          "server-timing.ts",
+          "standard-events.ts",
+          "start-at-zero.ts",
+          "tracing.ts"
+        ],
+        "local": ["metrics.registry.ts"]
+      }
+    }
+  },
+  "copies": [
+    {
+      "path": "apps/control-plane/src/observability",
+      "profile": "fastify"
+    },
+    {
+      "path": "apps/operator-console/src/observability",
+      "profile": "next"
+    }
+  ],
+  "deviations": [
+    {
+      "id": "control-plane-nodenext",
+      "rule": "js-import-extension",
+      "copy": "apps/control-plane/src/observability",
+      "files": ["fastify.ts", "health-metrics.ts", "standard-events.ts", "tracing.ts"],
+      "reason": "the control plane compiles as NodeNext ESM, so its relative imports carry .js"
+    }
+  ]
+}
