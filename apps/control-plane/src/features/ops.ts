@@ -1,4 +1,5 @@
 import type { Pool, QueryResultRow } from 'pg';
+import { countPromotion } from '../domain-metrics.js';
 import { listResolvedAnalysisSettings, renameColumnIfExists } from './config-resources.js';
 
 export type BacktestJobStatus = 'queued' | 'running' | 'completed' | 'failed';
@@ -2117,6 +2118,7 @@ export const promoteBacktestRunIfEligible = async (
 ): Promise<PromotionReconciliationResult> => {
   const settings = await getAutoPromoteExecutionSettings(pool);
   if (!settings) {
+    countPromotion('auto_promote_disabled');
     return {
       promotion: null,
       changed: false,
@@ -2125,6 +2127,7 @@ export const promoteBacktestRunIfEligible = async (
 
   const selectionValue = calculatePromotionSelectionValue(run);
   if (!hasPositivePromotionSelectionValue(run)) {
+    countPromotion('selection_value_not_positive');
     return {
       promotion: null,
       changed: await supersedeActivePromotionsForContext(pool, run, settings.name, settings.mode),
@@ -2139,12 +2142,14 @@ export const promoteBacktestRunIfEligible = async (
       analysis.riskProfileName === run.riskProfileName
   );
   if (!eligibleAnalysis) {
+    countPromotion('analysis_not_eligible');
     return {
       promotion: null,
       changed: await supersedeActivePromotionsForContext(pool, run, settings.name, settings.mode),
     };
   }
   if (!meetsStrategyPromotionThresholds(run, eligibleAnalysis.strategy.parameters)) {
+    countPromotion('thresholds_not_met');
     return {
       promotion: null,
       changed: await supersedeActivePromotionsForContext(pool, run, settings.name, settings.mode),
@@ -2153,6 +2158,7 @@ export const promoteBacktestRunIfEligible = async (
 
   const activePromotions = await listActiveExecutionPromotions(pool, settings.maxPromotions + 10);
   if (activePromotions.some((promotion) => promotion.sourceBacktestId === run.backtestId)) {
+    countPromotion('already_promoted');
     return {
       promotion: null,
       changed: false,
@@ -2171,6 +2177,7 @@ export const promoteBacktestRunIfEligible = async (
     lowestCompetingPromotion &&
     lowestCompetingPromotion.selectionValue >= selectionValue
   ) {
+    countPromotion('outscored_by_active');
     return {
       promotion: null,
       changed: false,
@@ -2300,6 +2307,7 @@ export const promoteBacktestRunIfEligible = async (
     );
 
     await client.query('COMMIT');
+    countPromotion('promoted');
     return {
       promotion: mapExecutionPromotionProjectionRow(result.rows[0]),
       changed: true,
