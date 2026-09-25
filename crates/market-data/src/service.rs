@@ -482,6 +482,39 @@ fn producer_error_is_disconnect(error: &KafkaError) -> bool {
     )
 }
 
+fn market_stream_state(
+    connected: bool,
+    runtime_config_loaded: bool,
+    subscribed_streams: usize,
+) -> &'static str {
+    if connected {
+        "up"
+    } else if runtime_config_loaded && subscribed_streams == 0 {
+        "idle"
+    } else {
+        "down"
+    }
+}
+
+fn readiness_status(
+    runtime_config: &str,
+    kafka_producer: &str,
+    kafka_consumer: &str,
+    market_stream: &str,
+    database: &str,
+) -> &'static str {
+    if runtime_config == "up"
+        && kafka_producer == "up"
+        && kafka_consumer == "up"
+        && matches!(market_stream, "up" | "idle")
+        && database == "up"
+    {
+        "ok"
+    } else {
+        "error"
+    }
+}
+
 impl MarketDataService {
     pub async fn new(config: AppConfig) -> Result<Self> {
         let database = Database::connect(&config).await?;
@@ -692,22 +725,19 @@ impl MarketDataService {
         } else {
             "down"
         };
-        let market_stream = if status.stream.connected {
-            "up"
-        } else {
-            "down"
-        };
+        let market_stream = market_stream_state(
+            status.stream.connected,
+            status.runtime_config.loaded,
+            status.subscriptions.stream_names.len(),
+        );
         let database = if db_ok { "up" } else { "down" };
-        let status_text = if runtime_config == "up"
-            && kafka_producer == "up"
-            && kafka_consumer == "up"
-            && market_stream == "up"
-            && database == "up"
-        {
-            "ok"
-        } else {
-            "error"
-        };
+        let status_text = readiness_status(
+            runtime_config,
+            kafka_producer,
+            kafka_consumer,
+            market_stream,
+            database,
+        );
 
         ReadinessPayload {
             status: status_text.to_string(),
@@ -1073,11 +1103,22 @@ impl MarketDataService {
 
     async fn market_stream_loop(&self) {
         let mut shutdown_rx = self.inner.shutdown_tx.subscribe();
+        let mut idle_logged = false;
 
         loop {
-            let subscriptions = self.inner.runtime_status.read().await.subscriptions.clone();
+            let (subscriptions, runtime_config_loaded) = {
+                let status = self.inner.runtime_status.read().await;
+                (status.subscriptions.clone(), status.runtime_config.loaded)
+            };
             if subscriptions.stream_names.is_empty() {
                 self.mark_stream(false, None, None, None).await;
+                if runtime_config_loaded && !idle_logged {
+                    tracing::info!(
+                        event = "stream.idle",
+                        "no pairs to stream, so the market stream stays closed until one is configured"
+                    );
+                    idle_logged = true;
+                }
                 tokio::select! {
                     changed = shutdown_rx.changed() => {
                         if changed.is_ok() {
@@ -1088,6 +1129,7 @@ impl MarketDataService {
                 }
                 continue;
             }
+            idle_logged = false;
 
             let stream_names = subscriptions.stream_names.clone();
             let stream_signature = stream_names.join("/");
@@ -3706,6 +3748,31 @@ mod tests {
         }
 
         assert!(!super::producer_error_is_disconnect(&KafkaError::Canceled));
+    }
+
+    #[test]
+    fn the_market_stream_is_idle_only_when_a_loaded_config_has_no_pairs() {
+        assert_eq!(super::market_stream_state(true, true, 3), "up");
+        assert_eq!(super::market_stream_state(false, true, 0), "idle");
+        assert_eq!(super::market_stream_state(false, true, 3), "down");
+        assert_eq!(super::market_stream_state(false, false, 0), "down");
+    }
+
+    #[test]
+    fn an_idle_market_stream_keeps_market_data_ready_and_a_down_one_does_not() {
+        assert_eq!(
+            super::readiness_status("up", "up", "up", "idle", "up"),
+            "ok"
+        );
+        assert_eq!(super::readiness_status("up", "up", "up", "up", "up"), "ok");
+        assert_eq!(
+            super::readiness_status("up", "up", "up", "down", "up"),
+            "error"
+        );
+        assert_eq!(
+            super::readiness_status("down", "up", "up", "idle", "up"),
+            "error"
+        );
     }
 
     #[test]

@@ -597,7 +597,7 @@ Expected:
 Optional direct ClickHouse check:
 
 ```bash
-docker compose --env-file docker/.env.app.local -f docker/compose.app.local.yml exec -T historical-store \
+docker compose --env-file docker/.env.app.local -f docker/compose.app.local.yml exec -T trading_bot_historical_store \
   clickhouse-client --query "
     SELECT
       pair_code,

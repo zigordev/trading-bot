@@ -352,7 +352,7 @@ curl -fsS http://localhost:3030/v1/status | jq
 Then inspect ClickHouse directly:
 
 ```bash
-docker exec trading-bot-app-local-historical-store-1 \
+docker exec trading-bot-app-local-trading_bot_historical_store-1 \
   clickhouse-client --user trading_bot_market_data --password trading_bot_market_data \
   --query "SELECT pair_code, timeframe_code, countDistinct(open_time) AS candles FROM trading_bot_market_data.market_data_klines GROUP BY pair_code, timeframe_code ORDER BY pair_code, timeframe_code"
 ```

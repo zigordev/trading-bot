@@ -177,6 +177,8 @@ What the script does:
 
 If the env file was auto-created and still contains the placeholder OpenBao token, the script stops and tells you to update it.
 
+A fresh database holds no pairs. The stack still comes up: market-data reports its `marketStream` as `idle` and waits for one. Load the tracked config set with the restore in [postgres-seed-data.md](architecture/postgres-seed-data.md), or create one from `http://localhost:3020/docs` as section 10 describes.
+
 ## 8. Validate The Local Stack
 
 Confirm the app-local container is up:
@@ -188,13 +190,13 @@ docker compose --env-file docker/.env.app.local -f docker/compose.app.local.yml 
 Confirm PostgreSQL responds:
 
 ```bash
-docker compose --env-file docker/.env.app.local -f docker/compose.app.local.yml exec -T postgres sh -lc 'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
+docker compose --env-file docker/.env.app.local -f docker/compose.app.local.yml exec -T trading_bot_db sh -lc 'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
 ```
 
 Confirm the ClickHouse historical store responds:
 
 ```bash
-docker compose --env-file docker/.env.app.local -f docker/compose.app.local.yml exec -T historical-store \
+docker compose --env-file docker/.env.app.local -f docker/compose.app.local.yml exec -T trading_bot_historical_store \
   clickhouse-client --query "SHOW DATABASES"
 ```
 
@@ -282,7 +284,7 @@ If you are upgrading from an older local historical-store implementation:
 - or manually remove only the unused old PostgreSQL table:
 
 ```bash
-docker compose --env-file docker/.env.app.local -f docker/compose.app.local.yml exec -T postgres \
+docker compose --env-file docker/.env.app.local -f docker/compose.app.local.yml exec -T trading_bot_db \
   sh -lc 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "DROP TABLE IF EXISTS market_data_klines;"'
 ```
 
@@ -326,7 +328,7 @@ curl -fsS "http://localhost:3030/v1/trades/BTCUSDT?limit=5" | jq
 4. Confirm the historian tables are populated in ClickHouse:
 
 ```bash
-docker compose --env-file docker/.env.app.local -f docker/compose.app.local.yml exec -T historical-store \
+docker compose --env-file docker/.env.app.local -f docker/compose.app.local.yml exec -T trading_bot_historical_store \
 ```
 
 5. Confirm the replay-oriented endpoints can read ascending historian windows:
@@ -339,7 +341,7 @@ curl -fsS "http://localhost:3030/v1/replay/trades/BTCUSDT?limit=5" | jq
 6. Confirm the old PostgreSQL kline table is not present:
 
 ```bash
-docker compose --env-file docker/.env.app.local -f docker/compose.app.local.yml exec -T postgres \
+docker compose --env-file docker/.env.app.local -f docker/compose.app.local.yml exec -T trading_bot_db \
   sh -lc 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc "SELECT to_regclass('\''public.market_data_klines'\'');"'
 ```
 
@@ -420,7 +422,7 @@ BACKTEST_ID="$(curl -fsS -X POST http://localhost:3050/v1/backtests \
 curl -fsS "http://localhost:3050/v1/backtests?limit=5" | jq
 curl -fsS "http://localhost:3050/v1/backtests/${BACKTEST_ID}" | jq
 
-docker compose --env-file docker/.env.app.local -f docker/compose.app.local.yml exec -T historical-store \
+docker compose --env-file docker/.env.app.local -f docker/compose.app.local.yml exec -T trading_bot_historical_store \
   clickhouse-client --user trading_bot_market_data --password trading_bot_market_data \
   --query "SELECT backtest_id, pair_code, timeframe_code, backtest_duration_ms, signal_count, trade_count FROM trading_bot_market_data.research_backtest_runs ORDER BY finished_at_ms DESC LIMIT 5"
 ```
@@ -464,15 +466,15 @@ PostgreSQL fails to start:
 - inspect the logs:
 
 ```bash
-docker compose --env-file docker/.env.app.local -f docker/compose.app.local.yml logs --no-color postgres
+docker compose --env-file docker/.env.app.local -f docker/compose.app.local.yml logs --no-color trading_bot_db
 ```
 
-The API does not start:
+The control plane does not start:
 
-- inspect API logs:
+- inspect control-plane logs:
 
 ```bash
-docker compose --env-file docker/.env.app.local -f docker/compose.app.local.yml logs --no-color api
+docker compose --env-file docker/.env.app.local -f docker/compose.app.local.yml logs --no-color trading_bot_control_plane
 ```
 
 The market-data service does not start:
@@ -480,7 +482,7 @@ The market-data service does not start:
 - inspect market-data logs:
 
 ```bash
-docker compose --env-file docker/.env.app.local -f docker/compose.app.local.yml logs --no-color market-data
+docker compose --env-file docker/.env.app.local -f docker/compose.app.local.yml logs --no-color trading_bot_market_data
 ```
 
 The historical store does not start or does not contain historian data:
@@ -488,13 +490,13 @@ The historical store does not start or does not contain historian data:
 - inspect historical-store logs:
 
 ```bash
-docker compose --env-file docker/.env.app.local -f docker/compose.app.local.yml logs --no-color historical-store
+docker compose --env-file docker/.env.app.local -f docker/compose.app.local.yml logs --no-color trading_bot_historical_store
 ```
 
 - inspect stored historian rows directly in ClickHouse:
 
 ```bash
-docker compose --env-file docker/.env.app.local -f docker/compose.app.local.yml exec -T historical-store \
+docker compose --env-file docker/.env.app.local -f docker/compose.app.local.yml exec -T trading_bot_historical_store \
   clickhouse-client --multiquery --query "
     SELECT pair_code, timeframe_code, open_time, close_time
     FROM trading_bot_market_data.market_data_klines
@@ -517,7 +519,7 @@ The research-backtesting service does not start:
 - inspect research-backtesting logs:
 
 ```bash
-docker compose --env-file docker/.env.app.local -f docker/compose.app.local.yml logs --no-color research-backtesting
+docker compose --env-file docker/.env.app.local -f docker/compose.app.local.yml logs --no-color trading_bot_research_backtesting
 ```
 
 Backtests fail with missing-data errors:
@@ -525,7 +527,7 @@ Backtests fail with missing-data errors:
 - confirm that the ClickHouse historian contains the requested timeframe window:
 
 ```bash
-docker compose --env-file docker/.env.app.local -f docker/compose.app.local.yml exec -T historical-store \
+docker compose --env-file docker/.env.app.local -f docker/compose.app.local.yml exec -T trading_bot_historical_store \
   clickhouse-client --query "
     SELECT
       pair_code,

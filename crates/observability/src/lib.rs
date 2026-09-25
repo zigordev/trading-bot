@@ -139,7 +139,10 @@ impl HealthMetrics {
             let up = match component.get("status").and_then(serde_json::Value::as_str) {
                 Some("up") => 1,
                 Some("down") => 0,
-                _ => continue,
+                _ => {
+                    let _ = self.component_up.remove_label_values(&[name.as_str()]);
+                    continue;
+                }
             };
             self.component_up
                 .with_label_values(&[name.as_str()])
@@ -279,6 +282,25 @@ mod tests {
         assert!(!text.contains("component=\"marketData\""));
 
         health.record(&serde_json::json!({ "status": "ok", "components": {} }));
+        assert!(encoded(&registry).contains("service_health_status 2"));
+    }
+
+    #[test]
+    fn a_component_that_goes_idle_drops_its_last_up_or_down_value() {
+        let registry = Registry::new();
+        let health = HealthMetrics::register(&registry).unwrap();
+
+        health.record(&serde_json::json!({
+            "status": "error",
+            "components": { "marketStream": { "status": "down" } }
+        }));
+        assert!(encoded(&registry).contains("service_component_up{component=\"marketStream\"} 0"));
+
+        health.record(&serde_json::json!({
+            "status": "ok",
+            "components": { "marketStream": { "status": "idle" } }
+        }));
+        assert!(!encoded(&registry).contains("component=\"marketStream\""));
         assert!(encoded(&registry).contains("service_health_status 2"));
     }
 

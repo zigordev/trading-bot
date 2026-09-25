@@ -6,7 +6,7 @@ The commands below assume:
 
 - Docker compose file: `docker/compose.app.local.yml`
 - Env file: `docker/.env.app.local`
-- Postgres service name: `postgres`
+- Postgres service name: `trading_bot_db`
 - Database: `trading_bot`
 - User: `trading_bot_admin`
 
@@ -22,7 +22,7 @@ Run this from the `trading-bot` repo root while the local stack is up:
 docker compose \
   --env-file docker/.env.app.local \
   -f docker/compose.app.local.yml \
-  exec -T postgres \
+  exec -T trading_bot_db \
   pg_dump \
     -U trading_bot_admin \
     -d trading_bot \
@@ -48,7 +48,7 @@ After you have restarted the stack and Postgres is empty (or freshly migrated), 
 docker compose \
   --env-file docker/.env.app.local \
   -f docker/compose.app.local.yml \
-  exec -T postgres \
+  exec -T trading_bot_db \
   psql \
     -U trading_bot_admin \
     -d trading_bot \
@@ -57,5 +57,16 @@ docker compose \
 ```
 
 This will replay all the `INSERT` statements from `docker/postgres-seed-data.sql` and recreate the exact same data (IDs, names, relations) that you had when you exported the snapshot.
+
+The stack starts on an empty database: with no pairs, market-data reports its `marketStream` as `idle` and stays healthy, so the restore can run any time after `npm run local:up`.
+
+A restore writes straight to Postgres, so the control plane announces no change and market-data only picks the pairs up at its next hourly reconcile. Restart it to pick them up at once:
+
+```bash
+docker compose \
+  --env-file docker/.env.app.local \
+  -f docker/compose.app.local.yml \
+  restart trading_bot_market_data
+```
 
 If migrations add new tables/columns later, run the export command again once the system is in the desired state to refresh the seed file.
