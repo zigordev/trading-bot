@@ -38,6 +38,10 @@ async function parseZip(buffer: ArrayBuffer): Promise<Messages | null> {
   return JSON.parse(content) as Messages;
 }
 
+function isFlatExport(messages: Messages): boolean {
+  return Object.keys(messages).some((key) => key.includes('.') || key.includes('['));
+}
+
 async function errorCode(response: Response): Promise<string | undefined> {
   try {
     const body = (await response.json()) as { code?: unknown };
@@ -72,7 +76,8 @@ export async function loadRemoteMessages(locale: Locale): Promise<Messages | nul
   const url = new URL(`/v2/projects/${projectId}/export`, apiUrl);
   url.searchParams.set('format', 'JSON');
   url.searchParams.set('languages', locale);
-  url.searchParams.set('structureDelimiter', '');
+  url.searchParams.set('structureDelimiter', '.');
+  url.searchParams.set('supportArrays', 'true');
 
   const headers: Record<string, string> = {
     'X-API-Key': apiKey,
@@ -136,6 +141,13 @@ export async function loadRemoteMessages(locale: Locale): Promise<Messages | nul
     }
 
     if (!messages) return fallBack({ name: 'EmptyExport', message: 'Tolgee returned no messages' });
+
+    if (isFlatExport(messages)) {
+      return fallBack({
+        name: 'FlatExport',
+        message: 'Tolgee returned dotted keys; the app reads a nested export',
+      });
+    }
 
     cache.set(locale, {
       messages,
