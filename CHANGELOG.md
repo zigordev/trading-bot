@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.27](https://github.com/zigordev/trading-bot/compare/v0.1.26...v0.1.27) (2026-09-25)
+
+
+### Bug Fixes
+
+* **i18n:** close the console's empty-export gap and keep the tree clean ([#182](https://github.com/zigordev/trading-bot/issues/182)) ([8ff471d](https://github.com/zigordev/trading-bot/commit/8ff471dfa827ad13596f4cc9f935b4b2e977d284))
+
 ## [0.1.26](https://github.com/zigordev/trading-bot/compare/v0.1.25...v0.1.26) (2026-09-25)
 
 
