@@ -1,7 +1,7 @@
 {
   "name": "trading-bot",
   "private": true,
-  "version": "0.1.25",
+  "version": "0.1.26",
   "description": "New trading bot platform",
   "workspaces": [
     "apps/control-plane",
