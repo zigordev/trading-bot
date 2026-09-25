@@ -1,3 +1,4 @@
+import '@/observability/app-metrics';
 import { createMetricsRoute } from '@/observability/next';
 
 export const runtime = 'nodejs';
