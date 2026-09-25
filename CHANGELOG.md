@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.28](https://github.com/zigordev/trading-bot/compare/v0.1.27...v0.1.28) (2026-09-25)
+
+
+### Bug Fixes
+
+* **market-data:** report the stream idle without pairs so an empty database starts ([#184](https://github.com/zigordev/trading-bot/issues/184)) ([e4b31f5](https://github.com/zigordev/trading-bot/commit/e4b31f51940f1a5169714ac4f4b84faeecc48142))
+
 ## [0.1.27](https://github.com/zigordev/trading-bot/compare/v0.1.26...v0.1.27) (2026-09-25)
 
 
