@@ -1,7 +1,7 @@
 name: Deploy AWS App (EC2 Compose, manual dispatch only)
 
 run-name: >-
-  Deploy ${{ inputs.release_tag }} — needs a host with >= 16 GiB RAM free;
+  Deploy ${{ inputs.release_tag }} — needs a host of at least 32 GiB total RAM;
   the shared t3.large cannot run this stack
 
 on:
@@ -13,10 +13,11 @@ on:
         type: string
       capacity_confirmed:
         description: >-
-          The target host has at least 16 GiB of RAM free for trading-bot alone.
-          This stack measured ~10.6 GiB resident (ClickHouse ~5.57 GiB of it).
-          The shared production host is one t3.large (8 GiB) already running 23
-          containers, so it cannot host this. Resize first, then tick this box.
+          The target host has at least 32 GiB of total RAM, the first size that
+          fits. This stack measured ~10.6 GiB resident (ClickHouse ~5.57 GiB of
+          it). The shared production host is one t3.large (8 GiB) already running
+          23 containers, so it cannot host this. Resize to t3.2xlarge first, then
+          tick this box.
         required: true
         type: boolean
         default: false
@@ -56,6 +57,11 @@ jobs:
             echo "A t3.large cannot host this. t3.xlarge (4 vCPU / 16 GiB) leaves"
             echo "no headroom once the 23 existing containers are counted, so the"
             echo "first size that actually fits is t3.2xlarge (8 vCPU / 32 GiB)."
+            echo
+            echo "This gate records an operator attestation; it does not measure the"
+            echo "host. The deploy re-reads /proc/meminfo on the host and refuses to"
+            echo "start the stack below 12 GiB available, so a host that is large"
+            echo "enough on paper but busy still fails at the point it matters."
             echo
             echo "This workflow has no release or push trigger on purpose: merging"
             echo "a pull request or cutting a release cannot deploy trading-bot."
