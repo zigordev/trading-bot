@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.25](https://github.com/zigordev/trading-bot/compare/v0.1.24...v0.1.25) (2026-09-25)
+
+
+### Bug Fixes
+
+* **i18n:** merge lists per index and count where the console's copy came from ([#178](https://github.com/zigordev/trading-bot/issues/178)) ([9d52a3f](https://github.com/zigordev/trading-bot/commit/9d52a3f0874fa5136bbfe80fde4679d4bb002647))
+
 ## [0.1.24](https://github.com/zigordev/trading-bot/compare/v0.1.23...v0.1.24) (2026-09-25)
 
 
