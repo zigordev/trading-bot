@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.26](https://github.com/zigordev/trading-bot/compare/v0.1.25...v0.1.26) (2026-09-25)
+
+
+### Bug Fixes
+
+* **i18n:** report tolgee up when its export is unusable but served ([#180](https://github.com/zigordev/trading-bot/issues/180)) ([74d1b6d](https://github.com/zigordev/trading-bot/commit/74d1b6d0a1858390947b8aaf9293967e7e45b274))
+
 ## [0.1.25](https://github.com/zigordev/trading-bot/compare/v0.1.24...v0.1.25) (2026-09-25)
 
 
