@@ -129,6 +129,46 @@ describe('loadRemoteMessages', () => {
       expect(health().components.tolgee).toEqual({ status: 'down' });
     });
 
+    it('falls back rather than serving an export whose keys were never nested', async () => {
+      configure();
+      const stdout = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+      vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+        new Response(
+          JSON.stringify({ 'nav.overview': 'Overview', 'backtesting.runs.title': 'Runs' }),
+          { status: 200, headers: { 'content-type': 'application/json' } }
+        )
+      );
+
+      await expect(loadRemoteMessages('en')).resolves.toBeNull();
+
+      expect(health().components.tolgee).toEqual({ status: 'down' });
+      expect(logged(stdout)).toContainEqual(
+        expect.objectContaining({
+          event: 'i18n.fallback',
+          error: {
+            name: 'FlatExport',
+            message: 'Tolgee returned dotted keys; the app reads a nested export',
+          },
+        })
+      );
+    });
+
+    it('asks Tolgee for a nested export that keeps ordered lists as arrays', async () => {
+      configure();
+      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+        new Response(JSON.stringify({ nav: { overview: 'Overview' } }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })
+      );
+
+      await loadRemoteMessages('en');
+
+      const requested = new URL(String(fetchSpy.mock.calls[0]?.[0]));
+      expect(requested.searchParams.get('structureDelimiter')).toBe('.');
+      expect(requested.searchParams.get('supportArrays')).toBe('true');
+    });
+
     it('reports Tolgee up when it answers, including a 304 for copy it already sent', async () => {
       configure();
       vi.spyOn(globalThis, 'fetch')
