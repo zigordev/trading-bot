@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.24](https://github.com/zigordev/trading-bot/compare/v0.1.23...v0.1.24) (2026-09-25)
+
+
+### Bug Fixes
+
+* **i18n:** ask Tolgee for the structured export, and make the capacity gate honest ([#176](https://github.com/zigordev/trading-bot/issues/176)) ([9c62fdf](https://github.com/zigordev/trading-bot/commit/9c62fdfac8ed7af3cf4975797f7073499ed541c8))
+
 ## [0.1.23](https://github.com/zigordev/trading-bot/compare/v0.1.22...v0.1.23) (2026-09-24)
 
 
