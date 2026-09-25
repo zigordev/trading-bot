@@ -97,6 +97,7 @@ export async function loadRemoteMessages(locale: Locale): Promise<Messages | nul
     writeLogRecord('warn', {
       event: 'i18n.fallback',
       locale,
+      projectId,
       source: cached ? 'cached' : 'local',
       error,
     });
@@ -116,13 +117,19 @@ export async function loadRemoteMessages(locale: Locale): Promise<Messages | nul
       return cached.messages;
     }
     if (!response.ok) {
-      if (response.status === 400 && (await errorCode(response)) === 'no_exported_result') {
+      const code = await errorCode(response);
+      if (response.status === 400 && code === 'no_exported_result') {
         return fallBack(
           { name: 'NoExport', message: `Tolgee has no ${locale} translations to export` },
           'up'
         );
       }
-      return fallBack({ name: 'HttpError', message: `Tolgee answered ${response.status}` });
+      return fallBack({
+        name: 'HttpError',
+        message: code
+          ? `Tolgee answered ${response.status} (${code})`
+          : `Tolgee answered ${response.status}`,
+      });
     }
 
     const etag = response.headers.get('etag');
@@ -140,13 +147,18 @@ export async function loadRemoteMessages(locale: Locale): Promise<Messages | nul
       messages = (await response.json()) as Messages;
     }
 
-    if (!messages) return fallBack({ name: 'EmptyExport', message: 'Tolgee returned no messages' });
+    if (!messages) {
+      return fallBack({ name: 'EmptyExport', message: 'Tolgee returned no messages' }, 'up');
+    }
 
     if (isFlatExport(messages)) {
-      return fallBack({
-        name: 'FlatExport',
-        message: 'Tolgee returned dotted keys; the app reads a nested export',
-      });
+      return fallBack(
+        {
+          name: 'FlatExport',
+          message: 'Tolgee returned dotted keys; the app reads a nested export',
+        },
+        'up'
+      );
     }
 
     cache.set(locale, {

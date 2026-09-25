@@ -117,19 +117,25 @@ describe('loadRemoteMessages', () => {
       expect(health().components.tolgee).toEqual({ status: 'down' });
     });
 
-    it('reports Tolgee down when the export comes back empty', async () => {
+    it('keeps Tolgee up when the export comes back empty, and says so', async () => {
       configure();
-      vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+      const stdout = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
       vi.spyOn(globalThis, 'fetch').mockResolvedValue(
         new Response('null', { status: 200, headers: { 'content-type': 'application/json' } })
       );
 
-      await loadRemoteMessages('en');
+      await expect(loadRemoteMessages('en')).resolves.toBeNull();
 
-      expect(health().components.tolgee).toEqual({ status: 'down' });
+      expect(health().components.tolgee).toEqual({ status: 'up' });
+      expect(logged(stdout)).toContainEqual(
+        expect.objectContaining({
+          event: 'i18n.fallback',
+          error: { name: 'EmptyExport', message: 'Tolgee returned no messages' },
+        })
+      );
     });
 
-    it('falls back rather than serving an export whose keys were never nested', async () => {
+    it('keeps Tolgee up when it serves an export whose keys were never nested', async () => {
       configure();
       const stdout = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
       vi.spyOn(globalThis, 'fetch').mockResolvedValue(
@@ -141,13 +147,38 @@ describe('loadRemoteMessages', () => {
 
       await expect(loadRemoteMessages('en')).resolves.toBeNull();
 
-      expect(health().components.tolgee).toEqual({ status: 'down' });
+      expect(health().components.tolgee).toEqual({ status: 'up' });
       expect(logged(stdout)).toContainEqual(
         expect.objectContaining({
           event: 'i18n.fallback',
           error: {
             name: 'FlatExport',
             message: 'Tolgee returned dotted keys; the app reads a nested export',
+          },
+        })
+      );
+    });
+
+    it('names the project and the Tolgee error code on a fallback', async () => {
+      configure();
+      const stdout = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+      vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+        new Response(JSON.stringify({ code: 'validation_error' }), {
+          status: 400,
+          headers: { 'content-type': 'application/json' },
+        })
+      );
+
+      await loadRemoteMessages('en');
+
+      expect(health().components.tolgee).toEqual({ status: 'down' });
+      expect(logged(stdout)).toContainEqual(
+        expect.objectContaining({
+          event: 'i18n.fallback',
+          projectId: '1',
+          error: {
+            name: 'HttpError',
+            message: 'Tolgee answered 400 (validation_error)',
           },
         })
       );
