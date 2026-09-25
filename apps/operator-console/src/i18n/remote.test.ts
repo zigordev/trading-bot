@@ -1,3 +1,4 @@
+import JSZip from 'jszip';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { health, reportComponent } from '@/observability/health';
@@ -122,6 +123,46 @@ describe('loadRemoteMessages', () => {
       const stdout = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
       vi.spyOn(globalThis, 'fetch').mockResolvedValue(
         new Response('null', { status: 200, headers: { 'content-type': 'application/json' } })
+      );
+
+      await expect(loadRemoteMessages('en')).resolves.toBeNull();
+
+      expect(health().components.tolgee).toEqual({ status: 'up' });
+      expect(logged(stdout)).toContainEqual(
+        expect.objectContaining({
+          event: 'i18n.fallback',
+          error: { name: 'EmptyExport', message: 'Tolgee returned no messages' },
+        })
+      );
+    });
+
+    it('keeps Tolgee up when the export is well formed but holds no keys', async () => {
+      configure();
+      const stdout = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+      vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+        new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } })
+      );
+
+      await expect(loadRemoteMessages('en')).resolves.toBeNull();
+
+      expect(health().components.tolgee).toEqual({ status: 'up' });
+      expect(logged(stdout)).toContainEqual(
+        expect.objectContaining({
+          event: 'i18n.fallback',
+          source: 'local',
+          error: { name: 'EmptyExport', message: 'Tolgee returned no messages' },
+        })
+      );
+    });
+
+    it('keeps Tolgee up when the export archive holds no messages file', async () => {
+      configure();
+      const stdout = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+      const archive = await new JSZip()
+        .file('README.txt', 'nothing here')
+        .generateAsync({ type: 'arraybuffer' });
+      vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+        new Response(archive, { status: 200, headers: { 'content-type': 'application/zip' } })
       );
 
       await expect(loadRemoteMessages('en')).resolves.toBeNull();

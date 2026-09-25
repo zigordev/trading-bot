@@ -147,7 +147,7 @@ export async function loadRemoteMessages(locale: Locale): Promise<Messages | nul
       messages = (await response.json()) as Messages;
     }
 
-    if (!messages) {
+    if (!messages || Object.keys(messages).length === 0) {
       return fallBack({ name: 'EmptyExport', message: 'Tolgee returned no messages' }, 'up');
     }
 
