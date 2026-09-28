@@ -221,6 +221,7 @@ jobs:
           MARKET_DATA_IMAGE: trading-bot-market-data:ci
           RESEARCH_BACKTESTING_IMAGE: trading-bot-research-backtesting:ci
           EXECUTION_IMAGE: trading-bot-execution:ci
+          TOLGEE_PROJECT_ID: '1'
         run: |
           for f in docker/compose.app.*.yml docker/compose.ci.yml; do
             echo "rendering $f"

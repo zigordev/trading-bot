@@ -11,7 +11,9 @@
     "test:cov": "vitest run --coverage",
     "clean": "rm -rf .next coverage playwright-report test-results",
     "lint": "eslint --no-cache .",
-    "e2e": "playwright test"
+    "e2e": "playwright test",
+    "i18n:pull": "node ./scripts/i18n-pull.mjs",
+    "i18n:push": "tolgee push --config ./tolgee.config.cjs --force-mode OVERRIDE"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.9.1",
@@ -68,6 +70,7 @@
     "@tailwindcss/postcss": "^4.0.6",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.2.0",
+    "@tolgee/cli": "2.20.0",
     "@types/node": "^26.5.1",
     "@types/react": "^19.0.10",
     "@types/react-dom": "^19.3.0",

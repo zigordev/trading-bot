@@ -44,6 +44,7 @@ COPY --from=build --chown=nextjs:nodejs /workspace/apps/operator-console/.next/s
 COPY --from=build --chown=nextjs:nodejs /workspace/apps/operator-console/.next/static ./apps/operator-console/.next/static
 COPY --from=build --chown=nextjs:nodejs /workspace/apps/operator-console/public ./apps/operator-console/public
 COPY --from=build --chown=nextjs:nodejs /workspace/apps/operator-console/messages ./messages
+COPY --chown=nextjs:nodejs scripts/openbao-run.mjs /app/scripts/openbao-run.mjs
 USER nextjs
 EXPOSE 3000
 CMD ["node", "apps/operator-console/server.js"]
@@ -59,6 +60,7 @@ COPY --from=deps-build /workspace/apps/operator-console/node_modules ./apps/oper
 COPY package.json package-lock.json* ./
 COPY apps/control-plane/package.json apps/control-plane/package.json
 COPY apps/operator-console ./apps/operator-console
+COPY scripts/openbao-run.mjs /workspace/scripts/openbao-run.mjs
 WORKDIR /workspace/apps/operator-console
 EXPOSE 3000
 CMD ["npm", "exec", "--", "next", "dev", "-H", "0.0.0.0", "-p", "3000"]
