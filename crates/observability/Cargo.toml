@@ -29,5 +29,5 @@ opentelemetry-otlp = { version = "0.32", default-features = false, features = [
     "reqwest-blocking-client",
     "trace",
 ] }
-opentelemetry-semantic-conventions = "0.32"
+opentelemetry-semantic-conventions = "0.33"
 tracing-opentelemetry = "0.33"
