@@ -24,7 +24,7 @@ opentelemetry_sdk = { version = "0.32", features = ["rt-tokio"] }
 # panics there with "there is no reactor running" — on a background thread,
 # where nothing surfaces it. The processor then shuts down and every later span
 # is dropped with a warning that blames the application's lifecycle management.
-opentelemetry-otlp = { version = "0.32", default-features = false, features = [
+opentelemetry-otlp = { version = "0.33", default-features = false, features = [
     "http-proto",
     "reqwest-blocking-client",
     "trace",
