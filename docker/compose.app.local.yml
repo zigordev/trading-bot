@@ -314,6 +314,15 @@ services:
     environment:
       OTEL_SERVICE_NAME: trading-bot-operator-console
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:?OTEL_EXPORTER_OTLP_ENDPOINT is required}
+      OPENBAO_ADDR: http://openbao:8200
+      OPENBAO_TOKEN: ${OPENBAO_TOKEN:?OPENBAO_TOKEN is required}
+      OPENBAO_KV_MOUNT: kv
+      OPENBAO_SECRET_PATH: trading-bot
+      OPENBAO_REQUIRED_KEYS: TOLGEE_API_KEY
+      TOLGEE_API_URL: http://tolgee:8080
+      TOLGEE_PROJECT_ID: ${TOLGEE_PROJECT_ID:?TOLGEE_PROJECT_ID is required}
+    command:
+      ['node', '/app/scripts/openbao-run.mjs', '--', 'node', 'apps/operator-console/server.js']
     depends_on:
       trading_bot_control_plane:
         condition: service_healthy
