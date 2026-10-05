@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.29](https://github.com/zigordev/trading-bot/compare/v0.1.28...v0.1.29) (2026-10-05)
+
+
+### Bug Fixes
+
+* **trading-bot:** clear the high and critical prod audit blockers ([#201](https://github.com/zigordev/trading-bot/issues/201)) ([4b111b5](https://github.com/zigordev/trading-bot/commit/4b111b59261a9b29930b00ad660a5cf8e1c879ba))
+
 ## [0.1.28](https://github.com/zigordev/trading-bot/compare/v0.1.27...v0.1.28) (2026-09-25)
 
 
