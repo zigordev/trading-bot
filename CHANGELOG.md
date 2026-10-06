@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.1.30](https://github.com/zigordev/trading-bot/compare/v0.1.29...v0.1.30) (2026-10-06)
+
+
+### Bug Fixes
+
+* **trading-bot:** clear the Quality (TypeScript) blockers behind three dependabot bumps ([#211](https://github.com/zigordev/trading-bot/issues/211)) ([0dcd062](https://github.com/zigordev/trading-bot/commit/0dcd06220954a0ce8c0b1a39bce1b8e768ae0eb6))
+
+## [0.1.29](https://github.com/zigordev/trading-bot/compare/v0.1.28...v0.1.29) (2026-10-05)
+
+
+### Bug Fixes
+
+* **trading-bot:** clear the high and critical prod audit blockers ([#201](https://github.com/zigordev/trading-bot/issues/201)) ([4b111b5](https://github.com/zigordev/trading-bot/commit/4b111b59261a9b29930b00ad660a5cf8e1c879ba))
+
 ## [0.1.28](https://github.com/zigordev/trading-bot/compare/v0.1.27...v0.1.28) (2026-09-25)
 
 
