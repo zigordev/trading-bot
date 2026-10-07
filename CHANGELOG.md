@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.31](https://github.com/zigordev/trading-bot/compare/v0.1.30...v0.1.31) (2026-10-07)
+
+
+### Features
+
+* **trading-bot:** serve operator console copy from Tolgee ([#187](https://github.com/zigordev/trading-bot/issues/187)) ([e7ca133](https://github.com/zigordev/trading-bot/commit/e7ca133a95ddbe22e306b23c256a879e0cde6aa4))
+
 ## [0.1.30](https://github.com/zigordev/trading-bot/compare/v0.1.29...v0.1.30) (2026-10-06)
 
 
