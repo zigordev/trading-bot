@@ -358,7 +358,7 @@ class PostgresCrudStore<TInput, TRecord> implements CrudStore<TInput, TRecord> {
     const client = await this.#pool.connect();
     const id = randomUUID();
     const timestamp = new Date();
-    let record: TRecord | null = null;
+    let record: TRecord;
     const columns = ['id', ...this.#definition.insertColumns, 'created_at', 'updated_at'];
     const params = [id, ...this.#definition.toInsertValues(input), timestamp, timestamp];
     const placeholders = columns.map((_, index) => `$${index + 1}`).join(', ');
@@ -381,18 +381,13 @@ class PostgresCrudStore<TInput, TRecord> implements CrudStore<TInput, TRecord> {
     }
 
     await this.#publishConfigChangeEvent('created', record);
-    if (record === null) {
-      throw new Error(
-        `Config resource ${this.#definition.resourceType} was not created successfully`
-      );
-    }
     return record;
   }
 
   async update(id: string, input: TInput): Promise<TRecord | null> {
     const client = await this.#pool.connect();
     const timestamp = new Date();
-    let record: TRecord | null = null;
+    let record: TRecord;
     const assignments = this.#definition.insertColumns.map(
       (column, index) => `${column} = $${index + 1}`
     );
@@ -428,7 +423,7 @@ class PostgresCrudStore<TInput, TRecord> implements CrudStore<TInput, TRecord> {
 
   async delete(id: string): Promise<boolean> {
     const client = await this.#pool.connect();
-    let record: TRecord | null = null;
+    let record: TRecord;
 
     try {
       await client.query('BEGIN');
