@@ -5,7 +5,7 @@ COMPOSE_FILES=(docker/compose.app.local.yml)
 DEV_COMPOSE_FILES=(docker/compose.app.dev.yml)
 
 OPENBAO_SECRET_PATH="trading-bot"
-OPENBAO_REQUIRED_KEYS="POSTGRES_PASSWORD"
+OPENBAO_REQUIRED_KEYS="POSTGRES_PASSWORD,TOLGEE_API_KEY"
 OPENBAO_EXPORT_KEYS="POSTGRES_PASSWORD"
 OPENBAO_RUN="scripts/openbao-run.mjs"
 
@@ -13,6 +13,9 @@ DB_SERVICE="trading_bot_db"
 DB_USER="trading_bot_admin"
 DB_NAME="trading_bot"
 DB_BOOTSTRAP_DB="trading_bot"
+
+TOLGEE_SYNC="push-pull"
+TOLGEE_WORKSPACE="@trading-bot/operator-console"
 
 RESET_MODE="volumes"
 RESET_HOOKS=(scripts/local-kafka-reset.sh)

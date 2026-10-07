@@ -1,0 +1,184 @@
+name: Promote Prod Translations
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/operator-console/messages/**/*.json'
+      - 'docker/.env.app.prod'
+      - 'apps/operator-console/tolgee.config.cjs'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: promote-prod-translations
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    permissions:
+      contents: read
+      issues: write
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Validate Tolgee promotion settings
+        env:
+          TOLGEE_SYNC_API_URL: ${{ vars.TOLGEE_SYNC_API_URL }}
+          TOLGEE_SYNC_API_KEY: ${{ secrets.TOLGEE_SYNC_API_KEY }}
+        run: |
+          required=(
+            TOLGEE_SYNC_API_URL
+            TOLGEE_SYNC_API_KEY
+          )
+
+          for name in "${required[@]}"; do
+            value="$(printenv "$name" || true)"
+            if [ -z "$value" ]; then
+              echo "Missing required production translation setting: $name" >&2
+              exit 1
+            fi
+          done
+
+      - name: Load TOLGEE_PROJECT_ID from docker/.env.app.prod
+        run: |
+          set -euo pipefail
+
+          APP_ENV_FILE="docker/.env.app.prod"
+          project_id="$(grep -E '^TOLGEE_PROJECT_ID=' "$APP_ENV_FILE" | tail -n1 | cut -d'=' -f2- || true)"
+
+          if [ -z "$project_id" ]; then
+            echo "Missing required key in $APP_ENV_FILE: TOLGEE_PROJECT_ID" >&2
+            exit 1
+          fi
+
+          echo "TOLGEE_PROJECT_ID=$project_id" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Promote committed snapshots into prod Tolgee
+        id: promote
+        env:
+          TOLGEE_API_URL: ${{ vars.TOLGEE_SYNC_API_URL }}
+          TOLGEE_API_KEY: ${{ secrets.TOLGEE_SYNC_API_KEY }}
+          TOLGEE_PROJECT_ID: ${{ env.TOLGEE_PROJECT_ID }}
+        run: |
+          set +e
+          set -uo pipefail
+
+          delays=(10 30 60)
+          total=$(( ${#delays[@]} + 1 ))
+          status=1
+          classification=transient
+          attempt=0
+
+          while [ "$attempt" -lt "$total" ]; do
+            attempt=$(( attempt + 1 ))
+            echo "Promotion attempt $attempt of $total"
+
+            output="$(npm run i18n:push -w @trading-bot/operator-console 2>&1)"
+            status=$?
+            printf '%s\n' "$output"
+
+            if [ "$status" -eq 0 ]; then
+              classification=none
+              break
+            fi
+
+            if grep -qE 'invalid_pat|status: 40[13]' <<<"$output"; then
+              classification=credentials
+              echo "Prod Tolgee rejected the credentials, so another attempt cannot succeed." >&2
+              break
+            fi
+
+            if [ "$attempt" -lt "$total" ]; then
+              sleep "${delays[$(( attempt - 1 ))]}"
+            fi
+          done
+
+          {
+            echo "status=$status"
+            echo "attempts=$attempt"
+            echo "classification=$classification"
+          } >>"$GITHUB_OUTPUT"
+
+      - name: Open or update an issue
+        if: failure() || steps.promote.outputs.status != '0'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          ATTEMPTS: ${{ steps.promote.outputs.attempts }}
+          CLASSIFICATION: ${{ steps.promote.outputs.classification }}
+        with:
+          script: |
+            const title = 'Prod translations: promotion to Tolgee failing';
+            const run = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const attempts = process.env.ATTEMPTS || 'all';
+            const classification = process.env.CLASSIFICATION || 'unknown';
+            const body = [
+              `Promoting the committed message files into prod Tolgee failed after ${attempts} attempt(s).`,
+              '',
+              `Commit: ${context.sha}`,
+              `Cause: ${classification}`,
+              '',
+              'Prod Tolgee keeps serving whatever it already holds, so every render still counts',
+              'source="merged" and CopyServedFromRepository stays silent. The newest committed copy',
+              'is simply absent from Tolgee until this promotion succeeds.',
+              '',
+              `[Check run](${run}) · [Runbook](https://github.com/zigordev/platform-ops/blob/main/docs/runbooks/i18n-fallback.md)`,
+            ].join('\n');
+
+            const existing = await github.rest.issues.listForRepo({
+              ...context.repo,
+              state: 'all',
+              labels: 'i18n',
+              per_page: 20,
+            });
+            const open = existing.data.find((i) => i.title === title);
+
+            if (!open) {
+              await github.rest.issues.create({ ...context.repo, title, body, labels: ['i18n'] });
+              return;
+            }
+
+            if (open.state === 'closed') {
+              await github.rest.issues.update({ ...context.repo, issue_number: open.number, state: 'open' });
+            }
+            await github.rest.issues.createComment({ ...context.repo, issue_number: open.number, body });
+
+      - name: Close the issue when the promotion succeeds
+        if: steps.promote.outputs.status == '0'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const title = 'Prod translations: promotion to Tolgee failing';
+            const open = await github.rest.issues.listForRepo({
+              ...context.repo,
+              state: 'open',
+              labels: 'i18n',
+              per_page: 20,
+            });
+            const issue = open.data.find((i) => i.title === title);
+            if (issue) {
+              await github.rest.issues.createComment({
+                ...context.repo,
+                issue_number: issue.number,
+                body: 'Committed copy reached prod Tolgee again. Closing.',
+              });
+              await github.rest.issues.update({ ...context.repo, issue_number: issue.number, state: 'closed' });
+            }
+
+      - name: Fail the run when the promotion failed
+        if: steps.promote.outputs.status != '0'
+        run: exit 1
