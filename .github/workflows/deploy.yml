@@ -319,7 +319,7 @@ jobs:
         run: mkdir -p artifacts
 
       - name: Generate SBOM (control plane)
-        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
           image: ${{ steps.digests.outputs.control_plane_ref }}
           format: spdx-json
@@ -328,7 +328,7 @@ jobs:
           upload-release-assets: false
 
       - name: Generate SBOM (operator console)
-        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
           image: ${{ steps.digests.outputs.operator_console_ref }}
           format: spdx-json
@@ -337,7 +337,7 @@ jobs:
           upload-release-assets: false
 
       - name: Generate SBOM (market data)
-        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
           image: ${{ steps.digests.outputs.market_data_ref }}
           format: spdx-json
@@ -346,7 +346,7 @@ jobs:
           upload-release-assets: false
 
       - name: Generate SBOM (research backtesting)
-        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
           image: ${{ steps.digests.outputs.research_backtesting_ref }}
           format: spdx-json
@@ -355,7 +355,7 @@ jobs:
           upload-release-assets: false
 
       - name: Generate SBOM (execution)
-        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
           image: ${{ steps.digests.outputs.execution_ref }}
           format: spdx-json
